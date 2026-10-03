@@ -23,7 +23,7 @@ own simulation, full-screen renderer, sounds and live setting declarations.
 
 ## Play
 
-Run `love games/love-party` from the repository. Choose a game with 1–8 or
+Run `love love-party` from the repository. Choose a game with 1–8 or
 the controller D-pad, Enter/A to start, F2 to choose 2–4 players.
 A packaged `.love` file opens its game directly. Escape/Back returns to the
 standalone menu; rounds otherwise restart automatically.
@@ -51,9 +51,11 @@ resumes; reports round completion; and disposes without leaving a window.
 Back/Escape requests the lobby. Daemon disconnection exits the game.
 
 Use each game's ID in the table's source module or generated shelf. The
-Pinpals package includes its board simulation and authoring source from `games/pinpals`; its managed lifecycle uses this runner.
+Pinpals package includes its board simulation and authoring source from `pinpals`; its managed lifecycle uses this runner.
 
 ## Build
+
+Run packaging and integration commands below from the sibling GameNight host checkout, with `GAMENIGHT_GAMES_DIR` pointing to this game repository. The scripts live in the host repository.
 
 ```sh
 python scripts/package-love-party.py --output dist/party --love /path/to/love
@@ -77,7 +79,7 @@ in `main.lua` and the packaging script. Keep simulation free of LÖVE APIs.
 
 ```sh
 python scripts/test-love-simulation.py
-GNLOVE_DEMO=1 GNLOVE_GAME=neon-trails love games/love-party
+GNLOVE_DEMO=1 GNLOVE_GAME=neon-trails love love-party
 ```
 
 `GNLOVE_MATCH_SECONDS` and `GNLOVE_SEED` support reproducible tests. Native
@@ -194,9 +196,9 @@ Missing renderer support is a failed check, never inferred from accepting protoc
 `game-contract.py` imports each result with hashed raw observations into catalog evidence.
 
 Pinpals keeps its own board authoring tools and physics tests. Run `make check` in
-`games/pinpals` as well as the shared runner tests. Its upstream provenance is recorded
-in `games/pinpals/UPSTREAM.json`.
+`pinpals` as well as the shared runner tests. Its upstream provenance is recorded
+in `pinpals/UPSTREAM.json`.
 
 ## Party settings
 
-All eight active modes declare game-specific settings. See [the settings reference](../../docs/game-settings.md) for keys, ranges and when changes apply. The shared test runner stages the same Pinpals modules as the release pack, then checks declarations, validation and gameplay effects.
+All eight active modes declare game-specific settings. See [the settings reference](https://gamenight.ontola.io/docs/settings) for keys, ranges and when changes apply. The shared test runner stages the same Pinpals modules as the release pack, then checks declarations, validation and gameplay effects.

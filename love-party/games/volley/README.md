@@ -3,9 +3,9 @@
 A self-contained LÖVE 11.5 couch volleyball game. No downloaded art, build step,
 Lua packages, or physics engine. All graphics and sound are generated locally.
 
-Volley Trouble is a mode in the shared `games/love-party` runner. Launch the
+Volley Trouble is a mode in the shared `love-party` runner. Launch the
 packaged `volley-trouble.love`, or set `GNLOVE_GAME=volley-trouble` and run
-`love games/love-party`. GameNight supplies seats and controller IDs; the shared
+`love love-party`. GameNight supplies seats and controller IDs; the shared
 input mapper preserves ownership even when seats are sparse. Teams alternate
 between occupied seats. Court, bomb, target score and rotating rules are exposed
 as game settings and apply to the next round. Rounds repeat automatically.
@@ -92,11 +92,11 @@ to the next prepared match.
 The full player circle uses `skin_color`; `shared.face.drawFace` draws the
 transparent face and hat over it. The head anchor stays fixed when artwork
 changes. Hats are not cropped. Profile edits apply through `party_updated`.
-See the [face API](../../../../docs/faces.md) for centre, radius and mirroring.
+See the [face API](https://gamenight.ontola.io/docs/faces) for centre, radius and mirroring.
 
 ## Checks and packaging
 
-Run the shared simulation suite with `GNLOVE_TEST=1 GNLOVE_HEADLESS=1 love games/love-party`.
+Run the shared simulation suite with `GNLOVE_TEST=1 GNLOVE_HEADLESS=1 love love-party`.
 Volley tests live in `tests/volley`, including AI, rotating rules, sparse seats,
 avatar decoding and five-minute bot soaks across all courts. The shared native
 protocol tests check prewarming, repeat rounds, pause/resume and disconnect;
