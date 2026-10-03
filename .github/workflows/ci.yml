@@ -1,0 +1,27 @@
+name: Game simulations
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  games:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: game-source
+      - uses: actions/checkout@v4
+        with:
+          repository: ontola/gamenight
+          path: host
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y love
+      - name: Test and package source under review
+        working-directory: host
+        env:
+          GAMENIGHT_GAMES_DIR: ../game-source
+          ALSOFT_DRIVERS: 'null'
+        run: |
+          python scripts/test-love-simulation.py --love love
+          python scripts/package-love-party.py --output dist/party
