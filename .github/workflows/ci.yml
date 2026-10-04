@@ -12,6 +12,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ontola/gamenight
+          ref: a7cff20d0d8dadd21a578fb223101173533d27ff
           path: host
       - uses: actions/setup-python@v5
         with:
@@ -25,3 +26,32 @@ jobs:
         run: |
           python scripts/test-love-simulation.py --love love
           python scripts/package-love-party.py --output dist/party
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gamenight-party-candidate
+          path: host/dist/party/*.love
+          if-no-files-found: error
+  publish:
+    needs: games
+    if: github.event_name != 'pull_request' && vars.GAMENIGHT_PUBLISH_ENABLED == 'true' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    environment: gamenight-${{ matrix.game }}
+    strategy:
+      fail-fast: false
+      matrix:
+        game: [blast-party, neon-trails, neon-siege, ricochet-club, volley-trouble, stack-together, bubble-buddies, pinpals]
+        platform: [windows, mac]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: gamenight-party-candidate
+          path: package
+      - uses: ontola/gamenight@a7cff20d0d8dadd21a578fb223101173533d27ff
+        with:
+          token: ${{ secrets.GAMENIGHT_API_TOKEN }}
+          game: ${{ matrix.game }}
+          file: package/${{ matrix.game }}.love
+          platform: ${{ matrix.platform }}
+          entrypoint: ${{ matrix.game }}.love
+          version: ci-${{ github.sha }}
+          channel: preview
