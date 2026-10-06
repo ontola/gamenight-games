@@ -7,6 +7,9 @@ const G := 9.81
 const RIDER_RADIUS := 0.35
 const CRASH_TIME := 1.8
 const INVULNERABLE := 1.3
+const GRIP := 6.5              ## Sideways grip on dirt, m/s². Corner faster and you skid.
+const RADIUS := 0.45           ## Each bike is two of these circles, front and back.
+const HALF_LENGTH := 0.65
 
 var s := 0.0
 var d := 0.0
@@ -27,6 +30,9 @@ var air_time := 0.0
 var wobble := 0.0
 var crashes := 0
 var crash_spin := Vector3.ZERO
+var skid := 0.0         ## How hard the tyres are sliding this step, 0..1.
+var skid_time := 0.0
+var fell := false       ## Last crash was off the edge.
 
 func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
 	s = p_s
@@ -67,15 +73,30 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		face = along
 		var acc := -G * along / sqrt(1.0 + along * along)
 		acc -= 0.12 + (2.2 if off_track else 0.0)
-		acc -= 0.0085 * b.v * b.v
+		acc -= 0.0042 * b.v * b.v
 		acc += pedal * 3.4 * clampf((12.5 - b.v) / 5.0, 0.0, 1.0)
 		acc -= brake * 8.0
 		b.v = maxf(0.0, b.v + acc * dt)
 		var rate := minf(2.3, 15.0 / (b.v + 4.0)) * (1.25 if brake > 0.3 else 1.0)
-		b.psi += steer * rate * dt
-		# Side slopes pull you down the fall line, which is what keeps riders
-		# out of the gully walls and makes berms worth hitting high.
-		if off_track: b.d -= across * 2.5 * dt
+		# Grip limits how hard you can turn at speed; braking hard eats into it.
+		# Ask for more and the tyres slide: you scrub speed and run wide.
+		var grip := GRIP * (1.0 - 0.35 * brake) / maxf(b.v, 1.0)
+		var yaw := steer * rate
+		b.skid = 0.0
+		if absf(yaw) > grip:
+			b.skid = clampf((absf(yaw) - grip) / grip, 0.0, 1.0)
+			b.v = maxf(0.0, b.v - b.skid * 5.0 * dt)
+			yaw = signf(yaw) * grip
+		# Hold a big slide too long and the bike washes out from under you.
+		b.skid_time = b.skid_time + dt if b.skid > 0.5 else maxf(0.0, b.skid_time - dt * 2.0)
+		if b.skid_time > 0.45 and b.invulnerable <= 0.0:
+			b.skid_time = 0.0
+			_crash(b)
+			return
+		b.psi += yaw * dt
+		# Side slopes pull you down the fall line: off-camber trail keeps you
+		# steering, and off the trail it drags you towards the drop.
+		b.d -= across * (2.5 if off_track else 0.9) * dt
 		b.pitch = lerpf(b.pitch, atan(along), minf(1.0, dt * 18.0))
 		b.lean = lerpf(b.lean, steer * clampf(b.v / 10.0, 0.0, 1.0) * 0.55, minf(1.0, dt * 8.0))
 	else:
@@ -98,6 +119,20 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		b.psi *= 0.5
 		b.v *= 0.97
 	var ground := c.height(b.s, b.d)
+	if absf(b.d) > Course.TRACK_HALF + 0.4 and b.invulnerable <= 0.0:
+		var edge := c.height(b.s, signf(b.d) * Course.TRACK_HALF)
+		if ground < edge - 1.6:
+			# Over the edge and down the ravine.
+			_crash(b)
+			b.fell = true
+			return
+		if ground > edge + 1.0 and b.grounded:
+			# Into the rock wall: bounce back onto the trail.
+			b.d = signf(b.d) * (Course.TRACK_HALF + 0.3)
+			b.psi = -b.psi * 0.6 - signf(b.d) * 0.15
+			b.v *= 0.7
+			b.wobble = 0.35
+			ground = c.height(b.s, b.d)
 	if b.grounded:
 		var follow := (ground - b.y) / dt
 		var free_y := b.y + (b.vy - G * dt) * dt
@@ -162,6 +197,7 @@ static func _collide_obstacles(b: Bike, c: Course) -> void:
 		return
 
 static func _crash(b: Bike) -> void:
+	b.fell = false
 	b.crashed = true
 	b.crash_t = CRASH_TIME
 	b.crashes += 1

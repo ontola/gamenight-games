@@ -1,7 +1,7 @@
 class_name LowPoly
 extends RefCounted
 ## Flat-shaded mesh builder. Every triangle gets its own normal and colour,
-## which is the whole low-poly look: no textures anywhere in the game.
+## which is the whole low-poly look. Tex adds chunky textures on top.
 
 var verts := PackedVector3Array()
 var normals := PackedVector3Array()
@@ -129,7 +129,7 @@ func ring(center: Vector3, radius: float, tube: float, color: Color, segments: i
 func is_empty() -> bool:
 	return verts.is_empty()
 
-func commit(mesh: ArrayMesh = null) -> ArrayMesh:
+func commit(mesh: ArrayMesh = null, mat: Material = null) -> ArrayMesh:
 	if mesh == null: mesh = ArrayMesh.new()
 	if verts.is_empty(): return mesh
 	var arrays := []
@@ -138,7 +138,7 @@ func commit(mesh: ArrayMesh = null) -> ArrayMesh:
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_COLOR] = colors
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	mesh.surface_set_material(mesh.get_surface_count() - 1, material())
+	mesh.surface_set_material(mesh.get_surface_count() - 1, mat if mat else material())
 	return mesh
 
 static func _shade(c: Color, amount: float) -> Color:

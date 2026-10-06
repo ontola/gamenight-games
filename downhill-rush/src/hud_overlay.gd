@@ -55,24 +55,25 @@ func _draw_progress() -> void:
 func _progress(s: float) -> float:
 	return clampf((s - Course.START_LINE) / (course.length - Course.START_LINE), 0.0, 1.0)
 
-## Riders close to the bottom edge get a pulsing arrow in their colour.
+## Riders falling behind, towards the top or left edge, get a pulsing arrow
+## in their colour at the edge, pointing back into the screen.
 func _draw_warnings() -> void:
+	var centre := size * 0.5
 	for p in players:
 		if p.out: continue
 		var b: Bike = p.bike
 		var at := course.world(b.s, b.d, b.y + 0.8)
 		if camera.is_position_behind(at): continue
 		var sp := camera.unproject_position(at)
-		var danger := clampf((sp.y - size.y * 0.78) / (size.y * 0.22), 0.0, 1.0)
-		if sp.x < 80: danger = maxf(danger, clampf((80 - sp.x) / 80.0, 0.0, 1.0))
-		if sp.x > size.x - 80: danger = maxf(danger, clampf((sp.x - size.x + 80) / 80.0, 0.0, 1.0))
+		var danger := clampf((size.y * 0.2 - sp.y) / (size.y * 0.2), 0.0, 1.0)
+		danger = maxf(danger, clampf((size.x * 0.14 - sp.x) / (size.x * 0.14), 0.0, 1.0))
 		if danger <= 0.0: continue
 		var pulse := 0.6 + 0.4 * sin(_time * 14.0)
-		var x := clampf(sp.x, 40, size.x - 40)
-		var base_y := size.y - 18.0
+		var pos := sp.clamp(Vector2(30, 30), size - Vector2(30, 30))
+		var dir := (centre - pos).normalized()
+		var side := Vector2(-dir.y, dir.x)
 		var col: Color = p.color
 		col.a = danger * pulse
-		var pts := PackedVector2Array([Vector2(x - 26, base_y), Vector2(x + 26, base_y), Vector2(x, base_y - 34)])
+		var pts := PackedVector2Array([pos - side * 26.0, pos + side * 26.0, pos + dir * 36.0])
 		draw_colored_polygon(pts, col)
 		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[0]]), Color(0.12, 0.13, 0.17, col.a), 3.0, true)
-		draw_rect(Rect2(0, size.y - 6, size.x, 6), Color(0.95, 0.3, 0.25, danger * 0.5 * pulse))

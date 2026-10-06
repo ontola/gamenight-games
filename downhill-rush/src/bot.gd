@@ -20,7 +20,7 @@ func think(b: Bike, c: Course, dt: float) -> Dictionary:
 	_retarget -= dt
 	if _retarget <= 0.0:
 		_retarget = _rng.randf_range(1.5, 4.0)
-		_line_target = _rng.randf_range(-1.6, 1.6)
+		_line_target = _rng.randf_range(-1.2, 1.2)
 	line = move_toward(line, _line_target, dt * 1.2)
 	var target_d := line
 	var target_v := 11.5 + skill * 5.5
@@ -36,7 +36,19 @@ func think(b: Bike, c: Course, dt: float) -> Dictionary:
 		elif int(f.kind) == Course.Kind.ROCKS:
 			target_d = _gap(b, c)
 			target_v = 9.0 + skill * 2.0
+	# Brake for the tightest corner within stopping distance.
+	var reach := b.v * b.v / 10.0 + 6.0
+	var k_max := 0.0
+	var probe := b.s
+	while probe < b.s + reach:
+		k_max = maxf(k_max, absf(c.curvature(probe)))
+		probe += 1.5
+	if k_max > 0.001:
+		target_v = minf(target_v, sqrt(Bike.GRIP * (0.55 + skill * 0.2) / k_max))
 	var look := 6.0 + b.v * 0.45
+	# Lean against the camber so the trail doesn't drag us off the edge.
+	target_d += c.camber(b.s) * 6.0
+	target_d = clampf(target_d, -2.2, 2.2)
 	var desired := atan2(target_d - b.d, look)
 	var feed := c.curvature(b.s) * b.v / maxf(0.4, minf(2.3, 15.0 / (b.v + 4.0)))
 	var steer := clampf((desired - b.psi) * 3.0 + feed, -1.0, 1.0)

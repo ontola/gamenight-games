@@ -6,10 +6,9 @@ const SCALE := 2.2
 const WHEEL := 0.27
 const WHEELBASE := 0.98
 const DARK := Color(0.2, 0.21, 0.25)
-const SKIN := Color(0.93, 0.76, 0.62)
 
-## The extra on top of each helmet. From above, that is what people spot.
-const HATS := ["mohawk", "horns", "cat ears", "propeller", "unicorn", "crown", "antenna", "comb"]
+const SKINS := [Color(0.93, 0.76, 0.62), Color(0.62, 0.43, 0.3), Color(0.8, 0.6, 0.45), Color(0.42, 0.29, 0.21)]
+const TROUSERS := [Color(0.35, 0.45, 0.65), Color(0.18, 0.18, 0.2), Color(0.72, 0.62, 0.45), Color(0.45, 0.5, 0.42)]
 const ACCENTS := [Color(0.98, 0.9, 0.3), Color(0.98, 0.96, 0.9), Color(0.25, 0.9, 0.85), Color(0.98, 0.45, 0.6),
 	Color(0.6, 0.95, 0.4), Color(1.0, 0.65, 0.2), Color(0.7, 0.55, 1.0), Color(0.95, 0.3, 0.25)]
 
@@ -21,8 +20,6 @@ var bike: Node3D           ## Spins on its own for tailwhips.
 var rider: Node3D          ## Tumbles away from the bike in a crash.
 var front_wheel: Node3D
 var rear_wheel: Node3D
-var cape: Node3D
-var spinner: Node3D        ## Propellers and antennas that react to speed.
 var tag: Label3D
 var dust: CPUParticles3D
 var marker: MeshInstance3D
@@ -53,7 +50,6 @@ func setup(p_color: Color, p_name: String, p_style: int = 0) -> void:
 	var rider_mesh := MeshInstance3D.new()
 	rider_mesh.mesh = _rider_mesh()
 	rider.add_child(rider_mesh)
-	_extras()
 	body.scale = Vector3.ONE * SCALE
 	marker = MeshInstance3D.new()
 	marker.mesh = _marker_mesh()
@@ -147,100 +143,54 @@ func _frame_mesh() -> ArrayMesh:
 	lp.box(head + Vector3(0, 0.16, 0.04), Vector3(0.26, 0.16, 0.03), Color(0.98, 0.97, 0.92), Basis(Vector3.RIGHT, -0.25))
 	return lp.commit()
 
-## A BMX rider stands on the pedals: knees bent, elbows out, and a head two
-## sizes too big, because from above the helmet is the character.
+## A BMX rider stood on the pedals: knees bent, elbows out, baggy clothes.
+## Each garment is its own surface so it can carry its own texture.
 func _rider_mesh() -> ArrayMesh:
-	var lp := LowPoly.new()
-	var jersey := color
-	var hip := Vector3(0, 0.95, -0.2)
-	var shoulder := Vector3(0, 1.3, 0.08)
+	var skin := LowPoly.new()
+	var shirt := LowPoly.new()
+	var pants := LowPoly.new()
+	var gear := LowPoly.new()
+	var tone: Color = SKINS[style % SKINS.size()]
+	var trousers: Color = TROUSERS[(style / 2) % TROUSERS.size()]
+	var hip := Vector3(0, 0.92, -0.2)
+	var shoulder := Vector3(0, 1.3, 0.06)
 	var hands := Vector3(0, 0.96, 0.3)
 	for side in [-1.0, 1.0]:
-		var x: float = side * 0.14
-		var knee := Vector3(x * 1.5, 0.7, 0.08)
+		var x: float = side * 0.12
+		var knee := Vector3(x * 1.6, 0.66, 0.1)
 		var foot := Vector3(x * 1.2, WHEEL + 0.05, -0.05 + side * 0.06)
-		lp.beam(hip + Vector3(x, 0, 0), knee, 0.14, DARK)
-		lp.beam(knee, foot, 0.12, DARK)
-		lp.box(foot + Vector3(0, -0.02, 0.04), Vector3(0.13, 0.09, 0.24), accent)
-		var elbow := Vector3(side * 0.36, 1.1, 0.1)
-		lp.beam(shoulder + Vector3(side * 0.2, 0, 0), elbow, 0.11, jersey)
-		lp.beam(elbow, hands + Vector3(side * 0.3, 0, 0), 0.1, jersey.darkened(0.05))
-		lp.blob(hands + Vector3(side * 0.3, 0, 0), Vector3(0.07, 0.07, 0.07), accent, _rng, 2, 5, 0.0)
-	lp.beam(hip, shoulder, 0.4, jersey)
-	lp.box(shoulder + Vector3(0, -0.04, -0.02), Vector3(0.5, 0.17, 0.24), jersey)
-	# A stripe down the back of the jersey in the accent colour.
-	lp.beam(hip + Vector3(0, 0.05, -0.19), shoulder + Vector3(0, 0, -0.13), 0.12, accent)
+		pants.beam(hip + Vector3(x, 0, 0), knee, 0.16, trousers)
+		pants.beam(knee, foot + Vector3(0, 0.08, 0), 0.15, trousers)
+		gear.box(foot + Vector3(0, -0.01, 0.04), Vector3(0.14, 0.1, 0.27), accent)
+		gear.box(foot + Vector3(0, -0.055, 0.04), Vector3(0.15, 0.03, 0.28), Color(0.92, 0.9, 0.85))
+		var elbow := Vector3(side * 0.34, 1.08, 0.1)
+		shirt.beam(shoulder + Vector3(side * 0.19, 0, 0), shoulder + Vector3(side * 0.28, -0.12, 0.03), 0.16, color)
+		skin.beam(shoulder + Vector3(side * 0.27, -0.1, 0.03), elbow, 0.085, tone)
+		skin.beam(elbow, hands + Vector3(side * 0.3, 0, 0), 0.075, tone)
+		gear.box(hands + Vector3(side * 0.3, 0, 0), Vector3(0.1, 0.09, 0.11), DARK)
+	# Baggy tee: wider at the hem than at the chest.
+	shirt.cone(hip + Vector3(0, -0.06, 0), 0.24, 0.21, (shoulder - hip).length() + 0.04, 6, color,
+		Basis(Vector3.RIGHT, (shoulder - hip).angle_to(Vector3.UP)).scaled(Vector3(1.0, 1.0, 0.75)), 0.08)
+	skin.beam(shoulder, shoulder + Vector3(0, 0.12, 0.04), 0.09, tone)
 	var head := HEAD_AT
-	lp.blob(head, Vector3(0.3, 0.28, 0.32), color.darkened(0.05), _rng, 4, 8, 0.02)
-	lp.box(head + Vector3(0, 0.25, -0.02), Vector3(0.1, 0.07, 0.55), accent)
-	lp.box(head + Vector3(0, -0.01, 0.27), Vector3(0.38, 0.12, 0.08), Color(0.15, 0.17, 0.22))
-	lp.box(head + Vector3(0, -0.17, 0.25), Vector3(0.26, 0.1, 0.1), color.darkened(0.3))
-	# Big round eyes on the visor: daft from up close, a bit of life from above.
-	for side in [-1.0, 1.0]:
-		lp.blob(head + Vector3(side * 0.1, 0.0, 0.335), Vector3(0.07, 0.07, 0.03), Color.WHITE, _rng, 2, 6, 0.0)
-		lp.blob(head + Vector3(side * 0.1, 0.01, 0.36), Vector3(0.032, 0.032, 0.015), Color(0.05, 0.05, 0.08), _rng, 2, 5, 0.0)
-	_hat(lp, head)
-	if style % 3 == 1:
-		# Backpack with a little flag.
-		lp.box(shoulder + Vector3(0, -0.15, -0.24), Vector3(0.34, 0.36, 0.18), accent.darkened(0.15))
-		lp.beam(shoulder + Vector3(0.12, -0.1, -0.3), shoulder + Vector3(0.12, 0.55, -0.32), 0.025, DARK)
-		lp.tri(shoulder + Vector3(0.12, 0.55, -0.32), shoulder + Vector3(0.12, 0.35, -0.32), shoulder + Vector3(0.12, 0.45, -0.62), accent)
-	return lp.commit()
+	skin.blob(head, Vector3(0.12, 0.14, 0.13), tone, _rng, 3, 7, 0.0)
+	if style % 2 == 0:
+		# Open-face lid with a peak, the 90s BMX staple.
+		gear.blob(head + Vector3(0, 0.05, -0.01), Vector3(0.15, 0.13, 0.16), color.darkened(0.25), _rng, 3, 8, 0.0)
+		gear.box(head + Vector3(0, 0.08, 0.15), Vector3(0.2, 0.025, 0.1), color.darkened(0.45), Basis(Vector3.RIGHT, 0.25))
+		gear.box(head + Vector3(0, 0.15, 0.0), Vector3(0.05, 0.03, 0.3), accent)
+	else:
+		# Cap on backwards.
+		gear.blob(head + Vector3(0, 0.07, 0), Vector3(0.135, 0.09, 0.14), accent, _rng, 2, 8, 0.0)
+		gear.box(head + Vector3(0, 0.06, -0.17), Vector3(0.17, 0.02, 0.12), accent.darkened(0.3))
+	var patterns := [Tex.plaid(), Tex.stripes(), Tex.cotton()]
+	var mesh := skin.commit(null, Tex.material(Tex.cotton(), 3.0, false))
+	shirt.commit(mesh, Tex.material(patterns[style % patterns.size()], 2.5, false))
+	pants.commit(mesh, Tex.material(Tex.denim(), 3.0, false))
+	gear.commit(mesh, Tex.material(Tex.cotton(), 3.0, false))
+	return mesh
 
-const HEAD_AT := Vector3(0, 1.62, 0.16)
-
-func _hat(lp: LowPoly, head: Vector3) -> void:
-	var top := head + Vector3(0, 0.26, 0)
-	match HATS[style % HATS.size()]:
-		"mohawk":
-			for k in 6:
-				var z := 0.22 - k * 0.09
-				lp.box(top + Vector3(0, 0.1 - absf(z) * 0.3, z), Vector3(0.06, 0.24 - absf(z) * 0.4, 0.07), accent)
-		"horns":
-			for side in [-1.0, 1.0]:
-				lp.cone(head + Vector3(side * 0.24, 0.16, 0.02), 0.08, 0.0, 0.32, 5, Color(0.97, 0.94, 0.85), Basis(Vector3.FORWARD, side * -0.9))
-		"cat ears":
-			for side in [-1.0, 1.0]:
-				lp.cone(head + Vector3(side * 0.16, 0.2, 0.0), 0.11, 0.0, 0.2, 3, accent, Basis(Vector3.FORWARD, side * -0.35))
-		"unicorn":
-			lp.cone(head + Vector3(0, 0.2, 0.18), 0.07, 0.0, 0.42, 5, Color(1.0, 0.85, 0.35), Basis(Vector3.RIGHT, 0.6))
-		"crown":
-			for k in 5:
-				var a := TAU * k / 5.0
-				lp.cone(top + Vector3(cos(a) * 0.14, -0.05, sin(a) * 0.14), 0.06, 0.0, 0.18, 4, Color(1.0, 0.82, 0.25))
-			lp.cone(top - Vector3(0, 0.07, 0), 0.17, 0.17, 0.06, 8, Color(1.0, 0.82, 0.25))
-		"comb":
-			for k in 4:
-				lp.blob(top + Vector3(0, 0.02, 0.15 - k * 0.1), Vector3(0.05, 0.09, 0.06), Color(0.92, 0.2, 0.2), _rng, 2, 5, 0.0)
-
-## Parts that move: capes, propellers and antennas.
-func _extras() -> void:
-	var hat: String = HATS[style % HATS.size()]
-	if hat == "propeller" or hat == "antenna":
-		spinner = Node3D.new()
-		spinner.position = HEAD_AT + Vector3(0, 0.28, 0)
-		rider.add_child(spinner)
-		var lp := LowPoly.new()
-		if hat == "propeller":
-			lp.beam(Vector3.ZERO, Vector3(0, 0.12, 0), 0.04, DARK)
-			lp.box(Vector3(0, 0.13, 0), Vector3(0.7, 0.02, 0.1), accent)
-			lp.box(Vector3(0, 0.13, 0), Vector3(0.1, 0.02, 0.7), Color(0.98, 0.45, 0.6) if accent != Color(0.98, 0.45, 0.6) else Color.WHITE)
-		else:
-			lp.beam(Vector3.ZERO, Vector3(0, 0.45, 0), 0.025, DARK)
-			lp.blob(Vector3(0, 0.5, 0), Vector3(0.07, 0.07, 0.07), accent, _rng, 2, 6, 0.0)
-		var mi := MeshInstance3D.new()
-		mi.mesh = lp.commit()
-		spinner.add_child(mi)
-	if style % 3 == 2:
-		# A cape that streams out behind at speed.
-		cape = Node3D.new()
-		cape.position = Vector3(0, 1.36, -0.08)
-		rider.add_child(cape)
-		var lp := LowPoly.new()
-		lp.quad(Vector3(-0.25, 0, 0), Vector3(0.25, 0, 0), Vector3(0.36, -0.75, -0.05), Vector3(-0.36, -0.75, -0.05), accent, Vector3(0, -0.3, 0.3))
-		var mi := MeshInstance3D.new()
-		mi.mesh = lp.commit()
-		cape.add_child(mi)
+const HEAD_AT := Vector3(0, 1.5, 0.12)
 
 ## A disc of the player's colour on the ground under the rider. From straight
 ## above it says who is who, and in the air it shows where you will land.
@@ -285,10 +235,6 @@ func pose(b: Bike, c: Course, delta: float) -> void:
 	elif _whip_rate > 0.0:
 		_whip = minf(TAU, _whip + _whip_rate * delta)
 	bike.rotation.y = _whip
-	if cape:
-		cape.rotation.x = lerpf(cape.rotation.x, -clampf(b.v / 12.0, 0.1, 1.25) + sin(_time * 14.0) * 0.12, minf(1.0, delta * 8.0))
-	if spinner:
-		spinner.rotate_y(delta * (4.0 + b.v * 2.2))
 	front_wheel.rotate_x(spin)
 	rear_wheel.rotate_x(spin)
 	if b.crashed:
@@ -306,4 +252,4 @@ func pose(b: Bike, c: Course, delta: float) -> void:
 		rider.rotation = Vector3.ZERO
 	_was_crashed = b.crashed
 	visible = b.invulnerable <= 0.0 or b.crashed or int(b.invulnerable * 10.0) % 2 == 0
-	dust.emitting = (b.grounded and b.v > 7.0 and not b.crashed) or b.landed or b.crashed
+	dust.emitting = (b.grounded and b.v > 7.0 and not b.crashed) or b.landed or b.crashed or b.skid > 0.2

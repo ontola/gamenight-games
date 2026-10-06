@@ -12,6 +12,9 @@ const DIRT_DARK := Color(0.5, 0.33, 0.22)
 const PACKED := Color(0.85, 0.63, 0.4)
 const CHALK := Color(0.97, 0.92, 0.8)
 const STONE := Color(0.6, 0.6, 0.62)
+const SAND := Color(0.7, 0.66, 0.52)
+const WATER_COL := Color(0.1, 0.36, 0.55, 0.88)
+const FERN := Color(0.3, 0.55, 0.22)
 const TRUNK := Color(0.42, 0.3, 0.22)
 const PINES := [Color(0.16, 0.36, 0.25), Color(0.2, 0.42, 0.27), Color(0.13, 0.3, 0.24), Color(0.26, 0.47, 0.27)]
 const AUTUMN := [Color(0.88, 0.56, 0.24), Color(0.93, 0.74, 0.3), Color(0.78, 0.36, 0.22)]
@@ -80,10 +83,43 @@ func _terrain_chunk(s0: float, s1: float) -> void:
 			else:
 				_face(lp, a[i], a[i + 1], b[i], sm, dm)
 				_face(lp, a[i + 1], b[i + 1], b[i], sm, dm)
+	var water := LowPoly.new()
+	for r in rows.size() - 1:
+		var lv0 := course.base_height(ss[r]) - Course.WATER
+		var lv1 := course.base_height(ss[r + 1]) - Course.WATER
+		for i in _columns.size() - 1:
+			var a: PackedVector3Array = rows[r]
+			var b: PackedVector3Array = rows[r + 1]
+			if minf(minf(a[i].y, a[i + 1].y), minf(b[i].y, b[i + 1].y)) > maxf(lv0, lv1): continue
+			var c := Color(1, 1, 1)
+			water.quad(Vector3(a[i].x, lv0, a[i].z), Vector3(a[i + 1].x, lv0, a[i + 1].z),
+				Vector3(b[i + 1].x, lv1, b[i + 1].z), Vector3(b[i].x, lv1, b[i].z), c)
+	if not water.is_empty():
+		var wm := MeshInstance3D.new()
+		wm.mesh = water.commit(null, _water_material())
+		wm.name = "Water"
+		add_child(wm)
 	var mi := MeshInstance3D.new()
-	mi.mesh = lp.commit()
+	mi.mesh = lp.commit(null, Tex.material(Tex.grit(), 0.7, true))
 	mi.name = "Terrain"
 	add_child(mi)
+
+static var _water_mat: StandardMaterial3D
+
+static func _water_material() -> StandardMaterial3D:
+	if _water_mat == null:
+		_water_mat = StandardMaterial3D.new()
+		_water_mat.albedo_color = WATER_COL
+		_water_mat.albedo_texture = Tex.ripples()
+		_water_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+		_water_mat.uv1_triplanar = true
+		_water_mat.uv1_world_triplanar = true
+		_water_mat.uv1_scale = Vector3.ONE * 0.35
+		_water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_water_mat.roughness = 0.45
+		_water_mat.metallic_specular = 0.3
+		_water_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _water_mat
 
 func _face(lp: LowPoly, p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) -> void:
 	var n := (p2 - p0).cross(p1 - p0).normalized()
@@ -93,17 +129,21 @@ func _face(lp: LowPoly, p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: floa
 	var col: Color
 	var edge := Course.TRACK_HALF + wobble * 0.7
 	if ad < edge - 0.6:
-		col = DIRT
+		# A narrow worn path wanders inside the rideable line.
+		var off := absf(d - course.path_offset(s))
+		col = DIRT if off < 1.0 else DIRT.lerp(GRASS, clampf((off - 0.9) * 1.2, 0.0, 0.85))
 		var f := course.feature_ahead(s, 0.0)
 		if not f.is_empty() and s >= f.s0:
-			col = _feature_color(f, s - f.s0, col)
+			col = _feature_color(f, s - f.s0, DIRT)
 	elif ad < edge + 0.5:
 		col = DIRT.lerp(GRASS, 0.55)
 	else:
 		var patch := course._noise.get_noise_2d(s * 0.9 + 400.0, d * 0.9)
 		col = GRASS.lerp(GRASS_DARK, clampf(patch * 1.6 + 0.4, 0.0, 1.0))
 		if patch > 0.38: col = col.lerp(MEADOW, 0.6)
-		if steep > 0.45: col = col.lerp(STONE, clampf((steep - 0.45) * 3.0, 0.0, 1.0))
+		if steep > 0.3: col = col.lerp(STONE.darkened(0.1), clampf((steep - 0.3) * 3.5, 0.0, 1.0))
+		var low := course.base_height(s) - (p0.y + p1.y + p2.y) / 3.0
+		if low > Course.WATER - 2.0: col = col.lerp(SAND, clampf((low - Course.WATER + 2.0) * 0.5, 0.0, 1.0))
 	col = col.lightened(_rng.randf_range(-0.03, 0.05))
 	lp.tri(p0, p1, p2, col)
 
@@ -144,13 +184,18 @@ func _props() -> void:
 		var key := int(s / CHUNK)
 		if not chunks.has(key): chunks[key] = LowPoly.new()
 		var lp: LowPoly = chunks[key]
-		for i in 5:
+		for i in 9:
 			var side := -1.0 if _rng.randf() < 0.5 else 1.0
 			var d := side * _rng.randf_range(Course.TRACK_HALF + 0.6, Course.EDGE - 1.0)
 			var ss := s + _rng.randf_range(0.0, 4.0)
 			var p := course.world(ss, d)
 			var roll := _rng.randf()
-			if roll < 0.35:
+			if p.y < course.base_height(ss) - Course.WATER + 0.3: continue
+			if roll < 0.2:
+				_fern(lp, p)
+			elif roll < 0.3:
+				_rock(lp, p, _rng.randf_range(0.6, 1.8))
+			elif roll < 0.45:
 				lp.blob(p + Vector3(0, 0.25, 0), Vector3(0.7, 0.5, 0.7) * _rng.randf_range(0.7, 1.4), PINES[_rng.randi() % PINES.size()].lightened(0.1), _rng, 2, 5)
 			elif roll < 0.75:
 				_tuft(lp, p)
@@ -162,7 +207,7 @@ func _props() -> void:
 		s += 4.0
 	for key in chunks:
 		var mi := MeshInstance3D.new()
-		mi.mesh = chunks[key].commit()
+		mi.mesh = chunks[key].commit(null, Tex.material(Tex.grit(), 1.6, true))
 		mi.name = "Props%d" % key
 		add_child(mi)
 
@@ -185,6 +230,20 @@ func _tree(lp: LowPoly, p: Vector3) -> void:
 func _rock(lp: LowPoly, p: Vector3, r: float) -> void:
 	var col := STONE.lightened(_rng.randf_range(-0.12, 0.08))
 	lp.blob(p + Vector3(0, r * 0.25, 0), Vector3(r, r * 0.8, r * _rng.randf_range(0.8, 1.2)), col, _rng, 3, 6, 0.22)
+
+## A fan of long leaves, the bracken that lines every forest trail.
+func _fern(lp: LowPoly, p: Vector3) -> void:
+	var n := _rng.randi_range(5, 8)
+	var scale := _rng.randf_range(0.7, 1.3)
+	for k in n:
+		var a := TAU * k / n + _rng.randf_range(-0.3, 0.3)
+		var dir := Vector3(cos(a), 0, sin(a))
+		var side := dir.cross(Vector3.UP) * 0.16 * scale
+		var tip := p + dir * 1.1 * scale + Vector3(0, 0.25, 0)
+		var mid := p + dir * 0.5 * scale + Vector3(0, 0.55 * scale, 0)
+		var col := FERN.lightened(_rng.randf_range(-0.08, 0.12))
+		lp.tri(p, mid + side, mid - side, col)
+		lp.tri(mid + side, tip, mid - side, col.lightened(0.06))
 
 func _tuft(lp: LowPoly, p: Vector3) -> void:
 	var col := GRASS.lerp(MEADOW, _rng.randf()).lightened(0.05)

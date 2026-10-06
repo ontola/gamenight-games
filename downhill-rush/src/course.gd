@@ -55,34 +55,35 @@ func _init(p_seed: int = 1, p_length: float = 900.0) -> void:
 func _generate_line() -> void:
 	var n := int(total / DS) + 2
 	theta.resize(n); cx.resize(n); cz.resize(n); base.resize(n); curv.resize(n)
-	# Curvature plan: alternating flowing turns with straights in between.
+	# Curvature plan: a twisting trail. Mostly tight corners you have to brake
+	# for, sometimes a fast sweeper, short straights in between.
 	var plan := PackedFloat32Array(); plan.resize(n)
 	var i := int(START_FLAT / DS)
 	var side := 1.0 if _rng.randf() < 0.5 else -1.0
 	var heading_budget := 0.0
 	while i < n:
-		var straight := _rng.randi_range(20, 60)
+		var straight := _rng.randi_range(8, 30) if _rng.randf() < 0.7 else _rng.randi_range(35, 60)
 		i += straight
-		var turn_len := _rng.randi_range(30, 75)
-		var radius := _rng.randf_range(95.0, 170.0)
+		var tight := _rng.randf() < 0.65
+		var radius := _rng.randf_range(16.0, 34.0) if tight else _rng.randf_range(45.0, 90.0)
+		var turn_len := _rng.randi_range(14, 26) if tight else _rng.randi_range(25, 50)
 		# Keep the overall direction downhill (+Z): turn back when drifting.
-		if absf(heading_budget) > 0.7: side = -signf(heading_budget)
-		elif _rng.randf() < 0.75: side = -side
+		if absf(heading_budget) > 0.5: side = -signf(heading_budget)
+		elif _rng.randf() < 0.7: side = -side
 		var k := side / radius
 		for j in turn_len:
 			if i + j >= n: break
-			# Ease curvature in and out for flowing turns.
 			var t := float(j) / turn_len
-			plan[i + j] = k * sin(t * PI)
-		heading_budget += k * turn_len * 0.64
+			plan[i + j] = k * minf(1.0, sin(t * PI) * 1.6)
+		heading_budget += k * turn_len * 0.8
 		i += turn_len
 	# Grade plan: a steep-ish mountain with mellow and steep pitches.
 	var grade := PackedFloat32Array(); grade.resize(n)
 	var g := 0.2
 	var target := 0.2
 	for j in n:
-		if j % 40 == 0: target = _rng.randf_range(0.13, 0.3)
-		g = lerpf(g, target, 0.05)
+		if j % 35 == 0: target = _rng.randf_range(0.06, 0.42) if _rng.randf() < 0.8 else 0.03
+		g = lerpf(g, target, 0.06)
 		grade[j] = 0.06 if j * DS < START_FLAT else g
 	# Integrate.
 	var th := 0.0
@@ -90,10 +91,10 @@ func _generate_line() -> void:
 	var z := 0.0
 	var y := 0.0
 	for j in n:
-		th += plan[j] * DS
-		th = clampf(th, -1.25, 1.25)
+		var th_next := clampf(th + plan[j] * DS, -1.35, 1.35)
+		curv[j] = (th_next - th) / DS
+		th = th_next
 		theta[j] = th
-		curv[j] = plan[j]
 		cx[j] = x; cz[j] = z; base[j] = y
 		x += sin(th) * DS
 		z += cos(th) * DS
@@ -129,19 +130,41 @@ func world(s: float, d: float, y: float = INF) -> Vector3:
 func height(s: float, d: float) -> float:
 	var h := base_height(s)
 	var ad := absf(d)
-	# The run sits in a shallow gully so the line reads naturally.
+	# The run is cut into a steep mountainside: rock wall on the uphill side,
+	# a drop into a ravine with a stream on the other. Which side is which
+	# swaps slowly along the run.
 	if ad > TRACK_HALF:
 		var o := ad - TRACK_HALF
-		h += 0.03 * o * o / (1.0 + o * 0.02) + _noise.get_noise_2d(s, d) * minf(o * 0.4, 7.0)
+		var wall := clampf(wall_side(s) * signf(d) * 1.6, -1.0, 1.0) * 0.5 + 0.5
+		var rise := 0.4 * o + 1.5 * maxf(0.0, o - 1.5) * (1.0 - smoothstep(10.0, 22.0, o) * 0.6)
+		var fall := -1.25 * pow(maxf(0.0, o - 1.0), 1.15)
+		h += clampf(lerpf(fall, rise, wall), -RAVINE, 14.0) + _noise.get_noise_2d(s, d) * minf(o * 0.3, 4.0)
 	# Banked turns: raise the outside of the bend.
 	var k := curvature(s)
 	if ad < TRACK_HALF + FEATURE_FADE:
 		var bank := clampf(k * 160.0, -1.0, 1.0) * 0.22
 		var w := _fade(ad)
 		h += bank * clampf(d, -TRACK_HALF, TRACK_HALF) * w
-		h += (_detail.get_noise_2d(s, d) * 0.05) * w
+		# Roots, ruts and off-camber: the trail is never quite flat.
+		h += (_detail.get_noise_2d(s, d) * 0.16 + camber(s) * d) * w
 	h += _features_at(s, d)
 	return h
+
+const RAVINE := 15.0            ## Deepest the ravine beside the run gets.
+const WATER := 13.0             ## Stream surface below the run.
+
+## +1 when the rock wall is on the right, -1 when it's on the left.
+func wall_side(s: float) -> float:
+	return clampf(_noise.get_noise_1d(s * 0.35 + 900.0) * 10.0, -1.0, 1.0)
+
+## Sideways tilt of the trail (rise per metre to the right).
+func camber(s: float) -> float:
+	if s < START_FLAT: return 0.0
+	return _noise.get_noise_1d(s * 1.7 + 300.0) * 0.16
+
+## Centre of the worn single-track inside the wider rideable line.
+func path_offset(s: float) -> float:
+	return _detail.get_noise_1d(s * 0.6 + 77.0) * 1.8
 
 func _fade(ad: float) -> float:
 	if ad <= TRACK_HALF: return 1.0
@@ -225,7 +248,7 @@ func _place_features() -> void:
 	var s := START_FLAT + 25.0
 	var last_kind := -1
 	while s < length - 50.0:
-		var straightish := _max_curv(s, s + 30.0) < 1.0 / 115.0
+		var straightish := _max_curv(s, s + 30.0) < 1.0 / 70.0
 		var roll := _rng.randf()
 		var f := {}
 		if straightish and roll < 0.32 and last_kind != Kind.GAP:

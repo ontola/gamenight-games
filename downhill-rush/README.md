@@ -1,8 +1,9 @@
 # Downhill Rush
 
 A top-down BMX downhill survival race for GameNight: everyone rides the same
-procedurally generated mountain on one shared screen, seen from above. The
-camera follows the leader and never waits. Fall behind, crash once too often or take the scenic route and
+procedurally generated mountain on one shared screen, seen from above with
+downhill always running to the bottom right. The leader rides near that corner
+and sees the least of what's coming; the camera follows them and never waits. Fall behind, crash once too often or take the scenic route and
 you drop off the bottom of the screen: you're out. Last rider standing, or
 first through the finish gate, takes the round. First to three rounds wins.
 
@@ -11,12 +12,10 @@ code at runtime: low-poly flat-shaded terrain, trees, rocks and riders, with
 no textures or imported models. Each rider has a ring in their colour on the
 ground under them, which also shows where they will land mid-jump.
 
-Every rider is a big-headed chibi with eyes, a hat of their own (mohawk,
-horns, cat ears, propeller, unicorn horn, crown, antenna or rooster comb) and
-sometimes a cape or a backpack flag. Bots have names like Gnarly Gus, Sir Skid
-and Wobbles, and riders throw tailwhips on long jumps. The HUD is built from
-tilted sticker cards in Bungee Shade, Bungee and Lilita One, with a cheeky line
-for every elimination and win.
+Riders are ordinary 90s BMX kids in flannel, striped or plain shirts, jeans
+and sneakers, with a lid or a backwards cap. Clothes, dirt and rock carry small
+greyscale textures painted in code (`src/textures.gd`) and sampled without
+filtering, so they read as chunky texels on the low-poly shapes.
 
 ![The riders](docs/screenshots/riders.jpg)
 
@@ -24,7 +23,7 @@ for every elimination and win.
 
 | | |
 |---|---|
-| ![Over the gap](docs/screenshots/jump.jpg) | ![Round over](docs/screenshots/round-over.jpg) |
+| ![Into the corner](docs/screenshots/jump.jpg) | ![Round over](docs/screenshots/round-over.jpg) |
 
 ## Play
 
@@ -40,6 +39,14 @@ screen, press A (Space, Enter) to join; the first rider presses A again to
 start. B toggles bots, which fill the field up to four riders. Escape pauses.
 
 ## How a mountain works
+
+The trail is cut into a steep mountainside: a rock wall on one side, a drop to
+a stream on the other, swapping sides as you go. It twists through tight
+corners and steep pitches, with roots, ruts and off-camber stretches that keep
+pulling you sideways. Tyres have limited grip (`Bike.GRIP`): carry too much
+speed into a corner and you slide, scrub speed and run wide; hold the slide and
+you wash out, or go over the edge. Riding into the wall bounces you back.
+Riders are solid and shove each other around; a hard hit can take someone down.
 
 `src/course.gd` lays out a winding centre line with steep and mellow pitches,
 then places features along it: gap jumps, tabletops, drops onto a landing,
@@ -85,7 +92,8 @@ tools/shot.sh out.png --demo --skip=30                               # screensho
 
 `--skip=N` fast-forwards the race by N seconds, `--seed=N` fixes the mountain,
 `--shot-phase=join|countdown|race|round_over` and `--shot-air` pick the moment.
-`--showcase` points a close camera at the start grid to show off the riders.
+`--showcase` points a close camera at the start grid to show off the riders,
+and `--no-hud` hides the HUD.
 
 ## Not yet
 

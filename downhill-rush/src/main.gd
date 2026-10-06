@@ -59,6 +59,7 @@ func _ready() -> void:
 	add_child(_riders_root)
 	hud = Hud.new()
 	add_child(hud)
+	if "--no-hud" in OS.get_cmdline_user_args(): hud.visible = false
 	managed = GameNight.launched_by_daemon
 	GameNight.prepared.connect(_on_prepared)
 	GameNight.started.connect(_on_started)
@@ -306,6 +307,9 @@ func _physics_process(_delta: float) -> void:
 	_bump_riders()
 	if racing: _referee()
 
+## Riders are solid: each bike is two circles, front and back wheel. Overlaps
+## are pushed apart completely and the bikes trade momentum, so you can
+## shoulder someone off the line, and a big hit knocks a rider off balance.
 func _bump_riders() -> void:
 	for i in players.size():
 		var a: Dictionary = players[i]
@@ -313,19 +317,43 @@ func _bump_riders() -> void:
 		for j in range(i + 1, players.size()):
 			var b: Dictionary = players[j]
 			if b.out or b.bike.crashed: continue
-			var ba: Bike = a.bike
-			var bb: Bike = b.bike
-			if absf(ba.y - bb.y) > 1.2: continue
-			var delta := Vector2(bb.s - ba.s, bb.d - ba.d)
+			_collide(a.bike, b.bike)
+
+func _collide(ba: Bike, bb: Bike) -> void:
+	if absf(ba.y - bb.y) > 1.2: return
+	if absf(ba.s - bb.s) > 3.0 or absf(ba.d - bb.d) > 3.0: return
+	var ua := Vector2(cos(ba.psi), sin(ba.psi)) * Bike.HALF_LENGTH
+	var ub := Vector2(cos(bb.psi), sin(bb.psi)) * Bike.HALF_LENGTH
+	var pa := Vector2(ba.s, ba.d)
+	var pb := Vector2(bb.s, bb.d)
+	var best := INF
+	var normal := Vector2.ZERO
+	for sa in [-1.0, 1.0]:
+		for sb in [-1.0, 1.0]:
+			var delta: Vector2 = (pb + ub * sb) - (pa + ua * sa)
 			var dist := delta.length()
-			if dist > 0.9 or dist < 0.001: continue
-			var push := delta / dist * (0.9 - dist) * 0.5
-			ba.s -= push.x; ba.d -= push.y
-			bb.s += push.x; bb.d += push.y
-			# Trade a little speed: the one behind gets slowed by the one in front.
-			var avg := (ba.v + bb.v) * 0.5
-			ba.v = lerpf(ba.v, avg, 0.3)
-			bb.v = lerpf(bb.v, avg, 0.3)
+			if dist < best:
+				best = dist
+				normal = delta / dist if dist > 0.001 else Vector2(0, 1)
+	var overlap := Bike.RADIUS * 2.0 - best
+	if overlap <= 0.0: return
+	ba.s -= normal.x * overlap * 0.5; ba.d -= normal.y * overlap * 0.5
+	bb.s += normal.x * overlap * 0.5; bb.d += normal.y * overlap * 0.5
+	var va := Vector2(cos(ba.psi), sin(ba.psi)) * ba.v
+	var vb := Vector2(cos(bb.psi), sin(bb.psi)) * bb.v
+	var closing := (va - vb).dot(normal)
+	if closing <= 0.0: return
+	var impulse := closing * 0.75
+	va -= normal * impulse
+	vb += normal * impulse
+	for pair in [[ba, va], [bb, vb]]:
+		var bike: Bike = pair[0]
+		var vel: Vector2 = pair[1]
+		bike.v = maxf(0.0, vel.x) if vel.length() < 0.01 else vel.length()
+		if vel.length() > 0.5: bike.psi = clampf(atan2(vel.y, maxf(vel.x, 0.1)), -1.45, 1.45)
+		if closing > 3.5: bike.wobble = maxf(bike.wobble, 0.35)
+		if closing > 7.5 and bike.invulnerable <= 0.0 and randf() < 0.5:
+			Bike._crash(bike)
 
 ## Eliminations by the camera, finishes and the end of the round.
 func _referee() -> void:
@@ -341,7 +369,9 @@ func _referee() -> void:
 			return
 		var at := course.world(b.s, b.d, b.y + 0.8)
 		var screen := camera.unproject_position(at)
-		var gone := camera.is_position_behind(at) or screen.y > view.y + 12.0 or screen.x < -12.0 or screen.x > view.x + 12.0
+		var off := camera.is_position_behind(at) or screen.y < -12.0 or screen.y > view.y + 12.0 or screen.x < -12.0 or screen.x > view.x + 12.0
+		# Only falling behind counts: a leader can never ride off the front.
+		var gone := off and b.s < focus_s
 		p.offscreen = p.offscreen + PHYSICS_DT if gone else 0.0
 		if p.offscreen > 0.2:
 			p.out = true
@@ -385,7 +415,7 @@ func _update_camera(delta: float) -> void:
 		focus_s = lerpf(focus_s, Course.START_LINE + 2.0, 1.0 - exp(-delta * 3.0))
 	elif count > 0:
 		var target := lead
-		var follow := lerpf(focus_s, target, 1.0 - exp(-delta * 2.5))
+		var follow := lerpf(focus_s, target, 1.0 - exp(-delta * 4.0))
 		if phase == Phase.RACE:
 			var pace := minf(2.0 + race_time * 0.12, 9.5)
 			focus_s = maxf(focus_s + pace * delta, follow)
@@ -407,9 +437,13 @@ func _update_camera(delta: float) -> void:
 		camera.position = course.world(Course.START_LINE + 6.5, 5.0) + Vector3.UP * 5.5
 		camera.look_at(grid + Vector3.UP * 1.6, Vector3.UP)
 	else:
-		camera.position = focus - fwd * 7.0 + Vector3.UP * 24.0
-		camera.look_at(focus + fwd * 2.0, Vector3.UP)
-	sun.rotation = Vector3(deg_to_rad(-52.0), cam_yaw + deg_to_rad(140.0), 0)
+		# Downhill runs to the bottom right. The leader rides near that corner
+		# and sees least of what's coming; the pack behind sees it all.
+		var centre := course.world(focus_s - 11.0, focus_d, course.base_height(focus_s - 11.0)) if phase == Phase.RACE else focus
+		var up_dir := -fwd.rotated(Vector3.UP, deg_to_rad(-45.0))
+		camera.position = centre - up_dir * 13.0 + Vector3.UP * 28.0
+		camera.look_at(centre, up_dir)
+	sun.rotation = Vector3(deg_to_rad(-66.0), cam_yaw + deg_to_rad(140.0), 0)
 
 
 # ── Standalone join screen ───────────────────────────────────────────────────
