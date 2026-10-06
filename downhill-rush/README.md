@@ -11,6 +11,15 @@ code at runtime: low-poly flat-shaded terrain, trees, rocks and riders, with
 no textures or imported models. Each rider has a ring in their colour on the
 ground under them, which also shows where they will land mid-jump.
 
+Every rider is a big-headed chibi with eyes, a hat of their own (mohawk,
+horns, cat ears, propeller, unicorn horn, crown, antenna or rooster comb) and
+sometimes a cape or a backpack flag. Bots have names like Gnarly Gus, Sir Skid
+and Wobbles, and riders throw tailwhips on long jumps. The HUD is built from
+tilted sticker cards in Bungee Shade, Bungee and Lilita One, with a cheeky line
+for every elimination and win.
+
+![The riders](docs/screenshots/riders.jpg)
+
 ![Racing down Ember Peak](docs/screenshots/race.jpg)
 
 | | |
@@ -76,6 +85,7 @@ tools/shot.sh out.png --demo --skip=30                               # screensho
 
 `--skip=N` fast-forwards the race by N seconds, `--seed=N` fixes the mountain,
 `--shot-phase=join|countdown|race|round_over` and `--shot-air` pick the moment.
+`--showcase` points a close camera at the start grid to show off the riders.
 
 ## Not yet
 
@@ -84,4 +94,6 @@ tuned against bots and simulations, not real controllers.
 
 ## License
 
-See the repository license. The GameNight addon keeps its own license.
+See the repository license. The GameNight addon keeps its own license. The
+fonts in `assets/fonts` (Bungee, Bungee Shade and Lilita One) are under the SIL
+Open Font License; their license texts sit next to them.

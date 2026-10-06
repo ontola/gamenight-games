@@ -6,7 +6,7 @@ extends Node3D
 enum Phase { JOIN, COUNTDOWN, RACE, ROUND_OVER, MATCH_OVER, IDLE }
 
 const PALETTE := ["#ff7547", "#4cb5f5", "#ffd23f", "#7bd389", "#c77dff", "#ff5d8f", "#f2efe4", "#3ddbd9"]
-const BOT_NAMES := ["Ruby", "Moss", "Flint", "Juniper", "Scree", "Bramble", "Sky", "Pebble"]
+const BOT_NAMES := ["Gnarly Gus", "Mudpie", "Turbo Tess", "Sir Skid", "Wobbles", "Dusty", "Bonk", "Pebble"]
 const LENGTHS := {"short": 600.0, "medium": 800.0, "long": 1200.0}
 const SETTINGS := [
 	{"key": "rounds_to_win", "label": "Rounds to win", "kind": "number", "default": 3, "min": 1, "max": 9},
@@ -44,6 +44,7 @@ var _skip := 0.0
 var _shot_phase := "race"
 var _shot_frames := 0
 var _shot_air := false
+var _showcase := false
 var _out_order := 0
 var _rng := RandomNumberGenerator.new()
 var _join_pads := {}
@@ -87,6 +88,7 @@ func _parse_args() -> void:
 		elif arg.begins_with("--skip="): _skip = float(arg.substr(7))
 		elif arg.begins_with("--shot-phase="): _shot_phase = arg.substr(13)
 		elif arg == "--shot-air": _shot_air = true
+		elif arg == "--showcase": _showcase = true
 
 
 # ── Scene ────────────────────────────────────────────────────────────────────
@@ -179,18 +181,18 @@ func _spawn_riders() -> void:
 	var n := players.size()
 	for i in n:
 		var p: Dictionary = players[i]
-		var row := i / 4
-		var col := i % 4
-		var across := mini(n - row * 4, 4)
-		var d := (col - (across - 1) * 0.5) * 2.0
+		var row := i / 3
+		var col := i % 3
+		var across := mini(n - row * 3, 3)
+		var d := (col - (across - 1) * 0.5) * 2.4
 		p.bike = Bike.new()
-		p.bike.place(course, Course.START_LINE - 2.0 - row * 2.6, d, 0.0)
+		p.bike.place(course, Course.START_LINE - 2.0 - row * 3.2, d, 0.0)
 		p.out = false
 		p.finished = false
 		p.offscreen = 0.0
 		var view := RiderView.new()
 		_riders_root.add_child(view)
-		view.setup(p.color, p.name)
+		view.setup(p.color, p.name, i)
 		view.pose(p.bike, course, 0.0)
 		p.view = view
 		if p.bot: p.bot.line = d
@@ -224,7 +226,7 @@ func _end_round(winner: int) -> void:
 	round_winner = winner
 	var outs := []
 	for p in players: outs.append("%s:%s%s" % [p.name, "out%d" % p.out_rank if p.out else "in", "(%dx)" % p.bike.crashes])
-	print("Round %d on %s after %.1fs: winner %s  %s" % [round_number, hud._title.text, race_time, players[winner].name if winner >= 0 else "-", " ".join(outs)])
+	print("Round %d on %s after %.1fs: winner %s  %s" % [round_number, hud.title(), race_time, players[winner].name if winner >= 0 else "-", " ".join(outs)])
 	if winner >= 0:
 		players[winner].wins += 1
 		if players[winner].wins >= rounds_to_win: match_winner = winner
@@ -243,9 +245,17 @@ func _process(delta: float) -> void:
 			if phase_time >= 4.0: _start_round()
 		Phase.MATCH_OVER:
 			if phase_time >= 8.0: _start_match_again()
+	# Names show at the start, then only for riders about to drop off screen.
+	var names := phase != Phase.RACE or phase_time < 4.0
+	var view_size := get_viewport().get_visible_rect().size
 	for p in players:
 		if p.view and is_instance_valid(p.view):
 			p.view.pose(p.bike, course, delta)
+			var danger := false
+			if not names and not p.out:
+				var sp := camera.unproject_position(p.view.position)
+				danger = sp.y > view_size.y * 0.75 or sp.x < view_size.x * 0.08 or sp.x > view_size.x * 0.92
+			p.view.tag.visible = names or danger
 	_update_camera(delta)
 	hud.update(self, delta)
 	var shot_ready: bool = Phase.keys()[phase].to_lower() == _shot_phase and phase_time >= _shot_time
@@ -337,7 +347,7 @@ func _referee() -> void:
 			p.out = true
 			_out_order += 1
 			p.out_rank = _out_order
-			hud.toast("%s is out!" % p.name, p.color)
+			hud.eliminated(p.name, p.color)
 			hud.poof(screen.clamp(Vector2(30, 30), view - Vector2(30, 60)), p.color)
 			if p.view: p.view.visible = false
 			continue
@@ -389,8 +399,16 @@ func _update_camera(delta: float) -> void:
 	var fwd := Vector3(sin(cam_yaw), 0, cos(cam_yaw))
 	var focus := course.world(focus_s, focus_d, course.base_height(focus_s))
 	# Top-down, tilted just enough that jumps and trees keep their shape.
-	camera.position = focus - fwd * 8.0 + Vector3.UP * 27.0
-	camera.look_at(focus + fwd * 2.0, Vector3.UP)
+	if _showcase and phase != Phase.RACE:
+		# Screenshot helper: face the start grid to show off the riders.
+		var grid := course.world(Course.START_LINE - 3.5, 0.0)
+		var gate := mountain.get_node_or_null("Start")
+		if gate: gate.visible = false
+		camera.position = course.world(Course.START_LINE + 6.5, 5.0) + Vector3.UP * 5.5
+		camera.look_at(grid + Vector3.UP * 1.6, Vector3.UP)
+	else:
+		camera.position = focus - fwd * 7.0 + Vector3.UP * 24.0
+		camera.look_at(focus + fwd * 2.0, Vector3.UP)
 	sun.rotation = Vector3(deg_to_rad(-52.0), cam_yaw + deg_to_rad(140.0), 0)
 
 
