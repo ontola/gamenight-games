@@ -1,0 +1,46 @@
+config_version=5
+
+[application]
+config/name="Downhill Rush"
+config/description="Couch multiplayer downhill mountain biking. Stay on screen, reach the valley first."
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.5", "GL Compatibility")
+config/icon="res://assets/icon.svg"
+
+[autoload]
+
+GameNight="*res://addons/gamenight/gamenight.gd"
+GameNightScreen="*res://addons/gamenight/screen.gd"
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/size/window_width_override=1440
+window/size/window_height_override=810
+window/stretch/mode="canvas_items"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/gamenight/plugin.cfg")
+
+[gamenight]
+
+game_id="downhill-rush"
+
+[physics]
+
+common/physics_ticks_per_second=120
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=2
+lights_and_shadows/directional_shadow/size=4096
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+environment/defaults/default_clear_color=Color(0.72,0.82,0.9,1)
+
+[audio]
+
+driver/enable_input=false

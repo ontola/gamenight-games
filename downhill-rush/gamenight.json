@@ -1,0 +1,29 @@
+{
+  "id": "downhill-rush",
+  "title": "Downhill Rush",
+  "tagline": "Everyone rides the same mountain on one screen. Fall off the bottom of the screen and you're out.",
+  "developer": "Joep Meindertsma",
+  "players": {
+    "min": 1,
+    "max": 8,
+    "best": 4
+  },
+  "match_minutes": 4,
+  "price": "free",
+  "tags": [
+    "racing",
+    "mountain-bike",
+    "party",
+    "versus",
+    "godot"
+  ],
+  "emoji": "🚵",
+  "color": "#d29b62",
+  "integration": {
+    "level": "integrated",
+    "protocol": 1
+  },
+  "links": {
+    "source": "https://github.com/ontola/gamenight-games/tree/main/downhill-rush"
+  }
+}
