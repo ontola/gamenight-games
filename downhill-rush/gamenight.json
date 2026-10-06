@@ -1,7 +1,7 @@
 {
   "id": "downhill-rush",
   "title": "Downhill Rush",
-  "tagline": "Everyone rides the same mountain on one screen. Fall off the bottom of the screen and you're out.",
+  "tagline": "Top-down BMX downhill survival race on one screen. Fall off the bottom of the screen and you're out.",
   "developer": "Joep Meindertsma",
   "players": {
     "min": 1,
@@ -12,7 +12,8 @@
   "price": "free",
   "tags": [
     "racing",
-    "mountain-bike",
+    "bmx",
+    "survival",
     "party",
     "versus",
     "godot"

@@ -1,8 +1,10 @@
 class_name RiderView
 extends Node3D
-## A low-poly rider on a bike, posed from a Bike state each frame.
+## A low-poly BMX rider, posed from a Bike state each frame.
 
-const SCALE := 1.45
+const SCALE := 2.0
+const WHEEL := 0.27
+const WHEELBASE := 0.98
 const DARK := Color(0.2, 0.21, 0.25)
 const SKIN := Color(0.93, 0.76, 0.62)
 
@@ -13,6 +15,7 @@ var front_wheel: Node3D
 var rear_wheel: Node3D
 var tag: Label3D
 var dust: CPUParticles3D
+var marker: MeshInstance3D
 var _was_crashed := false
 var _rng := RandomNumberGenerator.new()
 
@@ -25,14 +28,18 @@ func setup(p_color: Color, p_name: String) -> void:
 	var frame := MeshInstance3D.new()
 	frame.mesh = _frame_mesh()
 	body.add_child(frame)
-	front_wheel = _wheel(Vector3(0, 0.36, 0.56))
-	rear_wheel = _wheel(Vector3(0, 0.36, -0.56))
+	front_wheel = _wheel(Vector3(0, WHEEL, WHEELBASE * 0.5))
+	rear_wheel = _wheel(Vector3(0, WHEEL, -WHEELBASE * 0.5))
 	rider = Node3D.new()
 	body.add_child(rider)
 	var rider_mesh := MeshInstance3D.new()
 	rider_mesh.mesh = _rider_mesh()
 	rider.add_child(rider_mesh)
 	body.scale = Vector3.ONE * SCALE
+	marker = MeshInstance3D.new()
+	marker.mesh = _marker_mesh()
+	marker.top_level = true
+	add_child(marker)
 	tag = Label3D.new()
 	tag.text = p_name + "\n▼"
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -44,7 +51,8 @@ func setup(p_color: Color, p_name: String) -> void:
 	tag.outline_modulate = Color(0.08, 0.09, 0.12, 0.9)
 	tag.no_depth_test = true
 	tag.render_priority = 10
-	tag.position = Vector3(0, 3.2, 0)
+	tag.position = Vector3(0, 1.0, 0)
+	tag.offset = Vector2(0, 120)
 	tag.line_spacing = -8
 	add_child(tag)
 	dust = CPUParticles3D.new()
@@ -86,9 +94,11 @@ func _wheel(at: Vector3) -> Node3D:
 	pivot.position = at
 	body.add_child(pivot)
 	var lp := LowPoly.new()
-	lp.ring(Vector3.ZERO, 0.32, 0.055, DARK, 12)
-	lp.beam(Vector3(0, -0.3, 0), Vector3(0, 0.3, 0), 0.025, Color(0.75, 0.75, 0.78))
-	lp.beam(Vector3(0, 0, -0.3), Vector3(0, 0, 0.3), 0.025, Color(0.75, 0.75, 0.78))
+	# 20-inch BMX wheel: fat tyre, mag-style spokes in the frame colour.
+	lp.ring(Vector3.ZERO, WHEEL - 0.05, 0.06, DARK, 12)
+	for k in 3:
+		var a := TAU * k / 3.0
+		lp.beam(Vector3.ZERO, Vector3(0, cos(a), sin(a)) * (WHEEL - 0.08), 0.04, color.darkened(0.2))
 	var mi := MeshInstance3D.new()
 	mi.mesh = lp.commit()
 	pivot.add_child(mi)
@@ -97,53 +107,85 @@ func _wheel(at: Vector3) -> Node3D:
 func _frame_mesh() -> ArrayMesh:
 	var lp := LowPoly.new()
 	var paint := color
-	var bb := Vector3(0, 0.38, 0.0)
-	var seat := Vector3(0, 0.88, -0.18)
-	var head := Vector3(0, 0.95, 0.42)
-	lp.beam(bb, seat, 0.07, paint)                       # seat tube
-	lp.beam(seat, head, 0.07, paint)                     # top tube
-	lp.beam(bb, head - Vector3(0, 0.12, 0), 0.08, paint) # down tube
-	lp.beam(bb, Vector3(0, 0.36, -0.56), 0.05, paint)    # chain stay
-	lp.beam(seat, Vector3(0, 0.36, -0.56), 0.05, paint)  # seat stay
-	lp.beam(head, Vector3(0, 0.36, 0.56), 0.06, DARK)    # fork
-	lp.beam(head, head + Vector3(0, 0.18, -0.04), 0.05, DARK)
-	lp.beam(head + Vector3(-0.38, 0.18, -0.04), head + Vector3(0.38, 0.18, -0.04), 0.04, DARK)
-	lp.box(seat + Vector3(0, 0.05, -0.02), Vector3(0.12, 0.05, 0.28), DARK)
+	var rear := Vector3(0, WHEEL, -WHEELBASE * 0.5)
+	var front := Vector3(0, WHEEL, WHEELBASE * 0.5)
+	var bb := Vector3(0, WHEEL + 0.03, -0.05)
+	var seat := Vector3(0, 0.62, -0.18)
+	var head := Vector3(0, 0.66, 0.36)
+	lp.beam(bb, seat, 0.07, paint)                       # short seat tube
+	lp.beam(seat, head, 0.075, paint)                    # top tube
+	lp.beam(bb, head - Vector3(0, 0.08, 0), 0.085, paint) # down tube
+	lp.beam(bb, rear, 0.055, paint)                      # chain stay
+	lp.beam(seat, rear, 0.05, paint)                     # seat stay
+	lp.beam(head, front, 0.06, DARK)                     # fork
+	lp.beam(head, head + Vector3(0, 0.3, -0.06), 0.05, DARK) # tall BMX stem and riser bars
+	lp.beam(head + Vector3(-0.34, 0.3, -0.06), head + Vector3(0.34, 0.3, -0.06), 0.045, DARK)
+	lp.beam(head + Vector3(0, 0.12, -0.03), head + Vector3(0, 0.3, -0.06), 0.03, DARK)
+	lp.box(seat + Vector3(0, 0.03, -0.02), Vector3(0.12, 0.05, 0.24), DARK)
+	# Pegs on both axles and a number plate on the bars, readable from above.
+	for axle in [rear, front]:
+		lp.beam(axle + Vector3(-0.2, 0, 0), axle + Vector3(0.2, 0, 0), 0.06, Color(0.75, 0.75, 0.78))
+	lp.box(head + Vector3(0, 0.22, 0.02), Vector3(0.36, 0.26, 0.03), Color(0.98, 0.97, 0.92), Basis(Vector3.RIGHT, -0.25))
 	return lp.commit()
 
+## A BMX rider stands on the pedals: knees bent, weight forward, elbows out.
 func _rider_mesh() -> ArrayMesh:
 	var lp := LowPoly.new()
 	var jersey := color
-	var hip := Vector3(0, 1.02, -0.12)
-	var shoulder := Vector3(0, 1.42, 0.2)
-	var hands := Vector3(0, 1.13, 0.38)
+	var hip := Vector3(0, 1.0, -0.2)
+	var shoulder := Vector3(0, 1.42, 0.12)
+	var hands := Vector3(0, 0.96, 0.3)
 	for side in [-1.0, 1.0]:
-		var x: float = side * 0.13
-		var knee := Vector3(x * 1.3, 0.78, 0.18)
-		var foot := Vector3(x, 0.4, 0.02 + side * 0.08)
+		var x: float = side * 0.14
+		var knee := Vector3(x * 1.4, 0.72, 0.08)
+		var foot := Vector3(x * 1.2, WHEEL + 0.05, -0.05 + side * 0.06)
 		lp.beam(hip + Vector3(x, 0, 0), knee, 0.13, DARK)
 		lp.beam(knee, foot, 0.11, DARK)
-		lp.box(foot + Vector3(0, -0.02, 0.04), Vector3(0.1, 0.07, 0.2), Color(0.15, 0.15, 0.17))
-		var elbow := Vector3(side * 0.24, 1.22, 0.24)
-		lp.beam(shoulder + Vector3(side * 0.18, 0, 0), elbow, 0.1, jersey)
+		lp.box(foot + Vector3(0, -0.02, 0.04), Vector3(0.11, 0.08, 0.22), Color(0.95, 0.95, 0.92))
+		var elbow := Vector3(side * 0.34, 1.16, 0.12)
+		lp.beam(shoulder + Vector3(side * 0.19, 0, 0), elbow, 0.1, jersey)
 		lp.beam(elbow, hands + Vector3(side * 0.3, 0, 0), 0.09, jersey.darkened(0.05))
 	lp.beam(hip, shoulder, 0.36, jersey)
-	lp.box(shoulder + Vector3(0, -0.05, -0.02), Vector3(0.44, 0.16, 0.22), jersey)
-	# Number plate: a white board on the bars, readable from above.
-	var head := shoulder + Vector3(0, 0.25, 0.12)
-	lp.blob(head, Vector3(0.13, 0.15, 0.14), SKIN, _rng, 3, 6, 0.03)
-	lp.blob(head + Vector3(0, 0.05, -0.02), Vector3(0.17, 0.14, 0.2), color.darkened(0.05), _rng, 3, 7, 0.03)
-	lp.box(head + Vector3(0, 0.12, 0.18), Vector3(0.26, 0.03, 0.1), color.darkened(0.25))
-	lp.box(head + Vector3(0, -0.02, 0.14), Vector3(0.2, 0.06, 0.04), Color(0.2, 0.22, 0.28))
+	lp.box(shoulder + Vector3(0, -0.04, -0.02), Vector3(0.46, 0.16, 0.22), jersey)
+	# Full-face helmet in the player colour with a stripe: the part you see most from above.
+	var head := shoulder + Vector3(0, 0.24, 0.1)
+	lp.blob(head, Vector3(0.19, 0.18, 0.21), color.darkened(0.05), _rng, 3, 7, 0.03)
+	lp.box(head + Vector3(0, 0.15, 0.0), Vector3(0.07, 0.06, 0.4), Color(0.98, 0.97, 0.92))
+	lp.box(head + Vector3(0, -0.02, 0.17), Vector3(0.24, 0.08, 0.06), Color(0.2, 0.22, 0.28))
+	lp.box(head + Vector3(0, -0.12, 0.17), Vector3(0.18, 0.08, 0.08), color.darkened(0.3))
 	return lp.commit()
+
+## A disc of the player's colour on the ground under the rider. From straight
+## above it says who is who, and in the air it shows where you will land.
+func _marker_mesh() -> ArrayMesh:
+	var lp := LowPoly.new()
+	var n := 20
+	for i in n:
+		var a0 := TAU * i / n
+		var a1 := TAU * (i + 1) / n
+		var o0 := Vector3(cos(a0), 0, sin(a0))
+		var o1 := Vector3(cos(a1), 0, sin(a1))
+		lp.quad(o0 * 1.25, o1 * 1.25, o1 * 1.6, o0 * 1.6, Color.WHITE)
+	var mesh := lp.commit()
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(color.r, color.g, color.b, 0.85)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.no_depth_test = true
+	mat.render_priority = 5
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mesh.surface_set_material(0, mat)
+	return mesh
 
 func pose(b: Bike, c: Course, delta: float) -> void:
 	position = c.world(b.s, b.d, b.y)
+	marker.global_position = c.world(b.s, b.d) + Vector3(0, 0.12, 0)
+	marker.visible = not b.crashed
 	# Our track frame has +d on the right, so heading turns the other way.
 	var yaw_world := c.heading(b.s) - b.psi
 	rotation = Vector3(0, yaw_world, 0)
 	body.rotation = Vector3(-b.pitch, 0, b.lean)
-	var spin := b.v / (0.36 * SCALE) * delta
+	var spin := b.v / (WHEEL * SCALE) * delta
 	front_wheel.rotate_x(spin)
 	rear_wheel.rotate_x(spin)
 	if b.crashed:

@@ -133,7 +133,7 @@ func _build_environment() -> void:
 	sun.shadow_blur = 1.5
 	add_child(sun)
 	camera = Camera3D.new()
-	camera.fov = 50.0
+	camera.fov = 52.0
 	camera.near = 0.5
 	camera.far = 400.0
 	add_child(camera)
@@ -359,7 +359,7 @@ func _last_out() -> int:
 
 # ── Camera ───────────────────────────────────────────────────────────────────
 
-## A fixed-height chase camera that follows the leader down the mountain.
+## A top-down camera that follows the leader down the mountain.
 ## It never backs up and creeps forward on its own, so stragglers drop off
 ## the bottom edge.
 func _update_camera(delta: float) -> void:
@@ -374,7 +374,7 @@ func _update_camera(delta: float) -> void:
 	if phase in [Phase.COUNTDOWN, Phase.JOIN, Phase.IDLE]:
 		focus_s = lerpf(focus_s, Course.START_LINE + 2.0, 1.0 - exp(-delta * 3.0))
 	elif count > 0:
-		var target := lead + 4.0
+		var target := lead
 		var follow := lerpf(focus_s, target, 1.0 - exp(-delta * 2.5))
 		if phase == Phase.RACE:
 			var pace := minf(2.0 + race_time * 0.12, 9.5)
@@ -388,9 +388,10 @@ func _update_camera(delta: float) -> void:
 	cam_yaw = lerp_angle(cam_yaw, yaw_target, 1.0 - exp(-delta * 1.8))
 	var fwd := Vector3(sin(cam_yaw), 0, cos(cam_yaw))
 	var focus := course.world(focus_s, focus_d, course.base_height(focus_s))
-	camera.position = focus - fwd * 23.0 + Vector3.UP * 21.0
-	camera.look_at(focus + fwd * 9.0 + Vector3.DOWN * 3.0, Vector3.UP)
-	sun.rotation = Vector3(deg_to_rad(-38.0), cam_yaw + deg_to_rad(140.0), 0)
+	# Top-down, tilted just enough that jumps and trees keep their shape.
+	camera.position = focus - fwd * 8.0 + Vector3.UP * 27.0
+	camera.look_at(focus + fwd * 2.0, Vector3.UP)
+	sun.rotation = Vector3(deg_to_rad(-52.0), cam_yaw + deg_to_rad(140.0), 0)
 
 
 # ── Standalone join screen ───────────────────────────────────────────────────

@@ -1,14 +1,15 @@
 # Downhill Rush
 
-A couch party game for GameNight: everyone rides the same procedurally
-generated mountain on one shared screen. The camera follows the leader and
-never waits. Fall behind, crash once too often or take the scenic route and
+A top-down BMX downhill survival race for GameNight: everyone rides the same
+procedurally generated mountain on one shared screen, seen from above. The
+camera follows the leader and never waits. Fall behind, crash once too often or take the scenic route and
 you drop off the bottom of the screen: you're out. Last rider standing, or
 first through the finish gate, takes the round. First to three rounds wins.
 
 Godot 4.5, GL Compatibility renderer, 1 to 8 riders. Everything is built from
 code at runtime: low-poly flat-shaded terrain, trees, rocks and riders, with
-no textures or imported models.
+no textures or imported models. Each rider has a ring in their colour on the
+ground under them, which also shows where they will land mid-jump.
 
 ![Racing down Ember Peak](docs/screenshots/race.jpg)
 
