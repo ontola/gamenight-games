@@ -23,7 +23,7 @@ func _draw() -> void:
 		var col: Color = p.color
 		col.a = 1.0 - p.t / 0.8
 		draw_arc(p.at, r, 0, TAU, 32, col, 8.0 * (1.0 - p.t), true)
-		draw_circle(p.at, r * 0.35, Color(1, 1, 1, col.a * 0.6))
+		draw_circle(p.at, r * 0.35, Color(1, 1, 1, col.a * 0.6), true, -1.0, true)
 
 ## A strip across the top: the run from start to finish with each rider's
 ## position, so everyone can see who is leading and how far is left.
@@ -48,8 +48,8 @@ func _draw_progress() -> void:
 		var col: Color = p.color
 		if p.out:
 			col = Color(0.55, 0.55, 0.58, 0.8)
-		draw_circle(Vector2(px, y), 11.0, Color(0.12, 0.13, 0.17))
-		draw_circle(Vector2(px, y), 8.0, col)
+		draw_circle(Vector2(px, y), 11.0, Color(0.12, 0.13, 0.17), true, -1.0, true)
+		draw_circle(Vector2(px, y), 8.0, col, true, -1.0, true)
 
 func _progress(s: float) -> float:
 	return clampf((s - Course.START_LINE) / (course.length - Course.START_LINE), 0.0, 1.0)

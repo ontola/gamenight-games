@@ -5,7 +5,8 @@ extends Node3D
 const SCALE := 2.2
 const WHEEL := 0.27
 const WHEELBASE := 0.98
-const DARK := Color(0.2, 0.21, 0.25)
+const DARK := Color(0.13, 0.13, 0.15)
+const RIM := Color(0.78, 0.8, 0.84)
 
 const SKINS := [Color(0.93, 0.76, 0.62), Color(0.62, 0.43, 0.3), Color(0.8, 0.6, 0.45), Color(0.42, 0.29, 0.21)]
 const TROUSERS := [Color(0.35, 0.45, 0.65), Color(0.18, 0.18, 0.2), Color(0.72, 0.62, 0.45), Color(0.45, 0.5, 0.42)]
@@ -22,7 +23,6 @@ var front_wheel: Node3D
 var rear_wheel: Node3D
 var tag: Label3D
 var dust: CPUParticles3D
-var marker: MeshInstance3D
 var _was_crashed := false
 var _whip := 0.0
 var _whip_rate := 0.0
@@ -51,10 +51,6 @@ func setup(p_color: Color, p_name: String, p_style: int = 0) -> void:
 	rider_mesh.mesh = _rider_mesh()
 	rider.add_child(rider_mesh)
 	body.scale = Vector3.ONE * SCALE
-	marker = MeshInstance3D.new()
-	marker.mesh = _marker_mesh()
-	marker.top_level = true
-	add_child(marker)
 	tag = Label3D.new()
 	tag.text = p_name.to_upper()
 	tag.font = Hud.font_bold()
@@ -109,11 +105,15 @@ func _wheel(at: Vector3) -> Node3D:
 	pivot.position = at
 	bike.add_child(pivot)
 	var lp := LowPoly.new()
-	# 20-inch BMX wheel: fat tyre, mag-style spokes in the frame colour.
-	lp.ring(Vector3.ZERO, WHEEL - 0.05, 0.06, DARK, 12)
-	for k in 3:
-		var a := TAU * k / 3.0
-		lp.beam(Vector3.ZERO, Vector3(0, cos(a), sin(a)) * (WHEEL - 0.08), 0.04, color.darkened(0.2))
+	# 20-inch BMX wheel: knobbly tyre, silver rim, hub and laced spokes.
+	var tyre := WHEEL - 0.035
+	lp.ring(Vector3.ZERO, tyre, 0.035, DARK, 20)
+	lp.ring(Vector3.ZERO, tyre - 0.045, 0.012, RIM, 20)
+	lp.beam(Vector3(-0.035, 0, 0), Vector3(0.035, 0, 0), 0.035, RIM.darkened(0.3))
+	for k in 16:
+		var a := TAU * k / 16.0
+		var side := 0.025 if k % 2 == 0 else -0.025
+		lp.beam(Vector3(side, 0, 0), Vector3(0, cos(a + 0.2), sin(a + 0.2)) * (tyre - 0.05), 0.008, RIM.darkened(0.15))
 	var mi := MeshInstance3D.new()
 	mi.mesh = lp.commit()
 	pivot.add_child(mi)
@@ -192,32 +192,10 @@ func _rider_mesh() -> ArrayMesh:
 
 const HEAD_AT := Vector3(0, 1.5, 0.12)
 
-## A disc of the player's colour on the ground under the rider. From straight
-## above it says who is who, and in the air it shows where you will land.
-func _marker_mesh() -> ArrayMesh:
-	var lp := LowPoly.new()
-	var n := 20
-	for i in n:
-		var a0 := TAU * i / n
-		var a1 := TAU * (i + 1) / n
-		var o0 := Vector3(cos(a0), 0, sin(a0))
-		var o1 := Vector3(cos(a1), 0, sin(a1))
-		lp.quad(o0 * 1.3, o1 * 1.3, o1 * 1.55, o0 * 1.55, Color.WHITE)
-	var mesh := lp.commit()
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(color.r, color.g, color.b, 0.85)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mesh.surface_set_material(0, mat)
-	return mesh
-
 func pose(b: Bike, c: Course, delta: float) -> void:
 	position = c.world(b.s, b.d, b.y)
-	marker.global_position = c.world(b.s, b.d) + Vector3(0, 0.18, 0)
-	marker.visible = not b.crashed
 	# Our track frame has +d on the right, so heading turns the other way.
-	var yaw_world := c.heading(b.s) - b.psi
+	var yaw_world := c.heading(b.s) - b.psi - b.yaw
 	rotation = Vector3(0, yaw_world, 0)
 	body.rotation = Vector3(-b.pitch, 0, b.lean)
 	_time += delta

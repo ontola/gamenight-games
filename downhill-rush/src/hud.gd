@@ -269,6 +269,8 @@ func update(main: Node, delta: float) -> void:
 		t.scale = Vector2.ONE * (1.0 + 0.3 * exp(-age * 10.0))
 		if age > 3.0: t.queue_free()
 
+## Riders in race order: whoever is furthest down the mountain on top, and
+## the ones who are out below them, crossed through.
 func _refresh_scores(main: Node) -> void:
 	var players: Array = main.players
 	while _scores.get_child_count() < players.size():
@@ -276,23 +278,40 @@ func _refresh_scores(main: Node) -> void:
 		row.alignment = BoxContainer.ALIGNMENT_END
 		var name := _label(22, INK, font_bold())
 		var card := _sticker(name, PAPER, 0.0)
+		var strike := ColorRect.new()
+		strike.color = Color(INK, 0.85)
+		strike.anchor_left = -0.03
+		strike.anchor_right = 1.03
+		strike.anchor_top = 0.5
+		strike.anchor_bottom = 0.5
+		strike.offset_top = -2
+		strike.offset_bottom = 3
+		strike.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		name.add_child(strike)
 		row.add_child(card)
 		_scores.add_child(row)
 	while _scores.get_child_count() > players.size():
 		var last := _scores.get_child(_scores.get_child_count() - 1)
 		_scores.remove_child(last)
 		last.queue_free()
-	for i in players.size():
-		var p: Dictionary = players[i]
+	var order: Array = players.duplicate()
+	order.sort_custom(func(a, b):
+		if a.out != b.out: return not a.out
+		if a.out: return a.out_rank > b.out_rank
+		return a.bike != null and b.bike != null and a.bike.s > b.bike.s)
+	for i in order.size():
+		var p: Dictionary = order[i]
 		var card: PanelContainer = _scores.get_child(i).get_child(0)
 		var l: Label = card.get_child(0)
 		var pips := ""
 		for k in main.rounds_to_win: pips += "★" if k < p.wins else "·"
-		l.text = "%s %s" % [p.name.to_upper(), pips]
+		var place := "%d " % (i + 1) if main.phase == 2 and not p.out else ""
+		l.text = "%s%s %s" % [place, p.name.to_upper(), pips]
 		var style: StyleBoxFlat = card.get_theme_stylebox("panel")
 		style.bg_color = p.color if not p.out else Color(0.55, 0.55, 0.58)
 		card.rotation_degrees = 2.0 if i % 2 == 0 else -2.0
-		card.modulate.a = 0.6 if p.out else 1.0
+		card.modulate.a = 0.7 if p.out else 1.0
+		l.get_child(0).visible = p.out
 
 func toast(text: String, color: Color) -> void:
 	var l := _label(26, INK, font_bold())

@@ -9,6 +9,7 @@ var _target_d := 0.0
 var _rethink := 0.0
 var _caution := 0.0     ## > 0 while the chosen line has a ledge coming up.
 var _stuck := 0.0
+var _progress_s := 0.0
 var _rng := RandomNumberGenerator.new()
 
 func _init(p_seed: int, p_skill: float) -> void:
@@ -22,11 +23,16 @@ func start_at(d: float) -> void:
 func think(b: Bike, c: Course, dt: float) -> Dictionary:
 	if b.crashed: return {}
 	# Stuck against something: pick a line well to one side.
-	_stuck = _stuck + dt if b.v < 1.5 else 0.0
+	if b.s > _progress_s + 1.0 or b.s < _progress_s - 5.0:
+		_progress_s = b.s
+		_stuck = 0.0
+	else:
+		_stuck += dt
 	if _stuck > 0.8:
 		_stuck = 0.0
-		_target_d = b.d + (3.0 if _rng.randf() < 0.5 else -3.0)
-		_rethink = 1.2
+		_progress_s = b.s
+		_target_d = b.d + (4.0 if _rng.randf() < 0.5 else -4.0)
+		_rethink = 1.5
 	_rethink -= dt
 	if _rethink <= 0.0:
 		_rethink = lerpf(0.5, 0.2, skill) + _rng.randf() * 0.15
@@ -37,6 +43,11 @@ func think(b: Bike, c: Course, dt: float) -> Dictionary:
 	if _caution > 0.0: target_v = minf(target_v, 4.5 + skill)
 	if c.in_water(b.s + 4.0, b.d): target_v = minf(target_v, 7.0)
 	var look := 5.0 + b.v * 0.4
+	# In a gully there is only one way down: follow the path.
+	var gully := c.section_at(b.s + look, "gully")
+	if not gully.is_empty() and c.gully_fade(gully, b.s + look) > 0.2:
+		_target_d = c.gully_line(gully, b.s + look)
+		target_v = minf(target_v, 6.0 + skill * 1.5)
 	var desired := atan2(_target_d - b.d, look)
 	var across := (c.height_rough(b.s, b.d + 0.5) - c.height_rough(b.s, b.d - 0.5))
 	var feed := c.curvature(b.s) * b.v / maxf(0.4, minf(2.3, 15.0 / (b.v + 4.0)))
@@ -68,6 +79,9 @@ func think(b: Bike, c: Course, dt: float) -> Dictionary:
 			var ahead: float = o.s - b.s
 			if o.r < 0.6 and ahead > 0.6 and ahead < 1.2 + b.v * 0.12 and absf(o.d - b.d) < o.r + 0.4:
 				hop = _rng.randf() < 0.4 + skill * 0.6
+	if not b.grounded:
+		# In the air: square the bike up for the landing and keep off the levers.
+		return {"steer": clampf(-b.yaw * 3.0, -1.0, 1.0)}
 	return {"steer": steer, "pedal": pedal, "brake": brake, "hop": hop}
 
 ## Score lines across the slope over the next stretch and aim for the best.

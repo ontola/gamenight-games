@@ -3,7 +3,9 @@ extends RefCounted
 ## Reads one rider's controls from a GameNight seat, a local pad or a
 ## keyboard half, and turns them into bike input with press edges.
 ##
-## Pad: left stick steers and tilts in the air, A hops, RT/X pedals, LT/B brakes.
+## Pad: point the left stick where you want to go on screen, A hops, RT/X
+## pedals, LT/B brakes. In the air the stick twists the bike and the brake
+## lifts the nose.
 
 enum Source { SEAT, PAD, KEYS }
 
@@ -32,19 +34,19 @@ func raw() -> Dictionary:
 			if GameNight.button(frame, 13): lx = 1.0
 			var lt := maxf(0.0, GameNight.axis(frame, 4))
 			var rt := maxf(0.0, GameNight.axis(frame, 5))
-			return _shape(lx, ly, rt, lt, GameNight.button(frame, 0), GameNight.button(frame, 1),
+			return _aim(_shape(lx, ly, rt, lt, GameNight.button(frame, 0), GameNight.button(frame, 1),
 				GameNight.button(frame, 2) or GameNight.button(frame, 5) or GameNight.button(frame, 10),
-				GameNight.button(frame, 4) or GameNight.button(frame, 11), GameNight.button(frame, 7))
+				GameNight.button(frame, 4) or GameNight.button(frame, 11), GameNight.button(frame, 7)), lx, ly)
 		Source.PAD:
 			var lx := Input.get_joy_axis(id, JOY_AXIS_LEFT_X)
 			var ly := Input.get_joy_axis(id, JOY_AXIS_LEFT_Y)
 			if Input.is_joy_button_pressed(id, JOY_BUTTON_DPAD_LEFT): lx = -1.0
 			if Input.is_joy_button_pressed(id, JOY_BUTTON_DPAD_RIGHT): lx = 1.0
-			return _shape(lx, ly, Input.get_joy_axis(id, JOY_AXIS_TRIGGER_RIGHT), Input.get_joy_axis(id, JOY_AXIS_TRIGGER_LEFT),
+			return _aim(_shape(lx, ly, Input.get_joy_axis(id, JOY_AXIS_TRIGGER_RIGHT), Input.get_joy_axis(id, JOY_AXIS_TRIGGER_LEFT),
 				Input.is_joy_button_pressed(id, JOY_BUTTON_A), Input.is_joy_button_pressed(id, JOY_BUTTON_B),
 				Input.is_joy_button_pressed(id, JOY_BUTTON_X) or Input.is_joy_button_pressed(id, JOY_BUTTON_RIGHT_SHOULDER) or Input.is_joy_button_pressed(id, JOY_BUTTON_DPAD_UP),
 				Input.is_joy_button_pressed(id, JOY_BUTTON_LEFT_SHOULDER) or Input.is_joy_button_pressed(id, JOY_BUTTON_DPAD_DOWN),
-				Input.is_joy_button_pressed(id, JOY_BUTTON_START))
+				Input.is_joy_button_pressed(id, JOY_BUTTON_START)), lx, ly)
 		_:
 			var k: Dictionary = KEYSETS[id]
 			var lx := float(Input.is_physical_key_pressed(k.right)) - float(Input.is_physical_key_pressed(k.left))
@@ -59,8 +61,12 @@ func _shape(lx: float, ly: float, rt: float, lt: float, a: bool, b: bool, x: boo
 	if absf(ly) < DEADZONE: ly = 0.0
 	var pedal := maxf(rt, 1.0 if x else 0.0)
 	var brake := maxf(lt, 1.0 if (b or lb) else 0.0)
-	# In the air, pull back for nose up and push forward to nose down.
-	return {"steer": lx, "pitch": ly, "pedal": pedal if pedal > 0.25 else 0.0, "brake": brake if brake > 0.25 else 0.0, "a": a, "start": start}
+	return {"steer": lx, "pedal": pedal if pedal > 0.25 else 0.0, "brake": brake if brake > 0.25 else 0.0, "a": a, "start": start}
+
+## The stick as a direction on screen; the game turns it into steering.
+func _aim(r: Dictionary, lx: float, ly: float) -> Dictionary:
+	r["stick"] = Vector2(lx, ly)
+	return r
 
 ## Bike input for this physics step, with `hop` true only on the press.
 func bike_input() -> Dictionary:

@@ -31,6 +31,13 @@ var curv := PackedFloat32Array()    ## Signed curvature (1/m), positive turns ri
 ## one the slope eases into a shelf, then drops off a ledge. Chutes are the
 ## few places the ledge is a rideable ramp instead.
 var bands: Array[Dictionary] = []
+## The run is a string of stretches, each with its own character, so no two
+## minutes ride the same: {kind, s, len, grade, ...}. Kinds: band (cliff),
+## turn (the valley swings hard to one side), flat (a bench to pedal across),
+## kicker (jumps built into the slope), gully (one narrow, steep path between
+## boulders), slalom (rows of trees and rocks with gaps), open (bare mountain).
+var sections: Array[Dictionary] = []
+var view := PackedFloat32Array()    ## Smoothed heading: the map's main direction, for the camera.
 ## Streams across the slope: {s, wiggle, phase}.
 var streams: Array[Dictionary] = []
 var obstacles: Array[Dictionary] = []   ## {s, d, r, h, kind}
@@ -52,48 +59,121 @@ func _init(p_seed: int = 1, p_length: float = 900.0) -> void:
 	_detail.seed = p_seed + 77
 	_detail.noise_type = FastNoiseLite.TYPE_VALUE
 	_detail.frequency = 0.35
+	_plan_sections()
 	_generate_line()
-	_place_bands()
 	_place_streams()
 	_place_obstacles()
 
 
 # ── Fall line ────────────────────────────────────────────────────────────────
 
+func _plan_sections() -> void:
+	var bag: Array[String] = []
+	var last := ""
+	var s := START_FLAT + 30.0
+	while s < length - 70.0:
+		if bag.is_empty():
+			bag = ["band", "band", "band", "turn", "turn", "flat", "kicker", "kicker", "gully", "slalom", "open"]
+			bag.shuffle()
+		var kind: String = bag.pop_back()
+		if kind == last and not bag.is_empty():
+			bag.push_front(kind)
+			kind = bag.pop_back()
+		last = kind
+		var sec := {"kind": kind, "s": s, "len": 30.0, "grade": -1.0}
+		match kind:
+			"band":
+				var big := _rng.randf() < 0.5
+				var h := _rng.randf_range(4.5, 7.0) if big else _rng.randf_range(1.4, 2.6)
+				# The shelf above a ledge rises out of the slope; keep it gentle
+				# enough that a rider who stalls there can still roll on.
+				var approach := maxf(_rng.randf_range(14.0, 20.0), h * 4.2)
+				var b := {"s": s + approach + 4.0, "h": h, "approach": approach, "chutes": []}
+				for k in (_rng.randi_range(1, 2) if big else _rng.randi_range(2, 3)):
+					b.chutes.append({"d": _rng.randf_range(-CORRIDOR + 4.0, CORRIDOR - 4.0), "w": _rng.randf_range(2.5, 4.5)})
+				bands.append(b)
+				sec.len = approach + 16.0
+				sec.grade = 0.42
+			"turn":
+				sec.len = _rng.randf_range(52.0, 60.0)
+				sec.angle = _rng.randf_range(1.0, 1.25)
+				sec.grade = _rng.randf_range(0.3, 0.45)
+			"flat":
+				sec.len = _rng.randf_range(25.0, 40.0)
+				sec.grade = 0.08
+			"kicker":
+				sec.len = 40.0
+				sec.grade = 0.34
+				sec.lips = []
+				var d0 := _rng.randf_range(-CORRIDOR + 6.0, CORRIDOR - 6.0)
+				for k in _rng.randi_range(1, 3):
+					var d := d0 + (k - 1) * _rng.randf_range(9.0, 12.0) * (1.0 if d0 < 0.0 else -1.0)
+					sec.lips.append({"s": s + 20.0 + _rng.randf_range(-4.0, 4.0), "d": clampf(d, -CORRIDOR + 4.0, CORRIDOR - 4.0),
+						"w": _rng.randf_range(2.5, 4.0), "h": _rng.randf_range(1.0, 1.6), "run": _rng.randf_range(5.0, 7.0)})
+			"gully":
+				sec.len = _rng.randf_range(55.0, 80.0)
+				sec.grade = 0.5
+				sec.d0 = _rng.randf_range(-7.0, 7.0)
+				sec.amp = _rng.randf_range(3.0, 6.0)
+				sec.freq = TAU / _rng.randf_range(26.0, 40.0)
+				sec.hw = 2.3
+			"slalom":
+				sec.len = _rng.randf_range(40.0, 55.0)
+				sec.grade = 0.36
+			"open":
+				sec.len = _rng.randf_range(20.0, 40.0)
+		sections.append(sec)
+		s += sec.len + _rng.randf_range(8.0, 18.0)
+
+func section_at(s: float, kind: String = "") -> Dictionary:
+	for sec in sections:
+		if s >= sec.s and s < sec.s + sec.len and (kind == "" or sec.kind == kind): return sec
+	return {}
+
 func _generate_line() -> void:
 	var n := int(total / DS) + 2
-	theta.resize(n); cx.resize(n); cz.resize(n); base.resize(n); curv.resize(n)
-	# The fall line bends gently, so the camera swings with the mountain.
+	theta.resize(n); cx.resize(n); cz.resize(n); base.resize(n); curv.resize(n); view.resize(n)
+	# Between the set pieces the fall line wanders gently.
 	var plan := PackedFloat32Array(); plan.resize(n)
 	var i := int(START_FLAT / DS)
-	var heading_budget := 0.0
 	var side := 1.0 if _rng.randf() < 0.5 else -1.0
 	while i < n:
-		i += _rng.randi_range(30, 90)
-		var radius := _rng.randf_range(70.0, 160.0)
-		var turn_len := _rng.randi_range(25, 55)
-		if absf(heading_budget) > 0.45: side = -signf(heading_budget)
-		elif _rng.randf() < 0.7: side = -side
-		var k := side / radius
+		i += _rng.randi_range(20, 60)
+		var radius := _rng.randf_range(80.0, 170.0)
+		var turn_len := _rng.randi_range(25, 50)
+		side = -side if _rng.randf() < 0.7 else side
 		for j in turn_len:
 			if i + j >= n: break
-			plan[i + j] = k * sin(float(j) / turn_len * PI)
-		heading_budget += k * turn_len * 0.64
+			plan[i + j] = side / radius * sin(float(j) / turn_len * PI)
 		i += turn_len
-	# Steep, steeper, and the odd bench to catch your breath.
+	# Steep, steeper, and the set pieces' own grades.
 	var grade := PackedFloat32Array(); grade.resize(n)
 	var g := 0.3
 	var target := 0.3
 	for j in n:
-		if j % 30 == 0: target = _rng.randf_range(0.28, 0.62) if _rng.randf() < 0.82 else 0.12
-		g = lerpf(g, target, 0.07)
-		grade[j] = 0.06 if j * DS < START_FLAT else (0.08 if j * DS > length + 8.0 else g)
+		var sj := j * DS
+		if j % 30 == 0: target = _rng.randf_range(0.28, 0.55)
+		var sec := section_at(sj)
+		var want: float = sec.grade if not sec.is_empty() and sec.grade >= 0.0 else target
+		g = lerpf(g, want, 0.12)
+		grade[j] = 0.06 if sj < START_FLAT else (0.08 if sj > length + 8.0 else g)
 	var th := 0.0
 	var x := 0.0
 	var z := 0.0
 	var y := 0.0
+	var turn_dir := {}
 	for j in n:
-		var th_next := clampf(th + plan[j] * DS, -1.2, 1.2)
+		var sj := j * DS
+		var k := plan[j]
+		var sec := section_at(sj, "turn")
+		if not sec.is_empty():
+			# A hard swing to one side, away from wherever the valley has wandered.
+			if not turn_dir.has(sec.s):
+				turn_dir[sec.s] = -signf(th) if absf(th) > 0.25 else (1.0 if _rng.randf() < 0.5 else -1.0)
+				sec.dir = turn_dir[sec.s]
+			var t: float = (sj - sec.s) / sec.len
+			k = turn_dir[sec.s] * sec.angle / (0.64 * sec.len) * sin(t * PI)
+		var th_next := clampf(th + k * DS, -1.3, 1.3)
 		curv[j] = (th_next - th) / DS
 		th = th_next
 		theta[j] = th
@@ -101,6 +181,16 @@ func _generate_line() -> void:
 		x += sin(th) * DS
 		z += cos(th) * DS
 		y -= grade[j] * DS
+	# The camera keeps to the valley's overall direction, so bends and swings
+	# show up on screen as riding off to one side.
+	var half := 110
+	for j in n:
+		var acc := 0.0
+		var cnt := 0
+		for q in range(maxi(0, j - half), mini(n, j + half + 1), 3):
+			acc += theta[q]
+			cnt += 1
+		view[j] = acc / cnt
 
 func _sample(arr: PackedFloat32Array, s: float) -> float:
 	var f := clampf(s / DS, 0.0, arr.size() - 1.001)
@@ -110,6 +200,7 @@ func _sample(arr: PackedFloat32Array, s: float) -> float:
 func heading(s: float) -> float: return _sample(theta, s)
 func curvature(s: float) -> float: return _sample(curv, s)
 func base_height(s: float) -> float: return _sample(base, s)
+func view_heading(s: float) -> float: return _sample(view, s)
 
 func forward(s: float) -> Vector3:
 	var th := heading(s)
@@ -145,8 +236,45 @@ func height(s: float, d: float) -> float:
 	h += wild * (_noise.get_noise_2d(s * 4.0, d * 4.0) * 1.9 + _noise.get_noise_2d(s * 14.0 + 300.0, d * 14.0) * 0.35)
 	h += wild * _detail.get_noise_2d(s, d) * 0.16
 	h += _bands_at(s, d)
+	h += _set_pieces_at(s, d)
 	h -= _stream_at(s, d)
 	return h
+
+## Kicker lips and gully banks.
+func _set_pieces_at(s: float, d: float) -> float:
+	var h := 0.0
+	for sec in sections:
+		if s < sec.s - 2.0 or s > sec.s + sec.len + 2.0: continue
+		if sec.kind == "kicker":
+			for lip in sec.lips:
+				var u: float = s - lip.s
+				if u < -lip.run or u > 0.6: continue
+				var side := 1.0 - smoothstep(lip.w, lip.w + 1.2, absf(d - lip.d))
+				if side <= 0.0: continue
+				# A ramp that kicks up at the end, then the lip drops away.
+				var up: float = lip.h * pow((u + lip.run) / lip.run, 2.2) if u <= 0.0 else lip.h * (1.0 - u / 0.6)
+				h += up * side
+		elif sec.kind == "gully":
+			var off := absf(d - gully_line(sec, s))
+			var e := gully_fade(sec, s)
+			h += e * smoothstep(sec.hw, sec.hw + 2.2, off) * (1.7 + 0.7 * _noise.get_noise_2d(s * 3.0 + 50.0, d * 3.0))
+	return h
+
+## Centre of the gully path at s.
+func gully_line(sec: Dictionary, s: float) -> float:
+	return sec.d0 + sec.amp * sin((s - sec.s) * sec.freq)
+
+func gully_fade(sec: Dictionary, s: float) -> float:
+	return smoothstep(sec.s, sec.s + 8.0, s) * (1.0 - smoothstep(sec.s + sec.len - 8.0, sec.s + sec.len, s))
+
+func on_path(s: float, d: float) -> bool:
+	var g := section_at(s, "gully")
+	if not g.is_empty() and gully_fade(g, s) > 0.3 and absf(d - gully_line(g, s)) < g.hw + 0.4: return true
+	var k := section_at(s, "kicker")
+	if not k.is_empty():
+		for lip in k.lips:
+			if s - lip.s > -lip.run - 2.0 and s - lip.s < 0.6 and absf(d - lip.d) < lip.w + 0.6: return true
+	return false
 
 func _bands_at(s: float, d: float) -> float:
 	var total_h := 0.0
@@ -220,6 +348,7 @@ func in_water(s: float, d: float) -> bool:
 ## What the ground is made of, for grip and for paint.
 func surface(s: float, d: float, slope: float = -1.0) -> int:
 	if in_water(s, d): return Surface.WATER
+	if on_path(s, d): return Surface.DIRT
 	if slope < 0.0: slope = gradient(s, d).length()
 	if slope > 1.3: return Surface.ROCK
 	if _wild(s) > 0.5 and _noise.get_noise_2d(s * 2.2 + 700.0, d * 2.2) > 0.32: return Surface.SCREE
@@ -238,27 +367,15 @@ func grip(s: float, d: float, slope: float = -1.0) -> float:
 
 # ── Cliff bands and streams ──────────────────────────────────────────────────
 
-func _place_bands() -> void:
-	var s := START_FLAT + 45.0
-	while s < length - 40.0:
-		var big := _rng.randf() < 0.45
-		var b := {"s": s, "h": _rng.randf_range(4.5, 7.0) if big else _rng.randf_range(1.4, 2.6),
-			"approach": _rng.randf_range(14.0, 24.0), "chutes": []}
-		# Big cliffs have one or two ways down; small ledges a few.
-		for k in (_rng.randi_range(1, 2) if big else _rng.randi_range(2, 3)):
-			b.chutes.append({"d": _rng.randf_range(-CORRIDOR + 4.0, CORRIDOR - 4.0), "w": _rng.randf_range(2.5, 4.5)})
-		bands.append(b)
-		s += _rng.randf_range(55.0, 95.0)
-
 func _place_streams() -> void:
 	var s := START_FLAT + 80.0
 	while s < length - 40.0:
 		var clear := true
-		for b in bands:
-			if s > b.s - b.approach - 6.0 and s < b.s + 8.0: clear = false
+		for sec in sections:
+			if sec.kind != "open" and sec.kind != "flat" and s > sec.s - 6.0 and s < sec.s + sec.len + 6.0: clear = false
 		if clear:
 			streams.append({"s": s, "wiggle": _rng.randf_range(0.08, 0.2), "phase": _rng.randf() * TAU})
-			s += _rng.randf_range(140.0, 220.0)
+			s += _rng.randf_range(120.0, 200.0)
 		else:
 			s += 10.0
 
@@ -271,6 +388,7 @@ func band_ahead(s: float, within: float) -> Dictionary:
 # ── Obstacles ────────────────────────────────────────────────────────────────
 
 func _place_obstacles() -> void:
+	_place_set_piece_obstacles()
 	var s := START_FLAT
 	while s < length - 10.0:
 		# Forest clumps with gaps to thread, boulder fields, loose rocks.
@@ -292,7 +410,51 @@ func _place_obstacles() -> void:
 			d += 3.0
 		s += 4.0
 
-func _add_obstacle(s: float, d: float, r: float, h: float, kind: String) -> void:
+## Gully banks thick with boulders and pines; slalom rows with a few gaps.
+func _place_set_piece_obstacles() -> void:
+	for sec in sections:
+		if sec.kind == "gully":
+			var s: float = sec.s + 6.0
+			while s < sec.s + sec.len - 4.0:
+				var mid := gully_line(sec, s)
+				var d := -CORRIDOR - 4.0
+				while d < CORRIDOR + 4.0:
+					var dd := d + _rng.randf_range(-0.6, 0.6)
+					var off := absf(dd - mid)
+					if off > sec.hw + 1.6 and _rng.randf() < 0.75:
+						if _rng.randf() < 0.4: _add_obstacle(s, dd, 0.45, 9.0, "tree", true)
+						else:
+							var r := _rng.randf_range(0.7, 1.5)
+							_add_obstacle(s, dd, r, r * 0.9, "rock", true)
+					elif off < sec.hw - 0.6 and _rng.randf() < 0.05:
+						_add_obstacle(s, dd, 0.4, 0.32, "rock", true)
+					d += 2.4
+				s += _rng.randf_range(2.2, 3.2)
+		elif sec.kind == "slalom":
+			var s: float = sec.s + 5.0
+			while s < sec.s + sec.len - 3.0:
+				var gaps: Array[float] = []
+				for k in _rng.randi_range(2, 3):
+					gaps.append(_rng.randf_range(-CORRIDOR + 3.0, CORRIDOR - 3.0))
+				var d := -CORRIDOR - 2.0
+				var tree := _rng.randf() < 0.5
+				while d < CORRIDOR + 2.0:
+					var open := false
+					for gd in gaps:
+						if absf(d - gd) < 2.2: open = true
+					if not open:
+						if tree: _add_obstacle(s + _rng.randf_range(-0.5, 0.5), d, 0.45, 9.0, "tree", true)
+						else:
+							var r := _rng.randf_range(0.8, 1.2)
+							_add_obstacle(s + _rng.randf_range(-0.5, 0.5), d, r, r * 0.9, "rock", true)
+					d += _rng.randf_range(2.0, 2.8)
+				s += _rng.randf_range(7.0, 9.0)
+
+func _add_obstacle(s: float, d: float, r: float, h: float, kind: String, set_piece := false) -> void:
+	if not set_piece:
+		var sec := section_at(s)
+		if not sec.is_empty() and sec.kind in ["gully", "slalom"]: return
+		if on_path(s, d) or on_path(s + 6.0, d): return
 	if s < START_FLAT + 8.0: return
 	if s > length - 12.0 and s < length + 6.0 and absf(d) < TRACK_HALF + 3.0: return
 	for b in bands:

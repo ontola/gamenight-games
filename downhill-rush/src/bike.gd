@@ -33,6 +33,8 @@ var crash_spin := Vector3.ZERO
 var skid := 0.0         ## How hard the tyres are sliding this step, 0..1.
 var skid_time := 0.0
 var crash_reason := ""
+var yaw := 0.0          ## Bike twisted away from the direction of travel (in the air).
+var severity := 0.0     ## How bad the last landing was; above 1 is a crash.
 
 func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
 	s = p_s
@@ -46,7 +48,7 @@ func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
 	crashed = false
 
 ## `input`: steer (-1..1, right positive), pedal (0..1), brake (0..1),
-## hop (bool, pressed this step), pitch (-1..1, nose up positive).
+## hop (bool, pressed this step). In the air brake lifts the nose.
 static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	b.hard_landing = false
 	b.landed = false
@@ -105,10 +107,15 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		b.air_time += dt
 		b.vy -= G * dt
 		b.v = maxf(0.0, b.v - 0.003 * b.v * b.v * dt)
-		b.psi += steer * 0.9 * dt
+		# In the air the stick twists the bike, not your path: land it
+		# straight or pay for it.
+		# Let go and it slowly squares up again by itself.
+		b.yaw = clampf(b.yaw + steer * 2.4 * dt, -1.6, 1.6)
+		if absf(steer) < 0.05: b.yaw = move_toward(b.yaw, 0.0, 0.8 * dt)
 		var flight := atan2(b.vy, maxf(b.v, 0.5))
 		b.pitch = lerpf(b.pitch, flight, minf(1.0, dt * 2.2))
-		b.pitch += float(input.get("pitch", 0.0)) * 2.6 * dt
+		# Grabbing the brake in the air lifts the nose for a back-wheel landing.
+		b.pitch += brake * 1.6 * dt
 		b.lean = lerpf(b.lean, steer * 0.3, minf(1.0, dt * 4.0))
 	# The track turns underneath a rider who keeps their heading.
 	b.psi -= k * b.v * cos(b.psi) * path_scale * dt
@@ -137,7 +144,7 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 			b.grounded = false
 			b.launched = true
 			b.air_time = 0.0
-		elif face > 0.85 and b.v > 5.0 and b.invulnerable <= 0.0:
+		elif face > 0.7 and face * b.v > 4.5 and b.invulnerable <= 0.0:
 			# Rode straight into a face (cased a jump).
 			_crash(b, "face")
 			return
@@ -151,6 +158,16 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 			if b.crashed: return
 	_collide_obstacles(b, c)
 
+## How bad a touchdown is, 0 for perfect. Three things count, and they add
+## up: how hard you hit the ground (speed into the slope), how far the bike's
+## pitch is from the slope (nose first is far worse than back wheel first),
+## and how crooked the bike is to where you're going. Above 1 you crash.
+static func landing_severity(impact: float, pitch_error: float, yaw: float, speed: float) -> float:
+	var hit := maxf(0.0, impact) / 8.5
+	var nose := (-pitch_error / 0.75) if pitch_error < 0.0 else (pitch_error / 1.2)
+	var crooked := absf(yaw) / 0.6 * clampf(speed / 6.0, 0.4, 1.5)
+	return sqrt(hit * hit + nose * nose + crooked * crooked)
+
 static func _land(b: Bike, c: Course, ground: float) -> void:
 	var grad := c.gradient(b.s, b.d)
 	var along := grad.x * cos(b.psi) + grad.y * sin(b.psi)
@@ -158,18 +175,22 @@ static func _land(b: Bike, c: Course, ground: float) -> void:
 	var path := atan2(b.vy, maxf(b.v, 0.1))
 	var speed := sqrt(b.v * b.v + b.vy * b.vy)
 	var impact := speed * sin(slope - path)
-	var mismatch := absf(b.pitch - slope)
+	b.severity = landing_severity(impact, b.pitch - slope, b.yaw, speed)
 	b.y = ground
 	b.grounded = true
 	b.landed = true
-	if (impact > 8.0 or mismatch > 1.05) and b.invulnerable <= 0.0:
+	if b.severity > 1.0 and b.invulnerable <= 0.0:
 		_crash(b, "landing")
 		return
 	b.v = speed * cos(slope - path)
-	if impact > 5.2 or mismatch > 0.7:
+	if b.severity > 0.6:
+		# Rough: you stay on, but it costs speed and you wobble.
 		b.hard_landing = true
-		b.v *= 0.55
+		b.v *= lerpf(0.8, 0.45, (b.severity - 0.6) / 0.4)
 		b.wobble = 0.6
+	# Landing crooked turns you a little towards where the bike points.
+	b.psi = clampf(b.psi + b.yaw * 0.3, -1.45, 1.45)
+	b.yaw = 0.0
 	b.vy = b.v * along
 	b.pitch = slope
 
@@ -185,8 +206,19 @@ static func _collide_obstacles(b: Bike, c: Course) -> void:
 		var dist := sqrt(ds * ds + dd * dd)
 		var n := Vector2(ds, dd) / maxf(dist, 0.001)
 		var closing := Vector2(cos(b.psi), sin(b.psi)).dot(n) * b.v
-		if closing > 5.5:
+		# The bigger the thing, the less speed it takes to go over the bars.
+		var limit := 4.0 if o.kind == "tree" else clampf(7.5 - o.h * 1.8, 3.5, 7.0)
+		if closing > limit:
 			_crash(b, "obstacle")
+			return
+		if o.kind == "rock" and o.r < 0.6 and b.grounded:
+			# Small rock: the front wheel rides up it and bucks you.
+			b.vy = maxf(b.vy, 1.2 + b.v * 0.18)
+			b.y += 0.05
+			b.grounded = false
+			b.launched = true
+			b.air_time = 0.0
+			b.wobble = maxf(b.wobble, 0.25)
 			return
 		# Slower than that: push clear and slide round it.
 		b.s -= n.x * (r - dist)

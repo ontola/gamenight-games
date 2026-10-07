@@ -153,7 +153,7 @@ func _new_course() -> void:
 	hud.set_mountain(_mountain_name(seed_value), course)
 	focus_s = Course.START_LINE + 2.0
 	focus_d = 0.0
-	cam_yaw = course.heading(10.0)
+	cam_yaw = course.view_heading(10.0)
 	_update_camera(1.0)
 
 func _mountain_name(seed_value: int) -> String:
@@ -301,11 +301,27 @@ func _physics_process(_delta: float) -> void:
 		var input := {}
 		if p.finished: input = {"brake": 0.6}
 		elif p.bot: input = p.bot.think(b, course, PHYSICS_DT)
-		elif p.controls: input = p.controls.bike_input()
+		elif p.controls:
+			input = p.controls.bike_input()
+			if input.has("stick"): input.steer = _aim_steer(b, input.stick)
 		if not racing and not p.finished: input = {"brake": 0.5}
 		Bike.step(b, course, input, PHYSICS_DT)
 	_bump_riders()
 	if racing: _referee()
+
+## Pads steer by pointing: the stick is a direction on screen, and the bike
+## turns towards it (in the air it twists towards it). Hold it to the bottom
+## right to ride the main way down the mountain.
+func _aim_steer(b: Bike, stick: Vector2) -> float:
+	if stick.length() < Controls.DEADZONE: return 0.0
+	var basis := camera.global_transform.basis
+	var screen_right := Vector3(basis.x.x, 0, basis.x.z).normalized()
+	var screen_up := Vector3(basis.y.x, 0, basis.y.z).normalized()
+	var want := screen_right * stick.x - screen_up * stick.y
+	var facing := course.heading(b.s) - b.psi - b.yaw
+	var err := wrapf(atan2(want.x, want.z) - facing, -PI, PI)
+	# Positive steer is to the right, which turns the world heading down.
+	return clampf(-err * 2.2, -1.0, 1.0) * minf(1.0, stick.length() * 1.3)
 
 ## Riders are solid: each bike is two circles, front and back wheel. Overlaps
 ## are pushed apart completely and the bikes trade momentum, so you can
@@ -424,7 +440,7 @@ func _update_camera(delta: float) -> void:
 	if count > 0:
 		focus_d = lerpf(focus_d, clampf(sum_d / count, -7.0, 7.0), 1.0 - exp(-delta * 1.5))
 	focus_s = minf(focus_s, course.total - 30.0)
-	var yaw_target := course.heading(focus_s + 8.0)
+	var yaw_target := course.view_heading(focus_s)
 	cam_yaw = lerp_angle(cam_yaw, yaw_target, 1.0 - exp(-delta * 1.8))
 	var fwd := Vector3(sin(cam_yaw), 0, cos(cam_yaw))
 	var focus := course.world(focus_s, focus_d, course.base_height(focus_s))
