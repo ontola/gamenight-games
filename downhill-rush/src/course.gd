@@ -74,7 +74,9 @@ func _plan_sections() -> void:
 	while s < length - 70.0:
 		if bag.is_empty():
 			bag = ["band", "band", "band", "turn", "turn", "flat", "kicker", "kicker", "gully", "slalom", "open"]
-			bag.shuffle()
+			for k in range(bag.size() - 1, 0, -1):
+				var m := _rng.randi_range(0, k)
+				var tmp := bag[k]; bag[k] = bag[m]; bag[m] = tmp
 		var kind: String = bag.pop_back()
 		if kind == last and not bag.is_empty():
 			bag.push_front(kind)
@@ -90,7 +92,8 @@ func _plan_sections() -> void:
 				var approach := maxf(_rng.randf_range(14.0, 20.0), h * 4.2)
 				var b := {"s": s + approach + 4.0, "h": h, "approach": approach, "chutes": []}
 				for k in (_rng.randi_range(1, 2) if big else _rng.randi_range(2, 3)):
-					b.chutes.append({"d": _rng.randf_range(-CORRIDOR + 4.0, CORRIDOR - 4.0), "w": _rng.randf_range(2.5, 4.5)})
+					var e := edges(b.s)
+					b.chutes.append({"d": _rng.randf_range(e.x + 4.0, e.y - 4.0), "w": _rng.randf_range(2.5, 4.5)})
 				bands.append(b)
 				sec.len = approach + 16.0
 				sec.grade = 0.42
@@ -108,13 +111,15 @@ func _plan_sections() -> void:
 				var d0 := _rng.randf_range(-CORRIDOR + 6.0, CORRIDOR - 6.0)
 				for k in _rng.randi_range(1, 3):
 					var d := d0 + (k - 1) * _rng.randf_range(9.0, 12.0) * (1.0 if d0 < 0.0 else -1.0)
-					sec.lips.append({"s": s + 20.0 + _rng.randf_range(-4.0, 4.0), "d": clampf(d, -CORRIDOR + 4.0, CORRIDOR - 4.0),
+					var ls := s + 20.0 + _rng.randf_range(-4.0, 4.0)
+					var e := edges(ls)
+					sec.lips.append({"s": ls, "d": clampf(d, e.x + 4.0, e.y - 4.0),
 						"w": _rng.randf_range(2.5, 4.0), "h": _rng.randf_range(1.0, 1.6), "run": _rng.randf_range(5.0, 7.0)})
 			"gully":
 				sec.len = _rng.randf_range(55.0, 80.0)
 				sec.grade = 0.5
-				sec.d0 = _rng.randf_range(-7.0, 7.0)
-				sec.amp = _rng.randf_range(3.0, 6.0)
+				sec.d0 = _rng.randf_range(-4.0, 4.0)
+				sec.amp = _rng.randf_range(2.5, 4.5)
 				sec.freq = TAU / _rng.randf_range(26.0, 40.0)
 				sec.hw = 2.3
 			"slalom":
@@ -138,9 +143,9 @@ func _generate_line() -> void:
 	var i := int(START_FLAT / DS)
 	var side := 1.0 if _rng.randf() < 0.5 else -1.0
 	while i < n:
-		i += _rng.randi_range(20, 60)
-		var radius := _rng.randf_range(80.0, 170.0)
-		var turn_len := _rng.randi_range(25, 50)
+		i += _rng.randi_range(6, 24)
+		var radius := _rng.randf_range(45.0, 110.0)
+		var turn_len := _rng.randi_range(18, 40)
 		side = -side if _rng.randf() < 0.7 else side
 		for j in turn_len:
 			if i + j >= n: break
@@ -202,6 +207,19 @@ func curvature(s: float) -> float: return _sample(curv, s)
 func base_height(s: float) -> float: return _sample(base, s)
 func view_heading(s: float) -> float: return _sample(view, s)
 
+## Where the valley walls start on the left and right (x, y). Never wider
+## than CORRIDOR; at the start and finish the valley is full width.
+func edges(s: float) -> Vector2:
+	var w := _wild(s)
+	var l := (0.5 + 0.5 * _noise.get_noise_2d(s * 1.1 + 5000.0, 0.0)) * 9.0
+	var r := (0.5 + 0.5 * _noise.get_noise_2d(s * 1.1 + 9000.0, 0.0)) * 9.0
+	return Vector2(-CORRIDOR + l * w, CORRIDOR - r * w)
+
+## True if d is inside the valley floor at s.
+func inside(s: float, d: float, margin := 0.0) -> bool:
+	var e := edges(s)
+	return d > e.x + margin and d < e.y - margin
+
 func forward(s: float) -> Vector3:
 	var th := heading(s)
 	return Vector3(sin(th), 0, cos(th))
@@ -227,9 +245,11 @@ func height(s: float, d: float) -> float:
 	var h := base_height(s)
 	var ad := absf(d)
 	var wild := _wild(s)
-	# Valley walls keep the field together.
-	if ad > CORRIDOR:
-		var o := ad - CORRIDOR
+	# Valley walls keep the field together. They wander in and out, so the
+	# valley pinches and opens like a real one.
+	var edge := edges(s)
+	var o := maxf(d - edge.y, edge.x - d)
+	if o > 0.0:
 		h += 0.9 * pow(o, 1.35) + _noise.get_noise_2d(s, d) * minf(o * 0.3, 5.0)
 	h += 0.004 * d * d
 	# Rolls, spines and hollows, then rubble on top.
@@ -351,8 +371,11 @@ func surface(s: float, d: float, slope: float = -1.0) -> int:
 	if on_path(s, d): return Surface.DIRT
 	if slope < 0.0: slope = gradient(s, d).length()
 	if slope > 1.3: return Surface.ROCK
-	if _wild(s) > 0.5 and _noise.get_noise_2d(s * 2.2 + 700.0, d * 2.2) > 0.32: return Surface.SCREE
-	if _noise.get_noise_2d(s * 3.0 + 1500.0, d * 3.0) > 0.18: return Surface.DIRT
+	# Warp the patch noise so dirt and scree come in winding, uneven shapes.
+	var ws := s + _noise.get_noise_2d(s * 3.0 + 3100.0, d * 3.0) * 6.0
+	var wd := d + _noise.get_noise_2d(d * 3.0 + 4100.0, s * 3.0) * 6.0
+	if _wild(s) > 0.5 and _noise.get_noise_2d(ws * 2.2 + 700.0, wd * 2.2) > 0.32: return Surface.SCREE
+	if _noise.get_noise_2d(ws * 3.0 + 1500.0, wd * 3.0) > 0.18: return Surface.DIRT
 	return Surface.GRASS
 
 ## How well tyres hold on the ground here, relative to packed dirt.
@@ -392,14 +415,19 @@ func _place_obstacles() -> void:
 	var s := START_FLAT
 	while s < length - 10.0:
 		# Forest clumps with gaps to thread, boulder fields, loose rocks.
-		var d := -CORRIDOR - 6.0
-		while d < CORRIDOR + 6.0:
+		var d := -CORRIDOR - 14.0
+		while d < CORRIDOR + 14.0:
 			var ss := s + _rng.randf_range(0.0, 4.0)
 			var dd := d + _rng.randf_range(-1.0, 1.0)
 			var forest := _noise.get_noise_2d(ss * 1.4 + 900.0, dd * 1.4)
 			var rocky := _noise.get_noise_2d(ss * 1.8 + 2300.0, dd * 1.8)
 			var roll := _rng.randf()
-			if forest > 0.12 and roll < 0.38:
+			var e := edges(ss)
+			var wall := maxf(dd - e.y, e.x - dd)
+			if wall > 1.5 and roll < 0.3 and _noise.get_noise_2d(ss * 2.5 + 1200.0, dd * 2.5) < 0.15:
+				# The valley sides are wooded.
+				_add_obstacle(ss, dd, 0.45, 9.0, "tree")
+			elif forest > 0.12 and roll < 0.38:
 				_add_obstacle(ss, dd, 0.45, 9.0, "tree")
 			elif rocky > 0.18 and roll < 0.22:
 				var r := _rng.randf_range(0.8, 2.0)
@@ -435,7 +463,8 @@ func _place_set_piece_obstacles() -> void:
 			while s < sec.s + sec.len - 3.0:
 				var gaps: Array[float] = []
 				for k in _rng.randi_range(2, 3):
-					gaps.append(_rng.randf_range(-CORRIDOR + 3.0, CORRIDOR - 3.0))
+					var e := edges(s)
+					gaps.append(_rng.randf_range(e.x + 3.0, e.y - 3.0))
 				var d := -CORRIDOR - 2.0
 				var tree := _rng.randf() < 0.5
 				while d < CORRIDOR + 2.0:

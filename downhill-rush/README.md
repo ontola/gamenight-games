@@ -64,7 +64,10 @@ one the ground eases into a shelf, then drops off a ledge. Small ledges can be
 ridden; big ones will put you on your face, unless you find one of the few
 chutes where the ledge becomes a steep ramp. Between the bands there are forest
 clumps, boulder fields, loose scree with little grip, and streams that bog you
-down. Valley walls on either side keep the field together.
+down. Wooded valley sides with rocky crags keep the field together; they wander in
+and out, so the valley pinches and opens, and the fall line itself snakes.
+Ground colours blend per vertex, and dirt and scree patches are domain-warped
+so they come in natural, winding shapes.
 
 Bike physics (`src/bike.gd`) runs on the same analytic height function the
 terrain mesh is built from, so every roll, ledge and hollow behaves the way it

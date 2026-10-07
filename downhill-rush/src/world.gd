@@ -17,6 +17,7 @@ const SCREE := Color(0.68, 0.64, 0.58)
 const SAND := Color(0.7, 0.66, 0.52)
 const WATER_COL := Color(0.1, 0.36, 0.55, 0.88)
 const FERN := Color(0.3, 0.55, 0.22)
+const FOREST_FLOOR := Color(0.3, 0.36, 0.2)
 const TRUNK := Color(0.42, 0.3, 0.22)
 const PINES := [Color(0.16, 0.36, 0.25), Color(0.2, 0.42, 0.27), Color(0.13, 0.3, 0.24), Color(0.26, 0.47, 0.27)]
 const AUTUMN := [Color(0.88, 0.56, 0.24), Color(0.93, 0.74, 0.3), Color(0.78, 0.36, 0.22)]
@@ -73,19 +74,30 @@ func _terrain_chunk(s0: float, s1: float) -> void:
 				row.append(course.world(s + js, d + jd))
 		rows.append(row)
 		s += ROW
+	# Colours live on the vertices and blend across each facet, so dirt fades
+	# into grass and rock into scree instead of stepping cell by cell.
+	var cols: Array = []
+	for r in rows.size():
+		var row: PackedVector3Array = rows[mini(r, rows.size() - 2)]
+		var nxt: PackedVector3Array = rows[mini(r, rows.size() - 2) + 1]
+		var crow := PackedColorArray()
+		crow.resize(_columns.size())
+		for i in _columns.size():
+			var j := mini(i, _columns.size() - 2)
+			crow[i] = _vertex_color(row[j], row[j + 1], nxt[j], ss[r], _columns[i])
+		cols.append(crow)
 	for r in rows.size() - 1:
 		var a: PackedVector3Array = rows[r]
 		var b: PackedVector3Array = rows[r + 1]
+		var ca: PackedColorArray = cols[r]
+		var cb: PackedColorArray = cols[r + 1]
 		for i in _columns.size() - 1:
-			var sm: float = (ss[r] + ss[r + 1]) * 0.5
-			var dm: float = (_columns[i] + _columns[i + 1]) * 0.5
-			var col := _cell_color(a[i], a[i + 1], b[i], sm, dm)
 			if (r + i) % 2 == 0:
-				_face(lp, a[i], a[i + 1], b[i + 1], col)
-				_face(lp, a[i], b[i + 1], b[i], col)
+				lp.tri3(a[i], a[i + 1], b[i + 1], ca[i], ca[i + 1], cb[i + 1])
+				lp.tri3(a[i], b[i + 1], b[i], ca[i], cb[i + 1], cb[i])
 			else:
-				_face(lp, a[i], a[i + 1], b[i], col)
-				_face(lp, a[i + 1], b[i + 1], b[i], col)
+				lp.tri3(a[i], a[i + 1], b[i], ca[i], ca[i + 1], cb[i])
+				lp.tri3(a[i + 1], b[i + 1], b[i], ca[i + 1], cb[i + 1], cb[i])
 	# Streams: a sheet of water sitting in each ditch.
 	var water := LowPoly.new()
 	for st in course.streams:
@@ -127,7 +139,7 @@ static func _water_material() -> StandardMaterial3D:
 		_water_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _water_mat
 
-func _cell_color(p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) -> Color:
+func _vertex_color(p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) -> Color:
 	var n := (p2 - p0).cross(p1 - p0).normalized()
 	var steep := 1.0 - absf(n.y)
 	var slope := sqrt(maxf(0.0, 1.0 - n.y * n.y)) / maxf(absf(n.y), 0.05)
@@ -140,14 +152,20 @@ func _cell_color(p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) -> C
 			var patch := course._noise.get_noise_2d(s * 0.9 + 400.0, d * 0.9)
 			col = GRASS.lerp(GRASS_DARK, clampf(patch * 1.6 + 0.4, 0.0, 1.0))
 			if patch > 0.38: col = col.lerp(MEADOW, 0.6)
-	# Anything steep is bare rock: cliff faces read from far above.
 	# Steeper ground is darker, so pitches read from straight above.
 	col = col.darkened(clampf(steep * 0.6, 0.0, 0.3))
-	if steep > 0.35: col = col.lerp(CLIFF, clampf((steep - 0.35) * 3.0, 0.0, 1.0))
-	return col
-
-func _face(lp: LowPoly, p0: Vector3, p1: Vector3, p2: Vector3, col: Color) -> void:
-	lp.tri(p0, p1, p2, col.lightened(_rng.randf_range(-0.03, 0.05)))
+	var edge := course.edges(s)
+	var wall := maxf(d - edge.y, edge.x - d)
+	if wall > 1.0:
+		# Valley sides: forest floor with grey outcrops breaking through.
+		var crag := course._noise.get_noise_2d(s * 2.5 + 1200.0, d * 2.5)
+		col = GRASS_DARK.lerp(FOREST_FLOOR, clampf(course._noise.get_noise_2d(s * 1.5, d * 1.5) + 0.5, 0.0, 1.0))
+		col = col.darkened(clampf(steep * 0.4, 0.0, 0.25))
+		if crag > 0.15 or steep > 0.8: col = col.lerp(CLIFF.lightened(crag * 0.4), clampf((crag - 0.15) * 5.0 + maxf(0.0, steep - 0.8) * 5.0, 0.0, 1.0))
+	elif steep > 0.35:
+		# Ledges and cliff faces are bare rock, so they read from far above.
+		col = col.lerp(CLIFF, clampf((steep - 0.35) * 3.0, 0.0, 1.0))
+	return col.lightened(_rng.randf_range(-0.03, 0.04))
 
 
 # ── Props ────────────────────────────────────────────────────────────────────

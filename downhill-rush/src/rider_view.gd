@@ -156,33 +156,41 @@ func _rider_mesh() -> ArrayMesh:
 	var shoulder := Vector3(0, 1.3, 0.06)
 	var hands := Vector3(0, 0.96, 0.3)
 	for side in [-1.0, 1.0]:
-		var x: float = side * 0.12
-		var knee := Vector3(x * 1.6, 0.66, 0.1)
-		var foot := Vector3(x * 1.2, WHEEL + 0.05, -0.05 + side * 0.06)
-		pants.beam(hip + Vector3(x, 0, 0), knee, 0.16, trousers)
-		pants.beam(knee, foot + Vector3(0, 0.08, 0), 0.15, trousers)
-		gear.box(foot + Vector3(0, -0.01, 0.04), Vector3(0.14, 0.1, 0.27), accent)
-		gear.box(foot + Vector3(0, -0.055, 0.04), Vector3(0.15, 0.03, 0.28), Color(0.92, 0.9, 0.85))
-		var elbow := Vector3(side * 0.34, 1.08, 0.1)
-		shirt.beam(shoulder + Vector3(side * 0.19, 0, 0), shoulder + Vector3(side * 0.28, -0.12, 0.03), 0.16, color)
-		skin.beam(shoulder + Vector3(side * 0.27, -0.1, 0.03), elbow, 0.085, tone)
-		skin.beam(elbow, hands + Vector3(side * 0.3, 0, 0), 0.075, tone)
-		gear.box(hands + Vector3(side * 0.3, 0, 0), Vector3(0.1, 0.09, 0.11), DARK)
-	# Baggy tee: wider at the hem than at the chest.
-	shirt.cone(hip + Vector3(0, -0.06, 0), 0.24, 0.21, (shoulder - hip).length() + 0.04, 6, color,
-		Basis(Vector3.RIGHT, (shoulder - hip).angle_to(Vector3.UP)).scaled(Vector3(1.0, 1.0, 0.75)), 0.08)
-	skin.beam(shoulder, shoulder + Vector3(0, 0.12, 0.04), 0.09, tone)
+		var x: float = side * 0.1
+		var knee := Vector3(x * 1.7, 0.68, 0.12)
+		var foot := Vector3(x * 1.3, WHEEL + 0.05, -0.05 + side * 0.06)
+		pants.beam(hip + Vector3(x, 0, 0), knee, 0.15, trousers)
+		pants.beam(knee, foot + Vector3(0, 0.08, 0), 0.13, trousers)
+		gear.box(foot + Vector3(0, -0.01, 0.04), Vector3(0.12, 0.09, 0.25), accent)
+		gear.box(foot + Vector3(0, -0.05, 0.04), Vector3(0.13, 0.03, 0.26), Color(0.92, 0.9, 0.85))
+		# Shoulder, short sleeve, then bare arm out to the grips.
+		var arm_top := shoulder + Vector3(side * 0.2, -0.03, 0.0)
+		var elbow := Vector3(side * 0.3, 1.06, 0.14)
+		shirt.beam(arm_top, arm_top.lerp(elbow, 0.45), 0.12, color)
+		skin.beam(arm_top.lerp(elbow, 0.4), elbow, 0.08, tone)
+		skin.beam(elbow, hands + Vector3(side * 0.28, 0, 0), 0.07, tone)
+		gear.box(hands + Vector3(side * 0.28, 0, 0), Vector3(0.09, 0.08, 0.09), DARK)
+	# Tee: a rounded chest, a little looser at the hem, leaning over the bars.
+	var lean := Basis(Vector3.RIGHT, (shoulder - hip).angle_to(Vector3.UP))
+	shirt.cone(hip + Vector3(0, -0.05, 0), 0.19, 0.17, (shoulder - hip).length(), 10, color,
+		lean.scaled(Vector3(1.0, 1.0, 0.7)), 0.06)
+	shirt.blob(shoulder + Vector3(0, -0.04, -0.01), Vector3(0.22, 0.08, 0.12), color, _rng, 3, 10, 0.0)
+	pants.blob(hip + Vector3(0, 0.0, -0.02), Vector3(0.18, 0.09, 0.13), trousers, _rng, 3, 10, 0.0)
+	skin.beam(shoulder, shoulder + Vector3(0, 0.1, 0.04), 0.08, tone)
 	var head := HEAD_AT
-	skin.blob(head, Vector3(0.12, 0.14, 0.13), tone, _rng, 3, 7, 0.0)
+	skin.blob(head, Vector3(0.105, 0.125, 0.115), tone, _rng, 6, 12, 0.0)
+	# Hair peeking out at the back and sides.
+	var hair: Color = [Color(0.2, 0.13, 0.08), Color(0.08, 0.07, 0.06), Color(0.75, 0.55, 0.3), Color(0.45, 0.22, 0.1)][(style + 1) % 4]
+	gear.dome(head + Vector3(0, -0.02, -0.015), Vector3(0.112, 0.12, 0.118), hair, 3, 12)
 	if style % 2 == 0:
-		# Open-face lid with a peak, the 90s BMX staple.
-		gear.blob(head + Vector3(0, 0.05, -0.01), Vector3(0.15, 0.13, 0.16), color.darkened(0.25), _rng, 3, 8, 0.0)
-		gear.box(head + Vector3(0, 0.08, 0.15), Vector3(0.2, 0.025, 0.1), color.darkened(0.45), Basis(Vector3.RIGHT, 0.25))
-		gear.box(head + Vector3(0, 0.15, 0.0), Vector3(0.05, 0.03, 0.3), accent)
+		# Open-face lid with a short peak, the 90s BMX staple.
+		gear.dome(head + Vector3(0, 0.01, -0.01), Vector3(0.135, 0.15, 0.145), color.darkened(0.25), 5, 14)
+		gear.box(head + Vector3(0, 0.07, 0.13), Vector3(0.16, 0.018, 0.07), color.darkened(0.45), Basis(Vector3.RIGHT, 0.3))
+		gear.box(head + Vector3(0, 0.155, -0.01), Vector3(0.04, 0.012, 0.22), accent)
 	else:
 		# Cap on backwards.
-		gear.blob(head + Vector3(0, 0.07, 0), Vector3(0.135, 0.09, 0.14), accent, _rng, 2, 8, 0.0)
-		gear.box(head + Vector3(0, 0.06, -0.17), Vector3(0.17, 0.02, 0.12), accent.darkened(0.3))
+		gear.dome(head + Vector3(0, 0.03, 0), Vector3(0.12, 0.1, 0.125), accent, 4, 14)
+		gear.box(head + Vector3(0, 0.04, -0.16), Vector3(0.14, 0.015, 0.1), accent.darkened(0.3), Basis(Vector3.RIGHT, -0.15))
 	var patterns := [Tex.plaid(), Tex.stripes(), Tex.cotton()]
 	var mesh := skin.commit(null, Tex.material(Tex.cotton(), 3.0, false))
 	shirt.commit(mesh, Tex.material(patterns[style % patterns.size()], 2.5, false))

@@ -34,6 +34,19 @@ func tri(a: Vector3, b: Vector3, c: Vector3, color: Color, inside: Vector3 = Vec
 	normals.append(n); normals.append(n); normals.append(n)
 	colors.append(color); colors.append(color); colors.append(color)
 
+## A triangle facing up with its own colour at each corner, blended across.
+func tri3(a: Vector3, b: Vector3, c: Vector3, ca: Color, cb: Color, cc: Color) -> void:
+	var n := (c - a).cross(b - a)
+	if n.length_squared() < 1e-12: return
+	n = n.normalized()
+	if n.y < 0.0:
+		n = -n
+		var t := b; b = c; c = t
+		var tc := cb; cb = cc; cc = tc
+	verts.append(a); verts.append(b); verts.append(c)
+	normals.append(n); normals.append(n); normals.append(n)
+	colors.append(ca); colors.append(cb); colors.append(cc)
+
 func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, color: Color, inside: Vector3 = Vector3.INF) -> void:
 	tri(a, b, c, color, inside)
 	tri(a, c, d, color, inside)
@@ -105,6 +118,22 @@ func blob(center: Vector3, radius: Vector3, color: Color, rng: RandomNumberGener
 			if r == 0: tri(a, c, d, col, center)
 			elif r == rings - 1: tri(a, b, d, col, center)
 			else: quad(a, b, c, d, col, center)
+
+## The top half of an ellipsoid, open at the bottom: helmets and caps.
+func dome(center: Vector3, radius: Vector3, color: Color, rings: int = 4, segments: int = 10) -> void:
+	var pts: Array = []
+	for r in rings + 1:
+		var row: Array[Vector3] = []
+		var phi := PI * 0.5 * r / rings
+		for i in segments:
+			var a := TAU * i / segments
+			row.append(center + Vector3(sin(phi) * cos(a), cos(phi), sin(phi) * sin(a)) * radius)
+		pts.append(row)
+	for r in rings:
+		for i in segments:
+			var k := (i + 1) % segments
+			if r == 0: tri(pts[0][i], pts[1][k], pts[1][i], color, center)
+			else: quad(pts[r][i], pts[r][k], pts[r + 1][k], pts[r + 1][i], color, center)
 
 ## A tyre: a coarse torus in the local YZ plane around `center`.
 func ring(center: Vector3, radius: float, tube: float, color: Color, segments: int = 10) -> void:

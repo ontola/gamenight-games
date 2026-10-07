@@ -108,6 +108,7 @@ func _choose_line(b: Bike, c: Course) -> void:
 				cost += drop * (6.0 if drop > 2.5 else 1.5)
 				ledge = true
 			if c.in_water(s, d): cost += 0.3
+			if not c.inside(s, d, 1.0): cost += 3.0
 			u += 1.5
 		for o in near:
 			var d_at := lerpf(b.d, dd, clampf((o.s - b.s) / 12.0, 0.0, 1.0))

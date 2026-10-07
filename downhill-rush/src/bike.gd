@@ -35,6 +35,8 @@ var skid_time := 0.0
 var crash_reason := ""
 var yaw := 0.0          ## Bike twisted away from the direction of travel (in the air).
 var severity := 0.0     ## How bad the last landing was; above 1 is a crash.
+var pinned := 0.0       ## How long we've been stuck against rocks or trees.
+var touching := false   ## Leaning on an obstacle this step.
 
 func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
 	s = p_s
@@ -156,7 +158,19 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		if b.y <= ground:
 			_land(b, c, ground)
 			if b.crashed: return
-	_collide_obstacles(b, c)
+	b.touching = false
+	_collide_obstacles(b, c, steer)
+	# Wedged in a pocket of rocks: hop off and walk the bike out.
+	b.pinned = b.pinned + dt if b.touching and b.v < 4.5 else maxf(0.0, b.pinned - dt * 2.0)
+	if b.pinned > 1.2:
+		b.pinned = 0.0
+		var spot := clear_spot(c, b.s, b.d, true)
+		b.s = spot.x
+		b.d = spot.y
+		b.psi = 0.0
+		b.v = 2.0
+		b.y = c.height(b.s, b.d)
+		b.vy = 0.0
 
 ## How bad a touchdown is, 0 for perfect. Three things count, and they add
 ## up: how hard you hit the ground (speed into the slope), how far the bike's
@@ -194,7 +208,7 @@ static func _land(b: Bike, c: Course, ground: float) -> void:
 	b.vy = b.v * along
 	b.pitch = slope
 
-static func _collide_obstacles(b: Bike, c: Course) -> void:
+static func _collide_obstacles(b: Bike, c: Course, steer := 0.0) -> void:
 	if b.invulnerable > 0.0: return
 	for o in c.obstacles_near(b.s):
 		var ds: float = o.s - b.s
@@ -221,11 +235,14 @@ static func _collide_obstacles(b: Bike, c: Course) -> void:
 			b.wobble = maxf(b.wobble, 0.25)
 			return
 		# Slower than that: push clear and slide round it.
+		b.touching = true
 		b.s -= n.x * (r - dist)
 		b.d -= n.y * (r - dist)
 		var vel := Vector2(cos(b.psi), sin(b.psi)) * b.v
 		vel -= n * maxf(0.0, vel.dot(n))
-		var away := -1.0 if b.d < o.d else 1.0
+		# Slide off the way you're steering, or else to the near side, so two
+		# rocks side by side can't pin you between them.
+		var away := signf(steer) if absf(steer) > 0.2 else (-1.0 if b.d < o.d else 1.0)
 		var tangent := Vector2(-n.y, n.x)
 		if tangent.y * away < 0.0: tangent = -tangent
 		vel += tangent * 1.2
@@ -251,16 +268,7 @@ static func _step_crashed(b: Bike, c: Course, dt: float) -> void:
 	b.y = c.height(b.s, b.d)
 	if b.crash_t > 0.0: return
 	# Back on the bike where you landed, clear of rocks and trees.
-	var here := clampf(b.d, -Course.CORRIDOR + 1.0, Course.CORRIDOR - 1.0)
-	var best := here
-	for candidate in [here, here - 1.5, here + 1.5, here - 3.0, here + 3.0]:
-		var clear := true
-		for o in c.obstacles_near(b.s):
-			if Vector2(o.s - b.s, o.d - candidate).length() < o.r + 1.0: clear = false
-		if clear:
-			best = candidate
-			break
-	b.d = best
+	b.d = clear_spot(c, b.s, b.d, false).y
 	b.psi = 0.0
 	b.v = 3.0
 	b.vy = 0.0
@@ -269,3 +277,17 @@ static func _step_crashed(b: Bike, c: Course, dt: float) -> void:
 	b.grounded = true
 	b.pitch = 0.0
 	b.invulnerable = INVULNERABLE
+
+## The nearest place around (s, d) with no rock or tree within reach, inside
+## the valley. With `ahead`, also looks a little further down the slope.
+static func clear_spot(c: Course, s: float, d: float, ahead: bool) -> Vector2:
+	var e := c.edges(s)
+	var here := clampf(d, e.x + 1.0, e.y - 1.0)
+	for ds in ([0.0, 1.5, 3.0] if ahead else [0.0]):
+		for dd in [0.0, -1.5, 1.5, -3.0, 3.0, -4.5, 4.5]:
+			var p := Vector2(s + ds, clampf(here + dd, e.x + 1.0, e.y - 1.0))
+			var clear := true
+			for o in c.obstacles_near(p.x):
+				if Vector2(o.s - p.x, o.d - p.y).length() < o.r + 1.0: clear = false
+			if clear: return p
+	return Vector2(s, here)
