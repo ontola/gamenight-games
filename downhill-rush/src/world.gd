@@ -1,7 +1,7 @@
 class_name MountainView
 extends Node3D
-## Turns a Course into meshes: faceted terrain, the dirt line, trees, rocks,
-## flags at every take-off and the start and finish gates.
+## Turns a Course into meshes: faceted terrain with cliffs, scree and
+## streams, trees, boulders, undergrowth and the start and finish gates.
 
 const CHUNK := 60.0
 const GRASS := Color(0.47, 0.63, 0.28)
@@ -12,6 +12,8 @@ const DIRT_DARK := Color(0.5, 0.33, 0.22)
 const PACKED := Color(0.85, 0.63, 0.4)
 const CHALK := Color(0.97, 0.92, 0.8)
 const STONE := Color(0.6, 0.6, 0.62)
+const CLIFF := Color(0.42, 0.4, 0.4)
+const SCREE := Color(0.68, 0.64, 0.58)
 const SAND := Color(0.7, 0.66, 0.52)
 const WATER_COL := Color(0.1, 0.36, 0.55, 0.88)
 const FERN := Color(0.3, 0.55, 0.22)
@@ -35,7 +37,6 @@ func build(c: Course) -> void:
 		_terrain_chunk(s, minf(s + CHUNK, c.total - 1.0))
 		s += CHUNK
 	_props()
-	_markers()
 	_gate(Course.START_LINE, false)
 	_gate(c.length, true)
 
@@ -46,11 +47,13 @@ func _make_columns() -> PackedFloat32Array:
 	while d < Course.EDGE + 0.01:
 		cols.append(d)
 		var ad := absf(d)
-		d += 0.6 if ad < 7.5 else (1.5 if ad < 13.0 else 4.5)
+		d += 0.8 if ad < Course.CORRIDOR + 3.0 else (2.0 if ad < Course.CORRIDOR + 12.0 else 5.0)
 	return cols
 
 
 # ── Terrain ──────────────────────────────────────────────────────────────────
+
+const ROW := 0.5   ## Fine rows so ledges are as sharp on screen as under the wheels.
 
 func _terrain_chunk(s0: float, s1: float) -> void:
 	var lp := LowPoly.new()
@@ -61,39 +64,42 @@ func _terrain_chunk(s0: float, s1: float) -> void:
 		ss.append(s)
 		var row := PackedVector3Array()
 		for d in _columns:
-			if absf(d) < 10.0:
+			if absf(d) < Course.CORRIDOR + 3.0:
 				row.append(course.world(s, d))
 			else:
-				# Irregular facets on the hillside, a regular grid on the line.
+				# Irregular facets on the valley walls.
 				var js := course._detail.get_noise_2d(s * 3.0, d * 3.0) * 1.4
 				var jd := course._detail.get_noise_2d(d * 3.0 + 50.0, s * 3.0) * 1.8
 				row.append(course.world(s + js, d + jd))
 		rows.append(row)
-		s += Course.DS
+		s += ROW
 	for r in rows.size() - 1:
 		var a: PackedVector3Array = rows[r]
 		var b: PackedVector3Array = rows[r + 1]
 		for i in _columns.size() - 1:
 			var sm: float = (ss[r] + ss[r + 1]) * 0.5
 			var dm: float = (_columns[i] + _columns[i + 1]) * 0.5
-			var flip := (r + i) % 2 == 0
-			if flip:
-				_face(lp, a[i], a[i + 1], b[i + 1], sm, dm)
-				_face(lp, a[i], b[i + 1], b[i], sm, dm)
+			var col := _cell_color(a[i], a[i + 1], b[i], sm, dm)
+			if (r + i) % 2 == 0:
+				_face(lp, a[i], a[i + 1], b[i + 1], col)
+				_face(lp, a[i], b[i + 1], b[i], col)
 			else:
-				_face(lp, a[i], a[i + 1], b[i], sm, dm)
-				_face(lp, a[i + 1], b[i + 1], b[i], sm, dm)
+				_face(lp, a[i], a[i + 1], b[i], col)
+				_face(lp, a[i + 1], b[i + 1], b[i], col)
+	# Streams: a sheet of water sitting in each ditch.
 	var water := LowPoly.new()
-	for r in rows.size() - 1:
-		var lv0 := course.base_height(ss[r]) - Course.WATER
-		var lv1 := course.base_height(ss[r + 1]) - Course.WATER
-		for i in _columns.size() - 1:
-			var a: PackedVector3Array = rows[r]
-			var b: PackedVector3Array = rows[r + 1]
-			if minf(minf(a[i].y, a[i + 1].y), minf(b[i].y, b[i + 1].y)) > maxf(lv0, lv1): continue
-			var c := Color(1, 1, 1)
-			water.quad(Vector3(a[i].x, lv0, a[i].z), Vector3(a[i + 1].x, lv0, a[i + 1].z),
-				Vector3(b[i + 1].x, lv1, b[i + 1].z), Vector3(b[i].x, lv1, b[i].z), c)
+	for st in course.streams:
+		if st.s < s0 - 4.0 or st.s > s1 + 4.0: continue
+		var d := -Course.CORRIDOR - 6.0
+		while d < Course.CORRIDOR + 6.0:
+			var d1 := d + 1.0
+			var c0: float = course._stream_line(st, d)
+			var c1: float = course._stream_line(st, d1)
+			var y0 := course.height(c0, d) + 0.42
+			var y1 := course.height(c1, d1) + 0.42
+			water.quad(course.world(c0 - 1.1, d, y0), course.world(c0 + 1.1, d, y0),
+				course.world(c1 + 1.1, d1, y1), course.world(c1 - 1.1, d1, y1), Color.WHITE)
+			d = d1
 	if not water.is_empty():
 		var wm := MeshInstance3D.new()
 		wm.mesh = water.commit(null, _water_material())
@@ -121,48 +127,27 @@ static func _water_material() -> StandardMaterial3D:
 		_water_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _water_mat
 
-func _face(lp: LowPoly, p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) -> void:
+func _cell_color(p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) -> Color:
 	var n := (p2 - p0).cross(p1 - p0).normalized()
 	var steep := 1.0 - absf(n.y)
-	var ad := absf(d)
-	var wobble := course._noise.get_noise_2d(s * 3.1, d * 3.1)
+	var slope := sqrt(maxf(0.0, 1.0 - n.y * n.y)) / maxf(absf(n.y), 0.05)
 	var col: Color
-	var edge := Course.TRACK_HALF + wobble * 0.7
-	if ad < edge - 0.6:
-		# A narrow worn path wanders inside the rideable line.
-		var off := absf(d - course.path_offset(s))
-		col = DIRT if off < 1.0 else DIRT.lerp(GRASS, clampf((off - 0.9) * 1.2, 0.0, 0.85))
-		var f := course.feature_ahead(s, 0.0)
-		if not f.is_empty() and s >= f.s0:
-			col = _feature_color(f, s - f.s0, DIRT)
-	elif ad < edge + 0.5:
-		col = DIRT.lerp(GRASS, 0.55)
-	else:
-		var patch := course._noise.get_noise_2d(s * 0.9 + 400.0, d * 0.9)
-		col = GRASS.lerp(GRASS_DARK, clampf(patch * 1.6 + 0.4, 0.0, 1.0))
-		if patch > 0.38: col = col.lerp(MEADOW, 0.6)
-		if steep > 0.3: col = col.lerp(STONE.darkened(0.1), clampf((steep - 0.3) * 3.5, 0.0, 1.0))
-		var low := course.base_height(s) - (p0.y + p1.y + p2.y) / 3.0
-		if low > Course.WATER - 2.0: col = col.lerp(SAND, clampf((low - Course.WATER + 2.0) * 0.5, 0.0, 1.0))
-	col = col.lightened(_rng.randf_range(-0.03, 0.05))
-	lp.tri(p0, p1, p2, col)
-
-func _feature_color(f: Dictionary, u: float, col: Color) -> Color:
-	match int(f.kind):
-		Course.Kind.GAP, Course.Kind.TABLE:
-			if u < f.ramp - 0.7: return PACKED
-			if u < f.ramp: return CHALK
-			if u < f.ramp + f.gap: return DIRT_DARK.darkened(0.25) if int(f.kind) == Course.Kind.GAP else PACKED.darkened(0.06)
-			return PACKED.lightened(0.05)
-		Course.Kind.DROP:
-			if u < f.ramp - 0.7: return PACKED.darkened(0.04)
-			if u < f.ramp: return CHALK
-			return PACKED.lightened(0.05)
-		Course.Kind.ROLLERS, Course.Kind.STEP_UP:
-			return col.lerp(PACKED, 0.5)
-		Course.Kind.ROCKS:
-			return col.lerp(STONE, 0.3)
+	match course.surface(s, d, slope):
+		Course.Surface.WATER: col = SAND
+		Course.Surface.SCREE: col = SCREE.lerp(STONE, course._detail.get_noise_2d(s * 2.0, d * 2.0) * 0.5 + 0.5)
+		Course.Surface.DIRT: col = DIRT.lerp(DIRT_DARK, clampf(course._noise.get_noise_2d(s * 6.0, d * 6.0) + 0.3, 0.0, 0.6))
+		_:
+			var patch := course._noise.get_noise_2d(s * 0.9 + 400.0, d * 0.9)
+			col = GRASS.lerp(GRASS_DARK, clampf(patch * 1.6 + 0.4, 0.0, 1.0))
+			if patch > 0.38: col = col.lerp(MEADOW, 0.6)
+	# Anything steep is bare rock: cliff faces read from far above.
+	# Steeper ground is darker, so pitches read from straight above.
+	col = col.darkened(clampf(steep * 0.6, 0.0, 0.3))
+	if steep > 0.35: col = col.lerp(CLIFF, clampf((steep - 0.35) * 3.0, 0.0, 1.0))
 	return col
+
+func _face(lp: LowPoly, p0: Vector3, p1: Vector3, p2: Vector3, col: Color) -> void:
+	lp.tri(p0, p1, p2, col.lightened(_rng.randf_range(-0.03, 0.05)))
 
 
 # ── Props ────────────────────────────────────────────────────────────────────
@@ -185,17 +170,14 @@ func _props() -> void:
 		if not chunks.has(key): chunks[key] = LowPoly.new()
 		var lp: LowPoly = chunks[key]
 		for i in 9:
-			var side := -1.0 if _rng.randf() < 0.5 else 1.0
-			var d := side * _rng.randf_range(Course.TRACK_HALF + 0.6, Course.EDGE - 1.0)
+			var d := _rng.randf_range(-Course.EDGE + 1.0, Course.EDGE - 1.0)
 			var ss := s + _rng.randf_range(0.0, 4.0)
+			if course.surface(ss, d) in [Course.Surface.WATER, Course.Surface.SCREE, Course.Surface.ROCK]: continue
 			var p := course.world(ss, d)
 			var roll := _rng.randf()
-			if p.y < course.base_height(ss) - Course.WATER + 0.3: continue
-			if roll < 0.2:
+			if roll < 0.25:
 				_fern(lp, p)
-			elif roll < 0.3:
-				_rock(lp, p, _rng.randf_range(0.6, 1.8))
-			elif roll < 0.45:
+			elif roll < 0.4:
 				lp.blob(p + Vector3(0, 0.25, 0), Vector3(0.7, 0.5, 0.7) * _rng.randf_range(0.7, 1.4), PINES[_rng.randi() % PINES.size()].lightened(0.1), _rng, 2, 5)
 			elif roll < 0.75:
 				_tuft(lp, p)
@@ -253,50 +235,7 @@ func _tuft(lp: LowPoly, p: Vector3) -> void:
 		lp.tri(p + dir * 0.12, p - dir * 0.12, p + dir.rotated(Vector3.UP, 1.4) * 0.1 + Vector3(0, 0.45, 0), col, p + Vector3(0, 0.2, 0) - dir.rotated(Vector3.UP, PI / 2) * 0.3)
 
 
-# ── Readability: flags, signs, gates ─────────────────────────────────────────
-
-func _markers() -> void:
-	var lp := LowPoly.new()
-	for f in course.features:
-		match int(f.kind):
-			Course.Kind.GAP, Course.Kind.TABLE:
-				var lip: float = f.s0 + f.ramp
-				_flag(lp, lip, Color(1.0, 0.55, 0.2))
-				_flag(lp, f.s0 + f.ramp + f.gap + 1.5, Color(0.98, 0.96, 0.9))
-				_sign(lp, f.s0 - 10.0, f)
-			Course.Kind.DROP:
-				_flag(lp, f.s0 + f.ramp, Color(0.92, 0.25, 0.2))
-				_sign(lp, f.s0 - 6.0, f)
-			Course.Kind.ROCKS:
-				_flag(lp, f.s0, Color(0.95, 0.85, 0.25))
-	var mi := MeshInstance3D.new()
-	mi.mesh = lp.commit()
-	mi.name = "Markers"
-	add_child(mi)
-
-func _flag(lp: LowPoly, s: float, color: Color) -> void:
-	for side in [-1.0, 1.0]:
-		var d: float = side * (Course.TRACK_HALF + 0.4)
-		var p := course.world(s, d)
-		var top := p + Vector3(0, 3.0, 0)
-		lp.beam(p, top, 0.12, Color(0.95, 0.93, 0.88))
-		var out: Vector3 = course.right(s) * side * 1.5
-		lp.tri(top, top - Vector3(0, 1.0, 0), top + out - Vector3(0, 0.5, 0), color)
-
-## A wooden sign before a jump. Its board says how fussy the jump is about
-## speed: green lands almost anything, red needs exactly the right speed.
-func _sign(lp: LowPoly, s: float, f: Dictionary) -> void:
-	var window: float = f.get("speed_max", 10.0) - f.get("speed_min", 5.0)
-	var col := Color(0.45, 0.75, 0.4) if window > 4.0 else (Color(0.98, 0.62, 0.22) if window > 2.4 else Color(0.9, 0.3, 0.25))
-	var d := -(Course.TRACK_HALF + 1.2)
-	var p := course.world(s, d)
-	lp.beam(p, p + Vector3(0, 1.6, 0), 0.12, TRUNK)
-	var right := course.right(s)
-	var basis := Basis(right, Vector3.UP, -course.forward(s))
-	lp.box(p + Vector3(0, 1.75, 0), Vector3(1.3, 0.8, 0.08), col, basis)
-	# A white chevron so it reads as "jump" from far above.
-	var c := p + Vector3(0, 1.75, 0) - course.forward(s) * 0.06
-	lp.tri(c + right * -0.4 + Vector3(0, -0.2, 0), c + right * 0.4 + Vector3(0, -0.2, 0), c + Vector3(0, 0.25, 0), Color(1, 1, 0.96))
+# ── Gates ────────────────────────────────────────────────────────────────────
 
 func _gate(s: float, finish: bool) -> void:
 	var lp := LowPoly.new()

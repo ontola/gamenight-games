@@ -108,7 +108,7 @@ func _build_environment() -> void:
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.56, 0.64, 0.78)
-	env.ambient_light_energy = 0.45
+	env.ambient_light_energy = 0.34
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.tonemap_exposure = 0.92
 	env.tonemap_white = 6.0
@@ -127,7 +127,7 @@ func _build_environment() -> void:
 	add_child(we)
 	sun = DirectionalLight3D.new()
 	sun.light_color = Color(1.0, 0.93, 0.8)
-	sun.light_energy = 0.95
+	sun.light_energy = 1.1
 	sun.shadow_enabled = true
 	sun.shadow_bias = 0.06
 	sun.shadow_normal_bias = 2.5
@@ -196,7 +196,7 @@ func _spawn_riders() -> void:
 		view.setup(p.color, p.name, i)
 		view.pose(p.bike, course, 0.0)
 		p.view = view
-		if p.bot: p.bot.line = d
+		if p.bot: p.bot.start_at(d)
 
 
 # ── Flow ─────────────────────────────────────────────────────────────────────
@@ -417,7 +417,7 @@ func _update_camera(delta: float) -> void:
 		var target := lead
 		var follow := lerpf(focus_s, target, 1.0 - exp(-delta * 4.0))
 		if phase == Phase.RACE:
-			var pace := minf(2.0 + race_time * 0.12, 9.5)
+			var pace := minf(2.0 + race_time * 0.1, 7.0)
 			focus_s = maxf(focus_s + pace * delta, follow)
 		else:
 			focus_s = maxf(focus_s, follow)
@@ -441,9 +441,9 @@ func _update_camera(delta: float) -> void:
 		# and sees least of what's coming; the pack behind sees it all.
 		var centre := course.world(focus_s - 11.0, focus_d, course.base_height(focus_s - 11.0)) if phase == Phase.RACE else focus
 		var up_dir := -fwd.rotated(Vector3.UP, deg_to_rad(-45.0))
-		camera.position = centre - up_dir * 13.0 + Vector3.UP * 28.0
+		camera.position = centre - up_dir * 17.0 + Vector3.UP * 28.0
 		camera.look_at(centre, up_dir)
-	sun.rotation = Vector3(deg_to_rad(-66.0), cam_yaw + deg_to_rad(140.0), 0)
+	sun.rotation = Vector3(deg_to_rad(-44.0), cam_yaw + deg_to_rad(140.0), 0)
 
 
 # ── Standalone join screen ───────────────────────────────────────────────────

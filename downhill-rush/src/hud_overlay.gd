@@ -33,10 +33,9 @@ func _draw_progress() -> void:
 	var y := 46.0
 	draw_line(Vector2(x0, y), Vector2(x0 + w, y), Color(0.12, 0.13, 0.17, 0.7), 12.0, true)
 	draw_line(Vector2(x0, y), Vector2(x0 + w, y), Color(0.99, 0.97, 0.92, 0.9), 6.0, true)
-	# Features as small ticks so the run's shape is visible.
-	for f in course.features:
-		if not f.has("speed_min"): continue
-		var fx: float = x0 + w * _progress(f.s0)
+	# Cliff bands as small ticks so the run's shape is visible.
+	for f in course.bands:
+		var fx: float = x0 + w * _progress(f.s)
 		draw_line(Vector2(fx, y - 9), Vector2(fx, y + 9), Color(1.0, 0.55, 0.2, 0.9), 3.0)
 	# Finish flag.
 	for k in 4:

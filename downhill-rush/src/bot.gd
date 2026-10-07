@@ -1,83 +1,117 @@
 class_name Bot
 extends RefCounted
-## A computer rider using ordinary controls: it steers for a line, judges
-## its speed before each jump and hops rocks it cannot avoid.
+## A computer rider using ordinary controls. There is no trail, so it reads
+## the slope ahead: it scores a fan of lines for cliffs, trees and boulders,
+## picks the cheapest, and brakes for whatever that line throws at it.
 
 var skill := 0.8
-var line := 0.0
-var _line_target := 0.0
-var _retarget := 0.0
+var _target_d := 0.0
+var _rethink := 0.0
+var _caution := 0.0     ## > 0 while the chosen line has a ledge coming up.
+var _stuck := 0.0
 var _rng := RandomNumberGenerator.new()
-var _jump_bias := 0.0
-var _last_feature := -1.0
 
 func _init(p_seed: int, p_skill: float) -> void:
 	_rng.seed = p_seed
 	skill = p_skill
 
+func start_at(d: float) -> void:
+	_target_d = d
+	_rethink = 0.0
+
 func think(b: Bike, c: Course, dt: float) -> Dictionary:
 	if b.crashed: return {}
-	_retarget -= dt
-	if _retarget <= 0.0:
-		_retarget = _rng.randf_range(1.5, 4.0)
-		_line_target = _rng.randf_range(-1.2, 1.2)
-	line = move_toward(line, _line_target, dt * 1.2)
-	var target_d := line
-	var target_v := 11.5 + skill * 5.5
-	var f := c.feature_ahead(b.s, 26.0 + b.v * 0.8)
-	if not f.is_empty():
-		if f.s0 != _last_feature:
-			_last_feature = f.s0
-			# Weaker riders misjudge more often.
-			_jump_bias = _rng.randf_range(-1.0, 1.0) * (1.0 - skill) * 3.0
-		if f.has("speed_min") and b.s < f.s0:
-			target_d = clampf(line * 0.3, -1.0, 1.0)
-			target_v = lerpf(f.speed_min, f.speed_max, 0.4) + _jump_bias
-		elif int(f.kind) == Course.Kind.ROCKS:
-			target_d = _gap(b, c)
-			target_v = 9.0 + skill * 2.0
-	# Brake for the tightest corner within stopping distance.
-	var reach := b.v * b.v / 10.0 + 6.0
-	var k_max := 0.0
-	var probe := b.s
-	while probe < b.s + reach:
-		k_max = maxf(k_max, absf(c.curvature(probe)))
-		probe += 1.5
-	if k_max > 0.001:
-		target_v = minf(target_v, sqrt(Bike.GRIP * (0.55 + skill * 0.2) / k_max))
-	var look := 6.0 + b.v * 0.45
-	# Lean against the camber so the trail doesn't drag us off the edge.
-	target_d += c.camber(b.s) * 6.0
-	target_d = clampf(target_d, -2.2, 2.2)
-	var desired := atan2(target_d - b.d, look)
+	# Stuck against something: pick a line well to one side.
+	_stuck = _stuck + dt if b.v < 1.5 else 0.0
+	if _stuck > 0.8:
+		_stuck = 0.0
+		_target_d = b.d + (3.0 if _rng.randf() < 0.5 else -3.0)
+		_rethink = 1.2
+	_rethink -= dt
+	if _rethink <= 0.0:
+		_rethink = lerpf(0.5, 0.2, skill) + _rng.randf() * 0.15
+		_choose_line(b, c)
+	# Rough ground and steep pitches want a calmer pace.
+	var steep := (c.height_rough(b.s + 4.0, b.d) - c.height_rough(b.s + 8.0, b.d)) / 4.0
+	var target_v := 7.0 + skill * 3.5 - maxf(0.0, steep - 0.3) * 8.0
+	if _caution > 0.0: target_v = minf(target_v, 4.5 + skill)
+	if c.in_water(b.s + 4.0, b.d): target_v = minf(target_v, 7.0)
+	var look := 5.0 + b.v * 0.4
+	var desired := atan2(_target_d - b.d, look)
+	var across := (c.height_rough(b.s, b.d + 0.5) - c.height_rough(b.s, b.d - 0.5))
 	var feed := c.curvature(b.s) * b.v / maxf(0.4, minf(2.3, 15.0 / (b.v + 4.0)))
-	var steer := clampf((desired - b.psi) * 3.0 + feed, -1.0, 1.0)
+	# Lean into the side slope so it doesn't drag us off the line.
+	var steer := clampf((desired - b.psi) * 3.0 + feed + across * 0.6, -1.0, 1.0)
+	# Never ask the tyres for more than they have.
+	var rate := minf(2.3, 15.0 / (b.v + 4.0))
+	var hold := Bike.GRIP * c.grip(b.s, b.d, 0.5) / maxf(b.v, 1.0) / rate
+	steer = clampf(steer, -hold, hold)
+	# Something solid right in front: swerve and scrub speed.
+	var heading := Vector2(cos(b.psi), sin(b.psi))
+	for o in c.obstacles_near(b.s):
+		if o.kind == "rock" and o.r < 0.6: continue
+		var rel := Vector2(o.s - b.s, o.d - b.d)
+		var along := rel.dot(heading)
+		if along < 0.0 or along > 3.0 + b.v * 0.5: continue
+		var side := heading.x * rel.y - heading.y * rel.x
+		if absf(side) < o.r + 0.7:
+			steer = -signf(side) if absf(side) > 0.05 else 1.0
+			target_v = minf(target_v, 4.0)
+	target_v = maxf(target_v, 2.5)
 	var pedal := 0.0
 	var brake := 0.0
 	if b.v < target_v - 0.6: pedal = 1.0
-	elif b.v > target_v + 0.6: brake = clampf((b.v - target_v) / 3.0, 0.2, 1.0)
+	elif b.v > target_v + 0.4: brake = clampf((b.v - target_v) / 2.5, 0.25, 1.0)
 	var hop := false
 	if b.grounded and b.invulnerable <= 0.0:
 		for o in c.obstacles_near(b.s):
 			var ahead: float = o.s - b.s
-			if o.kind == "rock" and ahead > 0.6 and ahead < 1.2 + b.v * 0.12 and absf(o.d - b.d) < o.r + 0.4:
+			if o.r < 0.6 and ahead > 0.6 and ahead < 1.2 + b.v * 0.12 and absf(o.d - b.d) < o.r + 0.4:
 				hop = _rng.randf() < 0.4 + skill * 0.6
 	return {"steer": steer, "pedal": pedal, "brake": brake, "hop": hop}
 
-## Pick the widest gap between rocks over the next stretch.
-func _gap(b: Bike, c: Course) -> float:
-	var best := 0.0
-	var best_clear := -INF
-	var rocks := c.obstacles_near(b.s + 8.0)
-	var dd := -2.8
-	while dd <= 2.8:
-		var clear := INF
-		for o in rocks:
-			if o.s < b.s or o.s > b.s + 16.0: continue
-			clear = minf(clear, absf(o.d - dd) - o.r)
-		clear -= absf(dd - b.d) * 0.15
-		if clear > best_clear:
-			best_clear = clear
+## Score lines across the slope over the next stretch and aim for the best.
+func _choose_line(b: Bike, c: Course) -> void:
+	var reach := 18.0 + b.v * 1.6
+	var near: Array = []
+	for o in c.obstacles_near(b.s + reach * 0.5):
+		if o.s > b.s and o.s < b.s + reach: near.append(o)
+	var best := b.d
+	var best_cost := INF
+	var best_ledge := false
+	var dd := -Course.CORRIDOR + 1.5
+	while dd <= Course.CORRIDOR - 1.5:
+		var cost := absf(dd - b.d) * 0.12 + dd * dd * 0.002
+		var ledge := false
+		var u := 2.0
+		while u < reach:
+			var s := b.s + u
+			# The line drifts from here to dd as we ride towards it.
+			var d := lerpf(b.d, dd, clampf(u / 12.0, 0.0, 1.0))
+			# Height lost over the next 1.5 m beyond what the slope itself loses.
+			var drop := c.height_rough(s, d) - c.height_rough(s + 1.5, d) - (c.base_height(s) - c.base_height(s + 1.5))
+			if drop > 1.2:
+				cost += drop * (6.0 if drop > 2.5 else 1.5)
+				ledge = true
+			if c.in_water(s, d): cost += 0.3
+			u += 1.5
+		for o in near:
+			var d_at := lerpf(b.d, dd, clampf((o.s - b.s) / 12.0, 0.0, 1.0))
+			if absf(o.d - d_at) < o.r + 1.1:
+				cost += 1.0 if o.kind == "rock" and o.r < 0.6 else 6.0
+		cost += _rng.randf() * (1.0 - skill) * 3.0
+		if cost < best_cost:
+			best_cost = cost
 			best = dd
-		dd += 0.5
-	return best
+			best_ledge = ledge
+		dd += 1.5
+	_target_d = best
+	_caution = 1.0 if best_ledge else 0.0
+	# A big cliff coming up: head for the nearest chute in good time.
+	var band := c.band_ahead(b.s, reach + 25.0)
+	if not band.is_empty() and band.h > 3.0:
+		var pick := INF
+		for chute in band.chutes:
+			if absf(chute.d - b.d) < absf(pick - b.d): pick = chute.d
+		_target_d = pick
+		_caution = 1.0 if band.s - b.s < 30.0 else _caution

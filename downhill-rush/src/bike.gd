@@ -32,7 +32,7 @@ var crashes := 0
 var crash_spin := Vector3.ZERO
 var skid := 0.0         ## How hard the tyres are sliding this step, 0..1.
 var skid_time := 0.0
-var fell := false       ## Last crash was off the edge.
+var crash_reason := ""
 
 func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
 	s = p_s
@@ -64,23 +64,25 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		pedal = 0.0
 	var k := c.curvature(b.s)
 	var path_scale := 1.0 / maxf(0.3, 1.0 - k * b.d)
-	var off_track := absf(b.d) > Course.TRACK_HALF + 0.6
+	var wet := false
 	var face := 0.0
 	if b.grounded:
 		var grad := c.gradient(b.s, b.d)
+		var ground_grip := c.grip(b.s, b.d, grad.length())
+		wet = ground_grip < 0.58 and c.in_water(b.s, b.d)
 		var along := grad.x * cos(b.psi) + grad.y * sin(b.psi)
 		var across := -grad.x * sin(b.psi) + grad.y * cos(b.psi)
 		face = along
 		var acc := -G * along / sqrt(1.0 + along * along)
-		acc -= 0.12 + (2.2 if off_track else 0.0)
+		acc -= 0.12 + (6.0 if wet else 0.0)
 		acc -= 0.0042 * b.v * b.v
 		acc += pedal * 3.4 * clampf((12.5 - b.v) / 5.0, 0.0, 1.0)
-		acc -= brake * 8.0
+		acc -= brake * 8.0 * (0.4 + 0.6 * ground_grip)
 		b.v = maxf(0.0, b.v + acc * dt)
 		var rate := minf(2.3, 15.0 / (b.v + 4.0)) * (1.25 if brake > 0.3 else 1.0)
 		# Grip limits how hard you can turn at speed; braking hard eats into it.
 		# Ask for more and the tyres slide: you scrub speed and run wide.
-		var grip := GRIP * (1.0 - 0.35 * brake) / maxf(b.v, 1.0)
+		var grip := GRIP * ground_grip * (1.0 - 0.35 * brake) / maxf(b.v, 1.0)
 		var yaw := steer * rate
 		b.skid = 0.0
 		if absf(yaw) > grip:
@@ -88,15 +90,15 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 			b.v = maxf(0.0, b.v - b.skid * 5.0 * dt)
 			yaw = signf(yaw) * grip
 		# Hold a big slide too long and the bike washes out from under you.
-		b.skid_time = b.skid_time + dt if b.skid > 0.5 else maxf(0.0, b.skid_time - dt * 2.0)
-		if b.skid_time > 0.45 and b.invulnerable <= 0.0:
+		b.skid_time = b.skid_time + dt if b.skid > 0.85 and b.v > 6.0 else maxf(0.0, b.skid_time - dt * 2.0)
+		if b.skid_time > 0.6 and b.invulnerable <= 0.0:
 			b.skid_time = 0.0
-			_crash(b)
+			_crash(b, "washout")
 			return
 		b.psi += yaw * dt
-		# Side slopes pull you down the fall line: off-camber trail keeps you
-		# steering, and off the trail it drags you towards the drop.
-		b.d -= across * (2.5 if off_track else 0.9) * dt
+		# Side slopes pull you down the fall line, so every roll and hollow
+		# needs a bit of counter-steer.
+		b.d -= across * 1.4 * dt
 		b.pitch = lerpf(b.pitch, atan(along), minf(1.0, dt * 18.0))
 		b.lean = lerpf(b.lean, steer * clampf(b.v / 10.0, 0.0, 1.0) * 0.55, minf(1.0, dt * 8.0))
 	else:
@@ -113,26 +115,12 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	b.psi = clampf(b.psi, -1.45, 1.45)
 	b.s += b.v * cos(b.psi) * path_scale * dt
 	b.d += b.v * sin(b.psi) * dt
-	var limit := Course.EDGE - 4.0
+	var limit := Course.CORRIDOR + 9.0
 	if absf(b.d) > limit:
 		b.d = signf(b.d) * limit
 		b.psi *= 0.5
 		b.v *= 0.97
 	var ground := c.height(b.s, b.d)
-	if absf(b.d) > Course.TRACK_HALF + 0.4 and b.invulnerable <= 0.0:
-		var edge := c.height(b.s, signf(b.d) * Course.TRACK_HALF)
-		if ground < edge - 1.6:
-			# Over the edge and down the ravine.
-			_crash(b)
-			b.fell = true
-			return
-		if ground > edge + 1.0 and b.grounded:
-			# Into the rock wall: bounce back onto the trail.
-			b.d = signf(b.d) * (Course.TRACK_HALF + 0.3)
-			b.psi = -b.psi * 0.6 - signf(b.d) * 0.15
-			b.v *= 0.7
-			b.wobble = 0.35
-			ground = c.height(b.s, b.d)
 	if b.grounded:
 		var follow := (ground - b.y) / dt
 		var free_y := b.y + (b.vy - G * dt) * dt
@@ -151,7 +139,7 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 			b.air_time = 0.0
 		elif face > 0.85 and b.v > 5.0 and b.invulnerable <= 0.0:
 			# Rode straight into a face (cased a jump).
-			_crash(b)
+			_crash(b, "face")
 			return
 		else:
 			b.y = ground
@@ -175,7 +163,7 @@ static func _land(b: Bike, c: Course, ground: float) -> void:
 	b.grounded = true
 	b.landed = true
 	if (impact > 8.0 or mismatch > 1.05) and b.invulnerable <= 0.0:
-		_crash(b)
+		_crash(b, "landing")
 		return
 	b.v = speed * cos(slope - path)
 	if impact > 5.2 or mismatch > 0.7:
@@ -193,11 +181,28 @@ static func _collide_obstacles(b: Bike, c: Course) -> void:
 		var r: float = o.r + RIDER_RADIUS
 		if ds * ds + dd * dd > r * r: continue
 		if b.y - c.height(o.s, o.d) > o.h: continue
-		_crash(b)
-		return
+		# How hard we're riding into it decides between a bump and a crash.
+		var dist := sqrt(ds * ds + dd * dd)
+		var n := Vector2(ds, dd) / maxf(dist, 0.001)
+		var closing := Vector2(cos(b.psi), sin(b.psi)).dot(n) * b.v
+		if closing > 5.5:
+			_crash(b, "obstacle")
+			return
+		# Slower than that: push clear and slide round it.
+		b.s -= n.x * (r - dist)
+		b.d -= n.y * (r - dist)
+		var vel := Vector2(cos(b.psi), sin(b.psi)) * b.v
+		vel -= n * maxf(0.0, vel.dot(n))
+		var away := -1.0 if b.d < o.d else 1.0
+		var tangent := Vector2(-n.y, n.x)
+		if tangent.y * away < 0.0: tangent = -tangent
+		vel += tangent * 1.2
+		b.v = vel.length() * 0.85
+		b.psi = clampf(atan2(vel.y, maxf(vel.x, 0.05)), -1.45, 1.45)
+		b.wobble = maxf(b.wobble, 0.3)
 
-static func _crash(b: Bike) -> void:
-	b.fell = false
+static func _crash(b: Bike, reason := "hit") -> void:
+	b.crash_reason = reason
 	b.crashed = true
 	b.crash_t = CRASH_TIME
 	b.crashes += 1
@@ -213,9 +218,10 @@ static func _step_crashed(b: Bike, c: Course, dt: float) -> void:
 	b.d += b.v * sin(b.psi) * dt
 	b.y = c.height(b.s, b.d)
 	if b.crash_t > 0.0: return
-	# Back on the bike in the middle of the line, clear of rocks.
-	var best := clampf(b.d, -2.5, 2.5)
-	for candidate in [best, 0.0, -1.5, 1.5, -2.6, 2.6]:
+	# Back on the bike where you landed, clear of rocks and trees.
+	var here := clampf(b.d, -Course.CORRIDOR + 1.0, Course.CORRIDOR - 1.0)
+	var best := here
+	for candidate in [here, here - 1.5, here + 1.5, here - 3.0, here + 3.0]:
 		var clear := true
 		for o in c.obstacles_near(b.s):
 			if Vector2(o.s - b.s, o.d - candidate).length() < o.r + 1.0: clear = false
