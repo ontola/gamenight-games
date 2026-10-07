@@ -16,8 +16,8 @@ func _init() -> void:
 		for sec in c.sections: kinds[sec.kind] = kinds.get(sec.kind, 0) + 1
 		var swing := 0.0
 		for j in c.theta.size(): swing = maxf(swing, absf(c.theta[j] - c.view[j]))
-		print("seed %d: %d cliff bands (%d big), %s, %d streams, %d obstacles, drop %.0f m, swing %.0f deg, %d ms" % [seed_value, c.bands.size(), big, kinds, c.streams.size(), c.obstacles.size(), c.base[0] - c.base[c.base.size() - 1], rad_to_deg(swing), ms])
-		if c.bands.size() < 3 or kinds.size() < 6: failures += 1
+		print("seed %d (%s): %d cliff bands (%d big), %s, %d streams, %d obstacles, drop %.0f m, swing %.0f deg, %d ms" % [seed_value, c.biome, c.bands.size(), big, kinds, c.streams.size(), c.obstacles.size(), c.base[0] - c.base[c.base.size() - 1], rad_to_deg(swing), ms])
+		if c.bands.size() < 2 or kinds.size() < 6: failures += 1
 		if swing < 0.4: failures += 1
 	print("OK" if failures == 0 else "FAIL")
 	quit(0 if failures == 0 else 1)

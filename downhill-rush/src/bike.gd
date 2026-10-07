@@ -146,6 +146,10 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 			b.grounded = false
 			b.launched = true
 			b.air_time = 0.0
+		elif b.invulnerable <= 0.0 and c.water_depth(b.s, b.d) > 0.5:
+			# Rode into the deep end.
+			_crash(b, "splash")
+			return
 		elif face > 0.7 and face * b.v > 4.5 and b.invulnerable <= 0.0:
 			# Rode straight into a face (cased a jump).
 			_crash(b, "face")
@@ -161,8 +165,10 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	b.touching = false
 	_collide_obstacles(b, c, steer)
 	# Wedged in a pocket of rocks: hop off and walk the bike out.
-	b.pinned = b.pinned + dt if b.touching and b.v < 4.5 else maxf(0.0, b.pinned - dt * 2.0)
-	if b.pinned > 1.2:
+	# Same when you've ground to a halt on a bank without braking.
+	var stalled := b.grounded and b.v < 0.8 and brake < 0.1
+	b.pinned = b.pinned + dt if (b.touching and b.v < 4.5) or stalled else maxf(0.0, b.pinned - dt * 2.0)
+	if b.pinned > (1.2 if b.touching else 2.0):
 		b.pinned = 0.0
 		var spot := clear_spot(c, b.s, b.d, true)
 		b.s = spot.x
@@ -268,7 +274,9 @@ static func _step_crashed(b: Bike, c: Course, dt: float) -> void:
 	b.y = c.height(b.s, b.d)
 	if b.crash_t > 0.0: return
 	# Back on the bike where you landed, clear of rocks and trees.
-	b.d = clear_spot(c, b.s, b.d, false).y
+	var spot := clear_spot(c, b.s, b.d, false)
+	b.s = spot.x
+	b.d = spot.y
 	b.psi = 0.0
 	b.v = 3.0
 	b.vy = 0.0
@@ -283,10 +291,16 @@ static func _step_crashed(b: Bike, c: Course, dt: float) -> void:
 static func clear_spot(c: Course, s: float, d: float, ahead: bool) -> Vector2:
 	var e := c.edges(s)
 	var here := clampf(d, e.x + 1.0, e.y - 1.0)
-	for ds in ([0.0, 1.5, 3.0] if ahead else [0.0]):
-		for dd in [0.0, -1.5, 1.5, -3.0, 3.0, -4.5, 4.5]:
+	# Out of a lake or a gorge, look much further: the far bank or the far side.
+	var far := c.water_depth(s, d) > 0.2 or c.in_chasm(s, d)
+	var steps := [0.0, 1.5, 3.0] if ahead else [0.0]
+	if far: steps = [0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 13.0, 16.0, 20.0, 25.0]
+	var offsets := [0.0, -1.5, 1.5, -3.0, 3.0, -4.5, 4.5]
+	if far: offsets += [-7.0, 7.0, -10.0, 10.0, -13.0, 13.0]
+	for ds in steps:
+		for dd in offsets:
 			var p := Vector2(s + ds, clampf(here + dd, e.x + 1.0, e.y - 1.0))
-			var clear := true
+			var clear := c.water_depth(p.x, p.y) < 0.1 and not c.in_chasm(p.x, p.y)
 			for o in c.obstacles_near(p.x):
 				if Vector2(o.s - p.x, o.d - p.y).length() < o.r + 1.0: clear = false
 			if clear: return p

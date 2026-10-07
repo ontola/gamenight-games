@@ -44,6 +44,7 @@ var _skip := 0.0
 var _shot_phase := "race"
 var _shot_frames := 0
 var _shot_air := false
+var _look_s := -1.0   ## Screenshot helper: park the camera at this distance down the run.
 var _showcase := false
 var _out_order := 0
 var _rng := RandomNumberGenerator.new()
@@ -90,6 +91,7 @@ func _parse_args() -> void:
 		elif arg.begins_with("--shot-phase="): _shot_phase = arg.substr(13)
 		elif arg == "--shot-air": _shot_air = true
 		elif arg == "--showcase": _showcase = true
+		elif arg.begins_with("--look="): _look_s = float(arg.substr(7))
 
 
 # ── Scene ────────────────────────────────────────────────────────────────────
@@ -161,6 +163,10 @@ func _mountain_name(seed_value: int) -> String:
 	r.seed = seed_value
 	var a := ["Pine", "Granite", "Fox", "Misty", "Larch", "Eagle", "Bramble", "Echo", "Juniper", "Marmot", "Cloud", "Ember"]
 	var b := ["Ridge", "Peak", "Hollow", "Run", "Gully", "Spur", "Crest", "Couloir", "Bluff", "Saddle"]
+	match course.biome:
+		"forest": a = ["Oak", "Mossy", "Fern", "Badger", "Elder", "Hazel", "Owl", "Thicket"]
+		"autumn": a = ["Amber", "Maple", "Rusty", "Copper", "Harvest", "Hollow", "Ember", "Russet"]
+		"desert": a = ["Cactus", "Rattlesnake", "Sunburnt", "Coyote", "Dusty", "Red Rock", "Vulture", "Mesa"]; b = ["Canyon", "Gulch", "Butte", "Wash", "Ridge", "Gorge"]
 	return "%s %s" % [a[r.randi() % a.size()], b[r.randi() % b.size()]]
 
 
@@ -440,6 +446,10 @@ func _update_camera(delta: float) -> void:
 	if count > 0:
 		focus_d = lerpf(focus_d, clampf(sum_d / count, -7.0, 7.0), 1.0 - exp(-delta * 1.5))
 	focus_s = minf(focus_s, course.total - 30.0)
+	if _look_s >= 0.0:
+		focus_s = _look_s
+		focus_d = 0.0
+		cam_yaw = course.view_heading(focus_s)
 	var yaw_target := course.view_heading(focus_s)
 	cam_yaw = lerp_angle(cam_yaw, yaw_target, 1.0 - exp(-delta * 1.8))
 	var fwd := Vector3(sin(cam_yaw), 0, cos(cam_yaw))

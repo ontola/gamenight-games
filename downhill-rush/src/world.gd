@@ -4,31 +4,46 @@ extends Node3D
 ## streams, trees, boulders, undergrowth and the start and finish gates.
 
 const CHUNK := 60.0
-const GRASS := Color(0.47, 0.63, 0.28)
-const GRASS_DARK := Color(0.28, 0.46, 0.25)
-const MEADOW := Color(0.74, 0.7, 0.34)
-const DIRT := Color(0.74, 0.5, 0.31)
-const DIRT_DARK := Color(0.5, 0.33, 0.22)
+var GRASS := Color(0.47, 0.63, 0.28)
+var GRASS_DARK := Color(0.28, 0.46, 0.25)
+var MEADOW := Color(0.74, 0.7, 0.34)
+var DIRT := Color(0.74, 0.5, 0.31)
+var DIRT_DARK := Color(0.5, 0.33, 0.22)
 const PACKED := Color(0.85, 0.63, 0.4)
 const CHALK := Color(0.97, 0.92, 0.8)
-const STONE := Color(0.6, 0.6, 0.62)
-const CLIFF := Color(0.42, 0.4, 0.4)
-const SCREE := Color(0.68, 0.64, 0.58)
-const SAND := Color(0.7, 0.66, 0.52)
+var STONE := Color(0.6, 0.6, 0.62)
+var CLIFF := Color(0.42, 0.4, 0.4)
+var SCREE := Color(0.68, 0.64, 0.58)
+var SAND := Color(0.7, 0.66, 0.52)
 const WATER_COL := Color(0.1, 0.36, 0.55, 0.88)
-const FERN := Color(0.3, 0.55, 0.22)
-const FOREST_FLOOR := Color(0.3, 0.36, 0.2)
+var FERN := Color(0.3, 0.55, 0.22)
+var FOREST_FLOOR := Color(0.3, 0.36, 0.2)
 const TRUNK := Color(0.42, 0.3, 0.22)
 const PINES := [Color(0.16, 0.36, 0.25), Color(0.2, 0.42, 0.27), Color(0.13, 0.3, 0.24), Color(0.26, 0.47, 0.27)]
 const AUTUMN := [Color(0.88, 0.56, 0.24), Color(0.93, 0.74, 0.3), Color(0.78, 0.36, 0.22)]
 
 var course: Course
+
+## Ground colours per biome: grass, grass_dark, meadow, dirt, dirt_dark, stone,
+## cliff, scree, sand, forest_floor, fern.
+const PALETTES := {
+	"forest": [Color(0.36, 0.6, 0.26), Color(0.2, 0.42, 0.2), Color(0.55, 0.68, 0.3), Color(0.5, 0.35, 0.24), Color(0.33, 0.23, 0.17),
+		Color(0.58, 0.6, 0.58), Color(0.4, 0.42, 0.4), Color(0.6, 0.6, 0.55), Color(0.65, 0.62, 0.5), Color(0.24, 0.3, 0.16), Color(0.26, 0.52, 0.2)],
+	"autumn": [Color(0.6, 0.62, 0.3), Color(0.45, 0.45, 0.22), Color(0.86, 0.6, 0.26), Color(0.62, 0.4, 0.25), Color(0.42, 0.27, 0.18),
+		Color(0.62, 0.6, 0.58), Color(0.44, 0.4, 0.38), Color(0.66, 0.62, 0.55), Color(0.7, 0.64, 0.5), Color(0.5, 0.32, 0.17), Color(0.7, 0.5, 0.2)],
+	"desert": [Color(0.88, 0.74, 0.52), Color(0.8, 0.62, 0.42), Color(0.93, 0.82, 0.6), Color(0.78, 0.45, 0.28), Color(0.6, 0.32, 0.2),
+		Color(0.8, 0.58, 0.44), Color(0.62, 0.34, 0.24), Color(0.82, 0.64, 0.48), Color(0.9, 0.8, 0.6), Color(0.72, 0.5, 0.34), Color(0.6, 0.62, 0.3)],
+}
 var _rng := RandomNumberGenerator.new()
 var _columns := PackedFloat32Array()
 
 
 func build(c: Course) -> void:
 	course = c
+	if PALETTES.has(c.biome):
+		var pal: Array = PALETTES[c.biome]
+		GRASS = pal[0]; GRASS_DARK = pal[1]; MEADOW = pal[2]; DIRT = pal[3]; DIRT_DARK = pal[4]
+		STONE = pal[5]; CLIFF = pal[6]; SCREE = pal[7]; SAND = pal[8]; FOREST_FLOOR = pal[9]; FERN = pal[10]
 	_rng.seed = c.seed_value * 31 + 5
 	for child in get_children():
 		child.queue_free()
@@ -112,6 +127,23 @@ func _terrain_chunk(s0: float, s1: float) -> void:
 			water.quad(course.world(c0 - 1.1, d, y0), course.world(c0 + 1.1, d, y0),
 				course.world(c1 + 1.1, d1, y1), course.world(c1 - 1.1, d1, y1), Color.WHITE)
 			d = d1
+	for sec in course.sections:
+		if sec.kind != "lake" or sec.cs < s0 or sec.cs >= s1: continue
+		var level := course.water_level(sec.cs)
+		var n := 40
+		var centre := course.world(sec.cs, sec.cd, level)
+		for k in n:
+			var pts: Array[Vector3] = []
+			for a in [TAU * k / n, TAU * (k + 1) / n]:
+				# Walk out from the middle to where the shore is.
+				var r := 0.0
+				while r < 1.6:
+					var ps: float = sec.cs + cos(a) * sec.rs * r
+					var pd: float = sec.cd + sin(a) * sec.rd * r
+					if course._lake_q(sec, ps, pd) > 1.18: break
+					r += 0.05
+				pts.append(course.world(sec.cs + cos(a) * sec.rs * r, sec.cd + sin(a) * sec.rd * r, level))
+			water.tri(centre, pts[0], pts[1], Color.WHITE)
 	if not water.is_empty():
 		var wm := MeshInstance3D.new()
 		wm.mesh = water.commit(null, _water_material())
@@ -161,10 +193,13 @@ func _vertex_color(p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) ->
 		var crag := course._noise.get_noise_2d(s * 2.5 + 1200.0, d * 2.5)
 		col = GRASS_DARK.lerp(FOREST_FLOOR, clampf(course._noise.get_noise_2d(s * 1.5, d * 1.5) + 0.5, 0.0, 1.0))
 		col = col.darkened(clampf(steep * 0.4, 0.0, 0.25))
-		if crag > 0.15 or steep > 0.8: col = col.lerp(CLIFF.lightened(crag * 0.4), clampf((crag - 0.15) * 5.0 + maxf(0.0, steep - 0.8) * 5.0, 0.0, 1.0))
+		if crag > 0.15: col = col.lerp(CLIFF.lightened(crag * 0.4), clampf((crag - 0.15) * 5.0, 0.0, 1.0))
 	elif steep > 0.35:
 		# Ledges and cliff faces are bare rock, so they read from far above.
 		col = col.lerp(CLIFF, clampf((steep - 0.35) * 3.0, 0.0, 1.0))
+	# Gorges fall away into shadow.
+	var below := course.base_height(s) - p0.y
+	if below > 3.0: col = col.lerp(Color(0.1, 0.09, 0.1), clampf((below - 3.0) / 7.0, 0.0, 0.85))
 	return col.lightened(_rng.randf_range(-0.03, 0.04))
 
 
@@ -179,7 +214,7 @@ func _props() -> void:
 		if not chunks.has(key): chunks[key] = LowPoly.new()
 		var lp: LowPoly = chunks[key]
 		var p := course.world(o.s, o.d)
-		if o.kind == "tree": _tree(lp, p)
+		if o.kind == "tree": _tree(lp, p, o.get("look", "pine"))
 		else: _rock(lp, p, o.r)
 	# Decoration without collisions: bushes, grass tufts, flowers.
 	var s := 0.0
@@ -193,6 +228,17 @@ func _props() -> void:
 			if course.surface(ss, d) in [Course.Surface.WATER, Course.Surface.SCREE, Course.Surface.ROCK]: continue
 			var p := course.world(ss, d)
 			var roll := _rng.randf()
+			if course.biome == "desert":
+				# Dry ground: barrel cacti, dry grass, pale pebbles.
+				if roll < 0.3:
+					var g := Color(0.4, 0.58, 0.32)
+					lp.blob(p + Vector3(0, 0.25, 0), Vector3(0.3, 0.35, 0.3) * _rng.randf_range(0.7, 1.3), g, _rng, 3, 8, 0.0)
+					lp.cone(p + Vector3(0, 0.55, 0), 0.07, 0.0, 0.12, 4, Color(0.95, 0.45, 0.5))
+				elif roll < 0.75:
+					_tuft(lp, p)
+				else:
+					lp.blob(p + Vector3(0, 0.08, 0), Vector3(0.22, 0.14, 0.2), STONE.lightened(0.1), _rng, 2, 5)
+				continue
 			if roll < 0.25:
 				_fern(lp, p)
 			elif roll < 0.4:
@@ -211,21 +257,63 @@ func _props() -> void:
 		mi.name = "Props%d" % key
 		add_child(mi)
 
-func _tree(lp: LowPoly, p: Vector3) -> void:
+func _tree(lp: LowPoly, p: Vector3, look: String) -> void:
 	var scale := _rng.randf_range(0.8, 1.35)
 	var tilt := Basis(Vector3(_rng.randf_range(-1, 1), 0, _rng.randf_range(-1, 1)).normalized(), _rng.randf_range(0.0, 0.06))
-	lp.cone(p - Vector3(0, 0.3, 0), 0.28 * scale, 0.2 * scale, 1.6 * scale, 5, TRUNK, tilt)
-	if _rng.randf() < 0.82:
-		var col: Color = PINES[_rng.randi() % PINES.size()]
-		var y := 1.0 * scale
-		var r := 1.7 * scale
-		for layer in 3:
-			lp.cone(p + tilt.y * y, r, 0.0, 2.6 * scale, 6, col.lightened(layer * 0.04), tilt, 0.0, _rng)
-			y += 1.25 * scale
-			r *= 0.72
-	else:
-		var col: Color = AUTUMN[_rng.randi() % AUTUMN.size()]
-		lp.blob(p + tilt.y * 2.8 * scale, Vector3(1.6, 1.8, 1.6) * scale, col, _rng, 3, 6, 0.2)
+	match look:
+		"pine", "fir":
+			lp.cone(p - Vector3(0, 0.3, 0), 0.28 * scale, 0.2 * scale, 1.6 * scale, 5, TRUNK, tilt)
+			var col: Color = PINES[_rng.randi() % PINES.size()]
+			# Fir: taller and narrower, more tiers.
+			var tiers := 3 if look == "pine" else 5
+			var y := 1.0 * scale
+			var r := (1.7 if look == "pine" else 1.25) * scale
+			for layer in tiers:
+				lp.cone(p + tilt.y * y, r, 0.0, (2.6 if look == "pine" else 2.0) * scale, 6, col.lightened(layer * 0.035), tilt, 0.0, _rng)
+				y += (1.25 if look == "pine" else 1.0) * scale
+				r *= 0.72 if look == "pine" else 0.8
+		"oak", "autumn":
+			lp.cone(p - Vector3(0, 0.3, 0), 0.32 * scale, 0.22 * scale, 2.4 * scale, 6, TRUNK, tilt)
+			var greens := [Color(0.3, 0.52, 0.2), Color(0.38, 0.58, 0.22), Color(0.26, 0.46, 0.22)]
+			var cols: Array = AUTUMN if look == "autumn" else greens
+			for k in 3:
+				var off := Vector3(_rng.randf_range(-0.8, 0.8), _rng.randf_range(-0.3, 0.5), _rng.randf_range(-0.8, 0.8)) * scale
+				lp.blob(p + tilt.y * 3.0 * scale + off, Vector3(1.3, 1.1, 1.3) * scale * _rng.randf_range(0.8, 1.15), cols[_rng.randi() % cols.size()], _rng, 3, 7, 0.18)
+		"birch":
+			var trunk := Color(0.92, 0.9, 0.86)
+			lp.cone(p - Vector3(0, 0.3, 0), 0.16 * scale, 0.1 * scale, 4.2 * scale, 5, trunk, tilt)
+			for k in 3:
+				lp.box(p + tilt.y * (0.6 + k * 1.2) * scale, Vector3(0.3, 0.06, 0.3) * scale, Color(0.15, 0.14, 0.14), tilt)
+			var leaf := Color(0.58, 0.72, 0.3) if course.biome != "autumn" else Color(0.95, 0.8, 0.28)
+			lp.blob(p + tilt.y * 3.9 * scale, Vector3(0.9, 1.5, 0.9) * scale, leaf, _rng, 3, 6, 0.2)
+		"dead":
+			var wood := Color(0.48, 0.4, 0.34)
+			lp.cone(p - Vector3(0, 0.3, 0), 0.22 * scale, 0.08 * scale, 3.6 * scale, 5, wood, tilt)
+			for k in 4:
+				var a := _rng.randf() * TAU
+				var from := p + tilt.y * _rng.randf_range(1.4, 3.0) * scale
+				lp.beam(from, from + Vector3(cos(a) * 1.1, 0.9, sin(a) * 1.1) * scale, 0.09 * scale, wood)
+		"cactus":
+			# Saguaro: a ribbed column with one or two arms bent up.
+			var green := Color(0.32, 0.55, 0.3).lightened(_rng.randf_range(-0.05, 0.08))
+			var h := 3.0 * scale
+			lp.cone(p - Vector3(0, 0.2, 0), 0.32 * scale, 0.28 * scale, h, 8, green, Basis.IDENTITY, 0.12)
+			lp.blob(p + Vector3(0, h - 0.2, 0), Vector3(0.28, 0.25, 0.28) * scale, green, _rng, 3, 8, 0.0)
+			for k in _rng.randi_range(1, 2):
+				var side := Vector3.RIGHT.rotated(Vector3.UP, _rng.randf() * TAU)
+				var at := p + Vector3(0, _rng.randf_range(1.1, 1.8) * scale, 0)
+				var elbow := at + side * 0.7 * scale
+				lp.beam(at, elbow, 0.36 * scale, green)
+				lp.beam(elbow, elbow + Vector3(0, 1.0 * scale, 0), 0.34 * scale, green)
+				lp.blob(elbow + Vector3(0, 1.0 * scale, 0), Vector3(0.17, 0.15, 0.17) * scale, green, _rng, 2, 6, 0.0)
+		"joshua":
+			var bark := Color(0.5, 0.42, 0.32)
+			lp.cone(p - Vector3(0, 0.3, 0), 0.3 * scale, 0.22 * scale, 2.0 * scale, 6, bark, tilt)
+			for k in 3:
+				var a := TAU * k / 3.0 + _rng.randf()
+				var top := p + Vector3(cos(a) * 0.9, 2.9, sin(a) * 0.9) * scale
+				lp.beam(p + Vector3(0, 1.6 * scale, 0), top, 0.2 * scale, bark)
+				lp.blob(top + Vector3(0, 0.25, 0) * scale, Vector3(0.45, 0.4, 0.45) * scale, Color(0.45, 0.55, 0.28), _rng, 2, 7, 0.35)
 
 func _rock(lp: LowPoly, p: Vector3, r: float) -> void:
 	var col := STONE.lightened(_rng.randf_range(-0.12, 0.08))

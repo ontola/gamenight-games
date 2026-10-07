@@ -40,7 +40,11 @@ var sections: Array[Dictionary] = []
 var view := PackedFloat32Array()    ## Smoothed heading: the map's main direction, for the camera.
 ## Streams across the slope: {s, wiggle, phase}.
 var streams: Array[Dictionary] = []
-var obstacles: Array[Dictionary] = []   ## {s, d, r, h, kind}
+var obstacles: Array[Dictionary] = []   ## {s, d, r, h, kind, look}
+## What kind of mountain this is: alpine, forest, autumn or desert. It picks
+## the set pieces, the trees and the colours.
+var biome := "alpine"
+const BIOMES := ["alpine", "forest", "autumn", "desert"]
 var _buckets: Dictionary = {}           ## int(s/10) -> Array of obstacle indices
 var _noise := FastNoiseLite.new()
 var _detail := FastNoiseLite.new()
@@ -59,6 +63,7 @@ func _init(p_seed: int = 1, p_length: float = 900.0) -> void:
 	_detail.seed = p_seed + 77
 	_detail.noise_type = FastNoiseLite.TYPE_VALUE
 	_detail.frequency = 0.35
+	biome = BIOMES[_rng.randi() % BIOMES.size()]
 	_plan_sections()
 	_generate_line()
 	_place_streams()
@@ -73,7 +78,9 @@ func _plan_sections() -> void:
 	var s := START_FLAT + 30.0
 	while s < length - 70.0:
 		if bag.is_empty():
-			bag = ["band", "band", "band", "turn", "turn", "flat", "kicker", "kicker", "gully", "slalom", "open"]
+			bag = ["band", "band", "turn", "turn", "flat", "kicker", "kicker", "gully", "slalom", "open", "chasm", "lake"]
+			if biome == "desert": bag = ["band", "band", "turn", "turn", "kicker", "kicker", "gully", "slalom", "chasm", "chasm", "open"]
+			elif biome != "alpine": bag.append("lake")
 			for k in range(bag.size() - 1, 0, -1):
 				var m := _rng.randi_range(0, k)
 				var tmp := bag[k]; bag[k] = bag[m]; bag[m] = tmp
@@ -127,6 +134,31 @@ func _plan_sections() -> void:
 				sec.grade = 0.36
 			"open":
 				sec.len = _rng.randf_range(20.0, 40.0)
+			"lake":
+				# A tarn on a bench: flat water you can ride round, or into.
+				sec.len = _rng.randf_range(34.0, 44.0)
+				sec.grade = 0.05
+				sec.cs = s + sec.len * 0.5
+				sec.rs = _rng.randf_range(8.0, 12.0)
+				sec.rd = _rng.randf_range(6.0, 10.0)
+				var e := edges(sec.cs)
+				sec.cd = _rng.randf_range(e.x + sec.rd * 0.4, e.y - sec.rd * 0.4)
+			"chasm":
+				# A gorge right across the slope: cross on a rock bridge, or
+				# hit the ramp and fly it.
+				sec.len = 34.0
+				sec.grade = 0.3
+				sec.cs = s + 22.0
+				sec.w = _rng.randf_range(5.5, 7.5)
+				sec.depth = _rng.randf_range(9.0, 14.0)
+				var e := edges(sec.cs)
+				sec.bridges = []
+				for k in _rng.randi_range(1, 2):
+					sec.bridges.append({"d": _rng.randf_range(e.x + 3.0, e.y - 3.0), "w": _rng.randf_range(1.8, 2.6)})
+				var rd := _rng.randf_range(e.x + 4.0, e.y - 4.0)
+				for br in sec.bridges:
+					if absf(rd - br.d) < 6.0: rd = clampf(br.d + (7.0 if br.d < 0.0 else -7.0), e.x + 4.0, e.y - 4.0)
+				sec.ramp = {"d": rd, "w": 2.6, "h": 1.5, "run": 6.0}
 		sections.append(sec)
 		s += sec.len + _rng.randf_range(8.0, 18.0)
 
@@ -252,7 +284,9 @@ func height(s: float, d: float) -> float:
 	if o > 0.0:
 		h += 0.9 * pow(o, 1.35) + _noise.get_noise_2d(s, d) * minf(o * 0.3, 5.0)
 	h += 0.004 * d * d
-	# Rolls, spines and hollows, then rubble on top.
+	# Rolls, spines and hollows, then rubble on top. Calm round a lake.
+	var calm := _lake_calm(s, d)
+	wild *= calm
 	h += wild * (_noise.get_noise_2d(s * 4.0, d * 4.0) * 1.9 + _noise.get_noise_2d(s * 14.0 + 300.0, d * 14.0) * 0.35)
 	h += wild * _detail.get_noise_2d(s, d) * 0.16
 	h += _bands_at(s, d)
@@ -274,11 +308,62 @@ func _set_pieces_at(s: float, d: float) -> float:
 				# A ramp that kicks up at the end, then the lip drops away.
 				var up: float = lip.h * pow((u + lip.run) / lip.run, 2.2) if u <= 0.0 else lip.h * (1.0 - u / 0.6)
 				h += up * side
+		elif sec.kind == "chasm":
+			var u: float = s - sec.cs
+			var half: float = sec.w * 0.5
+			var ramp: Dictionary = sec.ramp
+			if u > -half - ramp.run and u < -half:
+				var side := 1.0 - smoothstep(ramp.w, ramp.w + 1.0, absf(d - ramp.d))
+				h += ramp.h * pow((u + half + ramp.run) / ramp.run, 2.2) * side
+			if absf(u) < half:
+				var hole: float = 1.0 - smoothstep(half - 0.5, half, absf(u))
+				for br in sec.bridges:
+					hole *= smoothstep(br.w * 0.5, br.w * 0.5 + 0.4, absf(d - br.d))
+				h -= hole * sec.depth
+		elif sec.kind == "lake":
+			var q := _lake_q(sec, s, d)
+			if q < 1.6:
+				# A bowl under the water and a low grassy rim round it.
+				h -= 2.4 * (1.0 - smoothstep(0.25, 1.05, q))
+				h += 0.7 * exp(-pow((q - 1.18) / 0.16, 2.0))
 		elif sec.kind == "gully":
 			var off := absf(d - gully_line(sec, s))
 			var e := gully_fade(sec, s)
 			h += e * smoothstep(sec.hw, sec.hw + 2.2, off) * (1.7 + 0.7 * _noise.get_noise_2d(s * 3.0 + 50.0, d * 3.0))
 	return h
+
+func _lake_q(sec: Dictionary, s: float, d: float) -> float:
+	var a: float = (s - sec.cs) / sec.rs
+	var b: float = (d - sec.cd) / sec.rd
+	# A wobbly shoreline, not an ellipse.
+	var wob := 1.0 + 0.18 * sin(atan2(b, a) * 3.0 + sec.cs) + 0.1 * sin(atan2(b, a) * 5.0)
+	return sqrt(a * a + b * b) / wob
+
+func _lake_calm(s: float, d: float) -> float:
+	for sec in sections:
+		if sec.kind == "lake" and absf(s - sec.cs) < sec.rs * 1.6:
+			return smoothstep(0.9, 1.5, _lake_q(sec, s, d))
+	return 1.0
+
+## The lake's surface height, or -INF where there is no lake.
+func water_level(s: float) -> float:
+	for sec in sections:
+		if sec.kind == "lake" and absf(s - sec.cs) < sec.rs * 1.5:
+			return base_height(sec.cs) - 0.45
+	return -INF
+
+## How deep the lake is here; 0 on dry ground.
+func water_depth(s: float, d: float) -> float:
+	var level := water_level(s)
+	if level == -INF: return 0.0
+	var sec := section_at(s, "lake")
+	if sec.is_empty() or _lake_q(sec, s, d) > 1.18: return 0.0
+	return maxf(0.0, level - height(s, d))
+
+## Ground far below the slope: you're at the bottom of a gorge.
+func in_chasm(s: float, d: float) -> bool:
+	var sec := section_at(s, "chasm")
+	return not sec.is_empty() and height(s, d) < base_height(s) - 3.0
 
 ## Centre of the gully path at s.
 func gully_line(sec: Dictionary, s: float) -> float:
@@ -361,6 +446,7 @@ func gradient(s: float, d: float) -> Vector2:
 		(height(s, d + e) - height(s, d - e)) / (2 * e))
 
 func in_water(s: float, d: float) -> bool:
+	if water_depth(s, d) > 0.05: return true
 	for st in streams:
 		if absf(s - _stream_line(st, d)) < 1.1: return true
 	return false
@@ -391,6 +477,7 @@ func grip(s: float, d: float, slope: float = -1.0) -> float:
 # ── Cliff bands and streams ──────────────────────────────────────────────────
 
 func _place_streams() -> void:
+	if biome == "desert": return
 	var s := START_FLAT + 80.0
 	while s < length - 40.0:
 		var clear := true
@@ -483,6 +570,8 @@ func _add_obstacle(s: float, d: float, r: float, h: float, kind: String, set_pie
 	if not set_piece:
 		var sec := section_at(s)
 		if not sec.is_empty() and sec.kind in ["gully", "slalom"]: return
+		if not sec.is_empty() and sec.kind == "chasm" and absf(s - sec.cs) < sec.w * 0.5 + 8.0: return
+		if water_depth(s, d) > 0.0 or _lake_calm(s, d) < 0.6: return
 		if on_path(s, d) or on_path(s + 6.0, d): return
 	if s < START_FLAT + 8.0: return
 	if s > length - 12.0 and s < length + 6.0 and absf(d) < TRACK_HALF + 3.0: return
@@ -490,10 +579,35 @@ func _add_obstacle(s: float, d: float, r: float, h: float, kind: String, set_pie
 		if absf(s - b.s) < r + 1.5: return
 	if _stream_at(s, d) > 0.2: return
 	var index := obstacles.size()
-	obstacles.append({"s": s, "d": d, "r": r, "h": h, "kind": kind})
+	var look := kind
+	if kind == "tree":
+		look = tree_look(s, d)
+		if look == "cactus": r = 0.35
+	obstacles.append({"s": s, "d": d, "r": r, "h": h, "kind": kind, "look": look})
 	var key := int(s / 10.0)
 	if not _buckets.has(key): _buckets[key] = []
 	_buckets[key].append(index)
+
+## Which tree grows here. Each biome has its own mix, and the mix drifts
+## along the run, so you ride through pine stands, then birches, then oaks.
+func tree_look(s: float, d: float) -> String:
+	var zone := _noise.get_noise_2d(s * 0.6 + 7000.0, d * 0.3)
+	var roll := _rng.randf()
+	match biome:
+		"alpine":
+			if zone > 0.25: return "birch" if roll < 0.7 else "pine"
+			return "pine" if roll < 0.6 else ("fir" if roll < 0.93 else "dead")
+		"forest":
+			if zone > 0.2: return "pine" if roll < 0.7 else "fir"
+			if zone < -0.3: return "birch" if roll < 0.7 else "oak"
+			return "oak" if roll < 0.65 else ("pine" if roll < 0.9 else "birch")
+		"autumn":
+			if zone > 0.2: return "birch" if roll < 0.75 else "autumn"
+			return "autumn" if roll < 0.6 else ("oak" if roll < 0.8 else "fir")
+		"desert":
+			if zone > 0.3: return "dead" if roll < 0.6 else "cactus"
+			return "cactus" if roll < 0.8 else ("dead" if roll < 0.95 else "joshua")
+	return "pine"
 
 func obstacles_near(s: float) -> Array:
 	var out: Array = []

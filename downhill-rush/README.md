@@ -57,7 +57,18 @@ open mountain between them:
 - **kicker**: one to three jumps built into the slope;
 - **gully**: a single narrow, steep path between boulder-strewn banks;
 - **slalom**: rows of trees or rocks with a few gaps;
-- **open**: just the mountain.
+- **open**: just the mountain;
+- **lake**: a tarn on a bench; ride round it, because the deep end is a crash;
+- **chasm**: a gorge right across the slope, crossed on a narrow rock bridge
+  or by flying the ramp next to it. Fall in and you crash and come back on
+  the far side.
+
+Every mountain has a biome: alpine, forest, autumn or desert. It sets the
+ground colours, which set pieces turn up (deserts get more gorges and no
+lakes or streams) and the trees: pines and firs, oaks, birches, autumn trees,
+dead trees, saguaro cacti and joshua trees. The mix of trees drifts along the
+run, so you pass through a pine stand, then a birch grove. `--look=S` parks
+the camera S metres down the run for screenshots.
 
 Cliff bands work like this: above each
 one the ground eases into a shelf, then drops off a ledge. Small ledges can be

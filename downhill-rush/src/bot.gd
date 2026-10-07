@@ -109,6 +109,7 @@ func _choose_line(b: Bike, c: Course) -> void:
 				ledge = true
 			if c.in_water(s, d): cost += 0.3
 			if not c.inside(s, d, 1.0): cost += 3.0
+			if c.water_depth(s, d) > 0.2: cost += 4.0
 			u += 1.5
 		for o in near:
 			var d_at := lerpf(b.d, dd, clampf((o.s - b.s) / 12.0, 0.0, 1.0))
@@ -130,3 +131,13 @@ func _choose_line(b: Bike, c: Course) -> void:
 			if absf(chute.d - b.d) < absf(pick - b.d): pick = chute.d
 		_target_d = pick
 		_caution = 1.0 if band.s - b.s < 30.0 else _caution
+	# A gorge: line up with a rock bridge well before it.
+	var gorge := c.section_at(b.s + reach + 10.0, "chasm")
+	if gorge.is_empty(): gorge = c.section_at(b.s + 12.0, "chasm")
+	if gorge.is_empty(): gorge = c.section_at(b.s, "chasm")
+	if not gorge.is_empty() and gorge.cs + gorge.w > b.s:
+		var pick := INF
+		for br in gorge.bridges:
+			if absf(br.d - b.d) < absf(pick - b.d): pick = br.d
+		_target_d = pick
+		_caution = 1.0 if gorge.cs - b.s < 30.0 else _caution
