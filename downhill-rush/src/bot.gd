@@ -95,7 +95,8 @@ func _choose_line(b: Bike, c: Course) -> void:
 	var best_ledge := false
 	var dd := -Course.CORRIDOR + 1.5
 	while dd <= Course.CORRIDOR - 1.5:
-		var cost := absf(dd - b.d) * 0.12 + dd * dd * 0.002
+		var mid := c.valley_mid(b.s + reach * 0.5)
+		var cost := absf(dd - b.d) * 0.12 + (dd - mid) * (dd - mid) * 0.002
 		var ledge := false
 		var u := 2.0
 		while u < reach:

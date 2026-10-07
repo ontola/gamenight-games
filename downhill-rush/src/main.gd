@@ -444,11 +444,11 @@ func _update_camera(delta: float) -> void:
 		else:
 			focus_s = maxf(focus_s, follow)
 	if count > 0:
-		focus_d = lerpf(focus_d, clampf(sum_d / count, -7.0, 7.0), 1.0 - exp(-delta * 1.5))
+		focus_d = lerpf(focus_d, clampf(sum_d / count, -14.0, 14.0), 1.0 - exp(-delta * 1.5))
 	focus_s = minf(focus_s, course.total - 30.0)
 	if _look_s >= 0.0:
 		focus_s = _look_s
-		focus_d = 0.0
+		focus_d = course.valley_mid(_look_s)
 		cam_yaw = course.view_heading(focus_s)
 	var yaw_target := course.view_heading(focus_s)
 	cam_yaw = lerp_angle(cam_yaw, yaw_target, 1.0 - exp(-delta * 1.8))

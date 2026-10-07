@@ -10,7 +10,7 @@ extends RefCounted
 ## same function, so what you see is what you ride.
 
 const DS := 1.0
-const CORRIDOR := 18.0         ## Rideable width each side; beyond it the valley walls rise.
+const CORRIDOR := 26.0         ## The valley floor never reaches further than this either side.
 const TRACK_HALF := 3.4        ## Half width of the start and finish gates.
 const EDGE := 70.0             ## Terrain extends this far sideways.
 const START_FLAT := 75.0
@@ -125,7 +125,7 @@ func _plan_sections() -> void:
 			"gully":
 				sec.len = _rng.randf_range(55.0, 80.0)
 				sec.grade = 0.5
-				sec.d0 = _rng.randf_range(-4.0, 4.0)
+				sec.d0 = _rng.randf_range(-3.0, 3.0)
 				sec.amp = _rng.randf_range(2.5, 4.5)
 				sec.freq = TAU / _rng.randf_range(26.0, 40.0)
 				sec.hw = 2.3
@@ -243,9 +243,16 @@ func view_heading(s: float) -> float: return _sample(view, s)
 ## than CORRIDOR; at the start and finish the valley is full width.
 func edges(s: float) -> Vector2:
 	var w := _wild(s)
-	var l := (0.5 + 0.5 * _noise.get_noise_2d(s * 1.1 + 5000.0, 0.0)) * 9.0
-	var r := (0.5 + 0.5 * _noise.get_noise_2d(s * 1.1 + 9000.0, 0.0)) * 9.0
-	return Vector2(-CORRIDOR + l * w, CORRIDOR - r * w)
+	# The valley floor drifts from side to side and swells and narrows, each
+	# bank on its own, so the way down never runs straight for long.
+	var mid := valley_mid(s)
+	var l := 10.0 + 8.0 * (0.5 + 0.5 * _noise.get_noise_2d(s * 1.3 + 5000.0, 0.0))
+	var r := 10.0 + 8.0 * (0.5 + 0.5 * _noise.get_noise_2d(s * 1.3 + 9000.0, 0.0))
+	return Vector2(lerpf(-CORRIDOR + 6.0, clampf(mid - l, -CORRIDOR, CORRIDOR - 20.0), w), lerpf(CORRIDOR - 6.0, clampf(mid + r, -CORRIDOR + 20.0, CORRIDOR), w))
+
+## Middle of the valley floor at s, wandering left and right of the fall line.
+func valley_mid(s: float) -> float:
+	return _wild(s) * 11.0 * _noise.get_noise_2d(s * 0.75 + 3000.0, 0.0)
 
 ## True if d is inside the valley floor at s.
 func inside(s: float, d: float, margin := 0.0) -> bool:
@@ -282,8 +289,13 @@ func height(s: float, d: float) -> float:
 	var edge := edges(s)
 	var o := maxf(d - edge.y, edge.x - d)
 	if o > 0.0:
-		h += 0.9 * pow(o, 1.35) + _noise.get_noise_2d(s, d) * minf(o * 0.3, 5.0)
-	h += 0.004 * d * d
+		# Hillsides, not walls: how steeply they rise wanders, and they're
+		# heaped with knolls and spurs.
+		var lump := _noise.get_noise_2d(s * 2.2 + 600.0, d * 2.2)
+		h += o * (0.45 + 0.35 * (lump + 0.5)) + 0.012 * o * o
+		h += _noise.get_noise_2d(s * 1.6, d * 1.6) * minf(o * 0.5, 6.0)
+	var across := d - valley_mid(s)
+	h += 0.006 * across * across
 	# Rolls, spines and hollows, then rubble on top. Calm round a lake.
 	var calm := _lake_calm(s, d)
 	wild *= calm
@@ -367,7 +379,7 @@ func in_chasm(s: float, d: float) -> bool:
 
 ## Centre of the gully path at s.
 func gully_line(sec: Dictionary, s: float) -> float:
-	return sec.d0 + sec.amp * sin((s - sec.s) * sec.freq)
+	return valley_mid(s) + sec.d0 + sec.amp * sin((s - sec.s) * sec.freq)
 
 func gully_fade(sec: Dictionary, s: float) -> float:
 	return smoothstep(sec.s, sec.s + 8.0, s) * (1.0 - smoothstep(sec.s + sec.len - 8.0, sec.s + sec.len, s))
@@ -546,25 +558,30 @@ func _place_set_piece_obstacles() -> void:
 					d += 2.4
 				s += _rng.randf_range(2.2, 3.2)
 		elif sec.kind == "slalom":
-			var s: float = sec.s + 5.0
-			while s < sec.s + sec.len - 3.0:
-				var gaps: Array[float] = []
-				for k in _rng.randi_range(2, 3):
-					var e := edges(s)
-					gaps.append(_rng.randf_range(e.x + 3.0, e.y - 3.0))
+			# A thicket of trees and boulders with two or three lanes winding
+			# through it. No rows: it should look grown, not planted.
+			var lanes: Array = []
+			for k in _rng.randi_range(2, 3):
+				lanes.append({"off": _rng.randf_range(-9.0, 9.0), "amp": _rng.randf_range(2.0, 5.0),
+					"freq": TAU / _rng.randf_range(18.0, 34.0), "phase": _rng.randf() * TAU})
+			var s: float = sec.s + 4.0
+			while s < sec.s + sec.len - 2.0:
 				var d := -CORRIDOR - 2.0
-				var tree := _rng.randf() < 0.5
 				while d < CORRIDOR + 2.0:
-					var open := false
-					for gd in gaps:
-						if absf(d - gd) < 2.2: open = true
-					if not open:
-						if tree: _add_obstacle(s + _rng.randf_range(-0.5, 0.5), d, 0.45, 9.0, "tree", true)
+					var ps := s + _rng.randf_range(-0.9, 0.9)
+					var pd := d + _rng.randf_range(-0.9, 0.9)
+					var clear := false
+					for lane in lanes:
+						var at: float = valley_mid(ps) + lane.off + lane.amp * sin(ps * lane.freq + lane.phase)
+						if absf(pd - at) < 1.9: clear = true
+					if not clear and _rng.randf() < 0.62:
+						if _noise.get_noise_2d(ps * 3.0 + 800.0, pd * 3.0) > 0.0:
+							_add_obstacle(ps, pd, 0.45, 9.0, "tree", true)
 						else:
-							var r := _rng.randf_range(0.8, 1.2)
-							_add_obstacle(s + _rng.randf_range(-0.5, 0.5), d, r, r * 0.9, "rock", true)
-					d += _rng.randf_range(2.0, 2.8)
-				s += _rng.randf_range(7.0, 9.0)
+							var r := _rng.randf_range(0.6, 1.3)
+							_add_obstacle(ps, pd, r, r * 0.9, "rock", true)
+					d += 2.3
+				s += 2.3
 
 func _add_obstacle(s: float, d: float, r: float, h: float, kind: String, set_piece := false) -> void:
 	if not set_piece:

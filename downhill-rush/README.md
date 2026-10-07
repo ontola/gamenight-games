@@ -75,8 +75,10 @@ one the ground eases into a shelf, then drops off a ledge. Small ledges can be
 ridden; big ones will put you on your face, unless you find one of the few
 chutes where the ledge becomes a steep ramp. Between the bands there are forest
 clumps, boulder fields, loose scree with little grip, and streams that bog you
-down. Wooded valley sides with rocky crags keep the field together; they wander in
-and out, so the valley pinches and opens, and the fall line itself snakes.
+down. Wooded, lumpy hillsides keep the field together. The valley floor drifts from
+side to side, each bank wanders in and out on its own, and the fall line itself
+snakes, so the way down is rarely straight to the bottom right. Slaloms are
+thickets with winding lanes through them, not rows.
 Ground colours blend per vertex, and dirt and scree patches are domain-warped
 so they come in natural, winding shapes.
 
