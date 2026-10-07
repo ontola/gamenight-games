@@ -164,21 +164,21 @@ func _rider_mesh() -> ArrayMesh:
 		gear.box(foot + Vector3(0, -0.01, 0.04), Vector3(0.12, 0.09, 0.25), accent)
 		gear.box(foot + Vector3(0, -0.05, 0.04), Vector3(0.13, 0.03, 0.26), Color(0.92, 0.9, 0.85))
 		# Shoulder, short sleeve, then bare arm out to the grips.
-		var arm_top := shoulder + Vector3(side * 0.2, -0.03, 0.0)
+		var arm_top := shoulder + Vector3(side * 0.17, -0.06, -0.01)
 		var elbow := Vector3(side * 0.3, 1.06, 0.14)
-		shirt.beam(arm_top, arm_top.lerp(elbow, 0.45), 0.12, color)
+		shirt.beam(arm_top, arm_top.lerp(elbow, 0.4), 0.105, color)
 		skin.beam(arm_top.lerp(elbow, 0.4), elbow, 0.08, tone)
 		skin.beam(elbow, hands + Vector3(side * 0.28, 0, 0), 0.07, tone)
 		gear.box(hands + Vector3(side * 0.28, 0, 0), Vector3(0.09, 0.08, 0.09), DARK)
-	# Tee: a rounded chest, a little looser at the hem, leaning over the bars.
-	var lean := Basis(Vector3.RIGHT, (shoulder - hip).angle_to(Vector3.UP))
-	shirt.cone(hip + Vector3(0, -0.05, 0), 0.19, 0.17, (shoulder - hip).length(), 10, color,
-		lean.scaled(Vector3(1.0, 1.0, 0.7)), 0.06)
-	shirt.blob(shoulder + Vector3(0, -0.04, -0.01), Vector3(0.22, 0.08, 0.12), color, _rng, 3, 10, 0.0)
-	pants.blob(hip + Vector3(0, 0.0, -0.02), Vector3(0.18, 0.09, 0.13), trousers, _rng, 3, 10, 0.0)
+	# Tee: one smooth torso from the waist up through sloping shoulders, so
+	# nothing bulges out at the back.
+	_torso(shirt, hip + Vector3(0, -0.04, 0), shoulder + Vector3(0, 0.02, 0), color)
 	skin.beam(shoulder, shoulder + Vector3(0, 0.1, 0.04), 0.08, tone)
 	var head := HEAD_AT
 	skin.blob(head, Vector3(0.105, 0.125, 0.115), tone, _rng, 6, 12, 0.0)
+	# Eyes, so there's a face under the lid.
+	for side in [-1.0, 1.0]:
+		gear.box(head + Vector3(side * 0.042, 0.01, 0.108), Vector3(0.022, 0.03, 0.012), Color(0.08, 0.07, 0.07))
 	# Hair peeking out at the back and sides.
 	var hair: Color = [Color(0.2, 0.13, 0.08), Color(0.08, 0.07, 0.06), Color(0.75, 0.55, 0.3), Color(0.45, 0.22, 0.1)][(style + 1) % 4]
 	gear.dome(head + Vector3(0, -0.02, -0.015), Vector3(0.112, 0.12, 0.118), hair, 3, 12)
@@ -186,7 +186,7 @@ func _rider_mesh() -> ArrayMesh:
 		# Open-face lid with a short peak, the 90s BMX staple.
 		gear.dome(head + Vector3(0, 0.01, -0.01), Vector3(0.135, 0.15, 0.145), color.darkened(0.25), 5, 14)
 		gear.box(head + Vector3(0, 0.07, 0.13), Vector3(0.16, 0.018, 0.07), color.darkened(0.45), Basis(Vector3.RIGHT, 0.3))
-		gear.box(head + Vector3(0, 0.155, -0.01), Vector3(0.04, 0.012, 0.22), accent)
+		gear.box(head + Vector3(0, 0.158, -0.02), Vector3(0.04, 0.012, 0.12), accent)
 	else:
 		# Cap on backwards.
 		gear.dome(head + Vector3(0, 0.03, 0), Vector3(0.12, 0.1, 0.125), accent, 4, 14)
@@ -199,6 +199,33 @@ func _rider_mesh() -> ArrayMesh:
 	return mesh
 
 const HEAD_AT := Vector3(0, 1.5, 0.12)
+
+## Elliptical rings from waist to neck: (height 0..1, half width, half depth).
+const TORSO_RINGS := [Vector3(0.0, 0.15, 0.1), Vector3(0.45, 0.16, 0.105), Vector3(0.8, 0.185, 0.11), Vector3(0.93, 0.15, 0.095), Vector3(1.0, 0.07, 0.06)]
+
+func _torso(lp: LowPoly, from: Vector3, to: Vector3, col: Color) -> void:
+	var axis := to - from
+	var up := axis.normalized()
+	var side := Vector3.RIGHT
+	var front := side.cross(up).normalized() * -1.0
+	if front.z < 0.0: front = -front
+	var n := 10
+	var rings: Array = []
+	for r in TORSO_RINGS:
+		var ring: Array[Vector3] = []
+		for i in n:
+			var a := TAU * i / n
+			ring.append(from + axis * r.x + side * cos(a) * r.y + front * sin(a) * r.z)
+		rings.append(ring)
+	var centre := from + axis * 0.5
+	for k in rings.size() - 1:
+		for i in n:
+			var j := (i + 1) % n
+			lp.quad(rings[k][i], rings[k][j], rings[k + 1][j], rings[k + 1][i], col, centre)
+	for i in range(1, n - 1):
+		lp.tri(rings[0][0], rings[0][i], rings[0][i + 1], col, centre)
+		var top: Array = rings[rings.size() - 1]
+		lp.tri(top[0], top[i], top[i + 1], col, centre)
 
 func pose(b: Bike, c: Course, delta: float) -> void:
 	position = c.world(b.s, b.d, b.y)
