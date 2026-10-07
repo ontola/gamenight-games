@@ -2,8 +2,8 @@
 
 A top-down BMX downhill survival race for GameNight: everyone rides the same
 procedurally generated mountain on one shared screen, seen from above with
-downhill always running to the bottom right. The leader rides near that corner
-and sees the least of what's coming; the camera follows them and never waits. Fall behind, crash once too often or take the scenic route and
+downhill always running to the bottom right. The camera keeps the leader a
+little past the middle, so they still see the slope ahead, and never waits. Fall behind, crash once too often or take the scenic route and
 you drop off the bottom of the screen: you're out. Last rider standing, or
 first through the finish gate, takes the round. First to three rounds wins.
 

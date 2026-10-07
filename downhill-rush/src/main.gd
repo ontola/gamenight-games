@@ -437,11 +437,11 @@ func _update_camera(delta: float) -> void:
 		camera.position = course.world(Course.START_LINE + 6.5, 5.0) + Vector3.UP * 5.5
 		camera.look_at(grid + Vector3.UP * 1.6, Vector3.UP)
 	else:
-		# Downhill runs to the bottom right. The leader rides near that corner
-		# and sees least of what's coming; the pack behind sees it all.
-		var centre := course.world(focus_s - 11.0, focus_d, course.base_height(focus_s - 11.0)) if phase == Phase.RACE else focus
+		# Downhill runs to the bottom right. The leader sits just past the
+		# middle with room to read the slope; stragglers drift to the top left.
+		var centre := course.world(focus_s - 4.0, focus_d, course.base_height(focus_s - 4.0)) if phase == Phase.RACE else focus
 		var up_dir := -fwd.rotated(Vector3.UP, deg_to_rad(-45.0))
-		camera.position = centre - up_dir * 17.0 + Vector3.UP * 28.0
+		camera.position = centre - up_dir * 19.0 + Vector3.UP * 32.0
 		camera.look_at(centre, up_dir)
 	sun.rotation = Vector3(deg_to_rad(-44.0), cam_yaw + deg_to_rad(140.0), 0)
 
