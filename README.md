@@ -5,6 +5,7 @@ The shared LÖVE games and Pinpals live here. Their Git history was extracted fr
 - `love-party/`: Blast Party, Neon Trails, Neon Siege, Ricochet Club, Volley Trouble, Stack Together and Bubble Buddies, plus their shared runner.
 - `pinpals/`: Pinpals, used by the shared runner.
 - `downhill-rush/`: Downhill Rush, a standalone Godot 4 mountain-bike party game.
+- `hexstead/`: Hexstead, a standalone LÖVE building and trading game with the board on the TV and each hand of cards on a phone.
 
 GameNight keeps the host, both lobbies, SDKs, catalog, packager and contract tests. Individual game licenses and attribution remain in their source folders.
 

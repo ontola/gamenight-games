@@ -1,0 +1,29 @@
+{
+  "id": "hexstead",
+  "title": "Hexstead",
+  "tagline": "Settle a new island every round. The board is on the TV, your cards are on your phone.",
+  "developer": "Joep Meindertsma",
+  "players": {
+    "min": 2,
+    "max": 6,
+    "best": 4
+  },
+  "match_minutes": 25,
+  "price": "free",
+  "tags": [
+    "strategy",
+    "trading",
+    "board game",
+    "phone screen",
+    "love2d"
+  ],
+  "emoji": "🏝️",
+  "color": "#e8c14a",
+  "integration": {
+    "level": "integrated",
+    "protocol": 1
+  },
+  "links": {
+    "source": "https://github.com/ontola/gamenight-games/tree/main/hexstead"
+  }
+}
