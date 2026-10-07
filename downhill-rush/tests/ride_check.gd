@@ -30,5 +30,14 @@ func _init() -> void:
 			# The mountain is meant to be dangerous: a careful rider still falls.
 			if mode == "bot" and (r.crashes > 12 or r.time > 150.0): ok = false
 		print(line)
+	# Every difficulty, and a snowy mountain with ice, still gets a bot down.
+	for diff in Course.DIFFICULTIES.size():
+		var line := "%s:" % Course.DIFFICULTIES[diff]
+		for seed_value in [5, 9]:
+			var c := Course.new(seed_value, 900.0, diff, "snow" if seed_value == 5 else "")
+			var r := _ride(c, "bot", seed_value)
+			line += "  seed %d %s %.0fs %d crashes" % [seed_value, c.biome, r.time, r.crashes]
+			if r.time >= 240.0 or (diff <= 1 and (r.crashes > 12 or r.time > 150.0)): ok = false
+		print(line)
 	print("OK" if ok else "FAIL")
 	quit(0 if ok else 1)

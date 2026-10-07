@@ -19,5 +19,10 @@ func _init() -> void:
 		print("seed %d (%s): %d cliff bands (%d big), %s, %d streams, %d obstacles, drop %.0f m, swing %.0f deg, %d ms" % [seed_value, c.biome, c.bands.size(), big, kinds, c.streams.size(), c.obstacles.size(), c.base[0] - c.base[c.base.size() - 1], rad_to_deg(swing), ms])
 		if c.bands.size() < 2 or kinds.size() < 6: failures += 1
 		if swing < 0.4: failures += 1
+	# Harder mountains have bigger drops and more in the way.
+	var easy := Course.new(11, 900.0, 0, "snow")
+	var extreme := Course.new(11, 900.0, 3, "snow")
+	print("easy %d obstacles, extreme %d obstacles, %s" % [easy.obstacles.size(), extreme.obstacles.size(), easy.biome])
+	if easy.obstacles.size() >= extreme.obstacles.size() or easy.biome != "snow": failures += 1
 	print("OK" if failures == 0 else "FAIL")
 	quit(0 if failures == 0 else 1)

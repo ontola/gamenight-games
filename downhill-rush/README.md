@@ -63,12 +63,22 @@ open mountain between them:
   or by flying the ramp next to it. Fall in and you crash and come back on
   the far side.
 
-Every mountain has a biome: alpine, forest, autumn or desert. It sets the
-ground colours, which set pieces turn up (deserts get more gorges and no
+Every mountain has a biome: alpine, forest, autumn, desert or snow. It sets
+the ground colours, which set pieces turn up (deserts get more gorges and no
 lakes or streams) and the trees: pines and firs, oaks, birches, autumn trees,
-dead trees, saguaro cacti and joshua trees. The mix of trees drifts along the
-run, so you pass through a pine stand, then a birch grove. `--look=S` parks
-the camera S metres down the run for screenshots.
+dead trees, saguaro cacti, joshua trees and snow-laden firs. The mix of trees
+drifts along the run, so you pass through a pine stand, then a birch grove.
+On a snow mountain it snows, powder grips a little less than grass, and the
+lakes are frozen: you can ride across, but the ice barely grips, so steer or
+brake hard on it and you slide out. `--biome=NAME` picks the biome and
+`--look=S` parks the camera S metres down the run for screenshots.
+
+Difficulty (easy, normal, hard, extreme; `--difficulty=NAME`) scales the
+mountain and the race: cliff bands get taller, gorges wider and their bridges
+narrower, the slope steeper, the trees and boulders denser and the lanes
+through them tighter. Landings forgive less, the camera starts faster and
+tops out higher, and the bots ride better. Easy always has two bridges over
+every gorge.
 
 Cliff bands work like this: above each
 one the ground eases into a shelf, then drops off a ledge. Small ledges can be
@@ -117,8 +127,9 @@ host the game:
 - starts the countdown on `start`, freezes on `pause`, reports every finished
   round with `notify_finished`, then keeps running its own next round and match;
 - picks up name changes from `party_updated` without resetting the match;
-- declares two settings: rounds to win (1 to 9) and mountain length
-  (short, medium, long; applies from the next mountain).
+- declares four settings: rounds to win (1 to 9), mountain length (short,
+  medium, long), difficulty (easy, normal, hard, extreme) and landscape
+  (random or one biome). The last three apply from the next mountain.
 
 `gamenight.json` is a draft catalog entry. It has no download yet.
 

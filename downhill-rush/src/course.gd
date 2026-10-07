@@ -17,7 +17,7 @@ const START_FLAT := 75.0
 const START_LINE := 50.0       ## Riders line up here, with hillside behind for the camera.
 const RUNOUT := 60.0
 
-enum Surface { GRASS, DIRT, ROCK, SCREE, WATER }
+enum Surface { GRASS, DIRT, ROCK, SCREE, WATER, ICE }
 
 var seed_value := 0
 var length := 900.0            ## Finish line position.
@@ -41,18 +41,34 @@ var view := PackedFloat32Array()    ## Smoothed heading: the map's main directio
 ## Streams across the slope: {s, wiggle, phase}.
 var streams: Array[Dictionary] = []
 var obstacles: Array[Dictionary] = []   ## {s, d, r, h, kind, look}
-## What kind of mountain this is: alpine, forest, autumn or desert. It picks
-## the set pieces, the trees and the colours.
+## What kind of mountain this is: alpine, forest, autumn, desert or snow. It
+## picks the set pieces, the trees and the colours.
 var biome := "alpine"
-const BIOMES := ["alpine", "forest", "autumn", "desert"]
+const BIOMES := ["alpine", "forest", "autumn", "desert", "snow"]
+## How hard the mountain is, 0 (easy) to 3 (extreme). It scales the drops, the
+## gorges, the gaps between trees, how steep it gets, how forgiving landings
+## are and how fast the camera pushes on.
+var difficulty := 1
+const DIFFICULTIES := ["easy", "normal", "hard", "extreme"]
+const _HAZARD := [0.6, 1.0, 1.15, 1.3]     ## Cliff band height.
+const _STEEP := [0.82, 1.0, 1.1, 1.2]      ## Grade.
+const _DENSITY := [0.55, 1.0, 1.3, 1.6]    ## Trees and rocks on the open slope.
+const _GAP := [1.35, 1.0, 0.88, 0.78]      ## Gully and slalom lane width.
+const _GORGE := [-1.5, 0.0, 0.8, 1.6]      ## Extra gorge width, m.
+const _BRIDGE := [1.0, 0.0, -0.3, -0.5]    ## Extra bridge width, m.
+const _CRASH := [1.35, 1.0, 0.9, 0.8]      ## Landing severity you survive.
+const _PACE := [[1.5, 0.07, 5.5], [2.0, 0.1, 7.0], [2.5, 0.12, 8.0], [3.0, 0.15, 9.0]]  ## Camera: start, ramp, top speed.
+var crash_limit := 1.0
 var _buckets: Dictionary = {}           ## int(s/10) -> Array of obstacle indices
 var _noise := FastNoiseLite.new()
 var _detail := FastNoiseLite.new()
 var _rng := RandomNumberGenerator.new()
 
 
-func _init(p_seed: int = 1, p_length: float = 900.0) -> void:
+func _init(p_seed: int = 1, p_length: float = 900.0, p_difficulty: int = 1, p_biome: String = "") -> void:
 	seed_value = p_seed
+	difficulty = clampi(p_difficulty, 0, DIFFICULTIES.size() - 1)
+	crash_limit = _CRASH[difficulty]
 	length = p_length
 	total = length + RUNOUT
 	_rng.seed = p_seed
@@ -64,6 +80,7 @@ func _init(p_seed: int = 1, p_length: float = 900.0) -> void:
 	_detail.noise_type = FastNoiseLite.TYPE_VALUE
 	_detail.frequency = 0.35
 	biome = BIOMES[_rng.randi() % BIOMES.size()]
+	if BIOMES.has(p_biome): biome = p_biome
 	_plan_sections()
 	_generate_line()
 	_place_streams()
@@ -93,7 +110,7 @@ func _plan_sections() -> void:
 		match kind:
 			"band":
 				var big := _rng.randf() < 0.5
-				var h := _rng.randf_range(4.5, 7.0) if big else _rng.randf_range(1.4, 2.6)
+				var h: float = (_rng.randf_range(4.5, 7.0) if big else _rng.randf_range(1.4, 2.6)) * _HAZARD[difficulty]
 				# The shelf above a ledge rises out of the slope; keep it gentle
 				# enough that a rider who stalls there can still roll on.
 				var approach := maxf(_rng.randf_range(14.0, 20.0), h * 4.2)
@@ -128,7 +145,7 @@ func _plan_sections() -> void:
 				sec.d0 = _rng.randf_range(-3.0, 3.0)
 				sec.amp = _rng.randf_range(2.5, 4.5)
 				sec.freq = TAU / _rng.randf_range(26.0, 40.0)
-				sec.hw = 2.3
+				sec.hw = 2.3 * _GAP[difficulty]
 			"slalom":
 				sec.len = _rng.randf_range(40.0, 55.0)
 				sec.grade = 0.36
@@ -143,18 +160,19 @@ func _plan_sections() -> void:
 				sec.rd = _rng.randf_range(6.0, 10.0)
 				var e := edges(sec.cs)
 				sec.cd = _rng.randf_range(e.x + sec.rd * 0.4, e.y - sec.rd * 0.4)
+				sec.frozen = biome == "snow"
 			"chasm":
 				# A gorge right across the slope: cross on a rock bridge, or
 				# hit the ramp and fly it.
 				sec.len = 34.0
 				sec.grade = 0.3
 				sec.cs = s + 22.0
-				sec.w = _rng.randf_range(5.5, 7.5)
+				sec.w = _rng.randf_range(5.5, 7.5) + _GORGE[difficulty]
 				sec.depth = _rng.randf_range(9.0, 14.0)
 				var e := edges(sec.cs)
 				sec.bridges = []
-				for k in _rng.randi_range(1, 2):
-					sec.bridges.append({"d": _rng.randf_range(e.x + 3.0, e.y - 3.0), "w": _rng.randf_range(1.8, 2.6)})
+				for k in (2 if difficulty == 0 else _rng.randi_range(1, 2)):
+					sec.bridges.append({"d": _rng.randf_range(e.x + 3.0, e.y - 3.0), "w": _rng.randf_range(1.8, 2.6) + _BRIDGE[difficulty]})
 				var rd := _rng.randf_range(e.x + 4.0, e.y - 4.0)
 				for br in sec.bridges:
 					if absf(rd - br.d) < 6.0: rd = clampf(br.d + (7.0 if br.d < 0.0 else -7.0), e.x + 4.0, e.y - 4.0)
@@ -189,9 +207,10 @@ func _generate_line() -> void:
 	var target := 0.3
 	for j in n:
 		var sj := j * DS
-		if j % 30 == 0: target = _rng.randf_range(0.28, 0.55)
+		if j % 30 == 0: target = _rng.randf_range(0.28, 0.55) * _STEEP[difficulty]
 		var sec := section_at(sj)
 		var want: float = sec.grade if not sec.is_empty() and sec.grade >= 0.0 else target
+		if want > 0.2: want *= _STEEP[difficulty]
 		g = lerpf(g, want, 0.12)
 		grade[j] = 0.06 if sj < START_FLAT else (0.08 if sj > length + 8.0 else g)
 	var th := 0.0
@@ -304,7 +323,22 @@ func height(s: float, d: float) -> float:
 	h += _bands_at(s, d)
 	h += _set_pieces_at(s, d)
 	h -= _stream_at(s, d)
+	if biome == "snow": h = _on_ice_sheet(s, d, h)
 	return h
+
+## Frozen tarns: the ice is one flat sheet at the old water line.
+func _on_ice_sheet(s: float, d: float, h: float) -> float:
+	for sec in sections:
+		if sec.kind != "lake" or absf(s - sec.cs) > sec.rs * 1.5: continue
+		var q := _lake_q(sec, s, d)
+		if q < 1.3: return lerpf(h, water_level(s), 1.0 - smoothstep(1.0, 1.28, q))
+	return h
+
+## True on a frozen lake.
+func on_ice(s: float, d: float) -> bool:
+	if biome != "snow": return false
+	var sec := section_at(s, "lake")
+	return not sec.is_empty() and _lake_q(sec, s, d) < 1.12
 
 ## Kicker lips and gully banks.
 func _set_pieces_at(s: float, d: float) -> float:
@@ -334,7 +368,7 @@ func _set_pieces_at(s: float, d: float) -> float:
 				h -= hole * sec.depth
 		elif sec.kind == "lake":
 			var q := _lake_q(sec, s, d)
-			if q < 1.6:
+			if q < 1.6 and not sec.get("frozen", false):
 				# A bowl under the water and a low grassy rim round it.
 				h -= 2.4 * (1.0 - smoothstep(0.25, 1.05, q))
 				h += 0.7 * exp(-pow((q - 1.18) / 0.16, 2.0))
@@ -361,7 +395,7 @@ func _lake_calm(s: float, d: float) -> float:
 func water_level(s: float) -> float:
 	for sec in sections:
 		if sec.kind == "lake" and absf(s - sec.cs) < sec.rs * 1.5:
-			return base_height(sec.cs) - 0.45
+			return base_height(sec.cs) - (0.1 if sec.get("frozen", false) else 0.45)
 	return -INF
 
 ## How deep the lake is here; 0 on dry ground.
@@ -369,7 +403,7 @@ func water_depth(s: float, d: float) -> float:
 	var level := water_level(s)
 	if level == -INF: return 0.0
 	var sec := section_at(s, "lake")
-	if sec.is_empty() or _lake_q(sec, s, d) > 1.18: return 0.0
+	if sec.is_empty() or sec.get("frozen", false) or _lake_q(sec, s, d) > 1.18: return 0.0
 	return maxf(0.0, level - height(s, d))
 
 ## Ground far below the slope: you're at the bottom of a gorge.
@@ -466,6 +500,7 @@ func in_water(s: float, d: float) -> bool:
 ## What the ground is made of, for grip and for paint.
 func surface(s: float, d: float, slope: float = -1.0) -> int:
 	if in_water(s, d): return Surface.WATER
+	if on_ice(s, d): return Surface.ICE
 	if on_path(s, d): return Surface.DIRT
 	if slope < 0.0: slope = gradient(s, d).length()
 	if slope > 1.3: return Surface.ROCK
@@ -480,16 +515,17 @@ func surface(s: float, d: float, slope: float = -1.0) -> int:
 func grip(s: float, d: float, slope: float = -1.0) -> float:
 	match surface(s, d, slope):
 		Surface.WATER: return 0.55
+		Surface.ICE: return 0.28
 		Surface.SCREE: return 0.6
 		Surface.ROCK: return 0.85
-		Surface.GRASS: return 0.9
+		Surface.GRASS: return 0.75 if biome == "snow" else 0.9
 	return 1.0
 
 
 # ── Cliff bands and streams ──────────────────────────────────────────────────
 
 func _place_streams() -> void:
-	if biome == "desert": return
+	if biome == "desert" or biome == "snow": return
 	var s := START_FLAT + 80.0
 	while s < length - 40.0:
 		var clear := true
@@ -526,12 +562,12 @@ func _place_obstacles() -> void:
 			if wall > 1.5 and roll < 0.3 and _noise.get_noise_2d(ss * 2.5 + 1200.0, dd * 2.5) < 0.15:
 				# The valley sides are wooded.
 				_add_obstacle(ss, dd, 0.45, 9.0, "tree")
-			elif forest > 0.12 and roll < 0.38:
+			elif forest > 0.12 and roll < 0.38 * _DENSITY[difficulty]:
 				_add_obstacle(ss, dd, 0.45, 9.0, "tree")
-			elif rocky > 0.18 and roll < 0.22:
+			elif rocky > 0.18 and roll < 0.22 * _DENSITY[difficulty]:
 				var r := _rng.randf_range(0.8, 2.0)
 				_add_obstacle(ss, dd, r, r * 0.9, "rock")
-			elif roll < 0.035:
+			elif roll < 0.035 * _DENSITY[difficulty]:
 				var r := _rng.randf_range(0.3, 0.55)
 				_add_obstacle(ss, dd, r, r * 0.8, "rock")
 			d += 3.0
@@ -573,7 +609,7 @@ func _place_set_piece_obstacles() -> void:
 					var clear := false
 					for lane in lanes:
 						var at: float = valley_mid(ps) + lane.off + lane.amp * sin(ps * lane.freq + lane.phase)
-						if absf(pd - at) < 1.9: clear = true
+						if absf(pd - at) < 1.9 * _GAP[difficulty]: clear = true
 					if not clear and _rng.randf() < 0.62:
 						if _noise.get_noise_2d(ps * 3.0 + 800.0, pd * 3.0) > 0.0:
 							_add_obstacle(ps, pd, 0.45, 9.0, "tree", true)
@@ -624,6 +660,9 @@ func tree_look(s: float, d: float) -> String:
 		"desert":
 			if zone > 0.3: return "dead" if roll < 0.6 else "cactus"
 			return "cactus" if roll < 0.8 else ("dead" if roll < 0.95 else "joshua")
+		"snow":
+			if zone > 0.3: return "snowpine" if roll < 0.6 else "dead"
+			return "snowfir" if roll < 0.7 else ("snowpine" if roll < 0.95 else "dead")
 	return "pine"
 
 func obstacles_near(s: float) -> Array:

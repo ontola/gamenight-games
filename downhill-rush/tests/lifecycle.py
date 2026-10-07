@@ -108,7 +108,7 @@ def main():
         assert hello["game"] == "downhill-rush" and hello["token"] == "test-token", hello
         peer.send(type="welcome", party={"players": [], "seats": []})
         settings = peer.expect("declare_settings")
-        assert {s["key"] for s in settings["settings"]} == {"rounds_to_win", "mountain"}, settings
+        assert {s["key"] for s in settings["settings"]} == {"rounds_to_win", "mountain", "difficulty", "landscape"}, settings
         peer.send(type="setting_changed", key="mountain", value="short")
         session = "11111111-2222-3333-4444-555555555555"
         seats = [{"index": 0, "controller": "ordinal:7", "occupant": {"kind": "local", "player_id": "p-ada"}},

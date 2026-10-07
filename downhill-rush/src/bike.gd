@@ -150,7 +150,7 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 			# Rode into the deep end.
 			_crash(b, "splash")
 			return
-		elif face > 0.7 and face * b.v > 4.5 and b.invulnerable <= 0.0:
+		elif face > 0.7 and face * b.v > 4.5 * c.crash_limit and b.invulnerable <= 0.0:
 			# Rode straight into a face (cased a jump).
 			_crash(b, "face")
 			return
@@ -199,14 +199,14 @@ static func _land(b: Bike, c: Course, ground: float) -> void:
 	b.y = ground
 	b.grounded = true
 	b.landed = true
-	if b.severity > 1.0 and b.invulnerable <= 0.0:
+	if b.severity > c.crash_limit and b.invulnerable <= 0.0:
 		_crash(b, "landing")
 		return
 	b.v = speed * cos(slope - path)
-	if b.severity > 0.6:
+	if b.severity > 0.6 * c.crash_limit:
 		# Rough: you stay on, but it costs speed and you wobble.
 		b.hard_landing = true
-		b.v *= lerpf(0.8, 0.45, (b.severity - 0.6) / 0.4)
+		b.v *= lerpf(0.8, 0.45, clampf((b.severity / c.crash_limit - 0.6) / 0.4, 0.0, 1.0))
 		b.wobble = 0.6
 	# Landing crooked turns you a little towards where the bike points.
 	b.psi = clampf(b.psi + b.yaw * 0.3, -1.45, 1.45)

@@ -33,7 +33,10 @@ const PALETTES := {
 		Color(0.62, 0.6, 0.58), Color(0.44, 0.4, 0.38), Color(0.66, 0.62, 0.55), Color(0.7, 0.64, 0.5), Color(0.5, 0.32, 0.17), Color(0.7, 0.5, 0.2)],
 	"desert": [Color(0.88, 0.74, 0.52), Color(0.8, 0.62, 0.42), Color(0.93, 0.82, 0.6), Color(0.78, 0.45, 0.28), Color(0.6, 0.32, 0.2),
 		Color(0.8, 0.58, 0.44), Color(0.62, 0.34, 0.24), Color(0.82, 0.64, 0.48), Color(0.9, 0.8, 0.6), Color(0.72, 0.5, 0.34), Color(0.6, 0.62, 0.3)],
+	"snow": [Color(0.93, 0.95, 0.98), Color(0.8, 0.85, 0.93), Color(0.98, 0.98, 1.0), Color(0.76, 0.76, 0.8), Color(0.58, 0.56, 0.6),
+		Color(0.56, 0.58, 0.64), Color(0.36, 0.37, 0.43), Color(0.68, 0.7, 0.76), Color(0.8, 0.86, 0.93), Color(0.86, 0.9, 0.96), Color(0.4, 0.5, 0.42)],
 }
+const SNOW := Color(0.96, 0.97, 1.0)
 var _rng := RandomNumberGenerator.new()
 var _columns := PackedFloat32Array()
 
@@ -127,9 +130,11 @@ func _terrain_chunk(s0: float, s1: float) -> void:
 			water.quad(course.world(c0 - 1.1, d, y0), course.world(c0 + 1.1, d, y0),
 				course.world(c1 + 1.1, d1, y1), course.world(c1 - 1.1, d1, y1), Color.WHITE)
 			d = d1
+	var ice := LowPoly.new()
 	for sec in course.sections:
 		if sec.kind != "lake" or sec.cs < s0 or sec.cs >= s1: continue
-		var level := course.water_level(sec.cs)
+		var frozen: bool = sec.get("frozen", false)
+		var level := course.water_level(sec.cs) + (0.03 if frozen else 0.0)
 		var n := 40
 		var centre := course.world(sec.cs, sec.cd, level)
 		for k in n:
@@ -143,7 +148,38 @@ func _terrain_chunk(s0: float, s1: float) -> void:
 					if course._lake_q(sec, ps, pd) > 1.18: break
 					r += 0.05
 				pts.append(course.world(sec.cs + cos(a) * sec.rs * r, sec.cd + sin(a) * sec.rd * r, level))
-			water.tri(centre, pts[0], pts[1], Color.WHITE)
+			if frozen:
+				# Clear ice in the middle, frosted towards the shore.
+				var mid := centre.lerp(pts[0], 0.55).lerp(centre.lerp(pts[1], 0.55), 0.5)
+				var deep := Color(0.55, 0.74, 0.88).lightened(_rng.randf_range(-0.04, 0.04))
+				var frost := Color(0.86, 0.93, 0.98)
+				var m0 := centre.lerp(pts[0], 0.55)
+				var m1 := centre.lerp(pts[1], 0.55)
+				ice.tri3(centre, m0, m1, deep, deep, deep)
+				ice.tri3(m0, pts[0], pts[1], deep, frost, frost)
+				ice.tri3(m0, pts[1], m1, deep, frost, deep)
+			else:
+				water.tri(centre, pts[0], pts[1], Color.WHITE)
+		if frozen:
+			# A few cracks scratched across the sheet.
+			for k in 5:
+				var a := _rng.randf() * TAU
+				var from := course.world(sec.cs + _rng.randf_range(-0.3, 0.3) * sec.rs, sec.cd + _rng.randf_range(-0.3, 0.3) * sec.rd, level + 0.01)
+				var dir := Vector3(cos(a), 0, sin(a))
+				var p := from
+				for seg in 4:
+					var nxt := p + dir.rotated(Vector3.UP, _rng.randf_range(-0.6, 0.6)) * _rng.randf_range(1.0, 2.2)
+					var side := (nxt - p).cross(Vector3.UP).normalized() * 0.04
+					ice.quad(p - side, p + side, nxt + side, nxt - side, Color(0.95, 0.98, 1.0))
+					p = nxt
+	if not ice.is_empty():
+		var im := MeshInstance3D.new()
+		var ice_mat: StandardMaterial3D = Tex.material(Tex.grit(), 0.3, true).duplicate()
+		ice_mat.roughness = 0.4
+		ice_mat.metallic_specular = 0.4
+		im.mesh = ice.commit(null, ice_mat)
+		im.name = "Ice"
+		add_child(im)
 	if not water.is_empty():
 		var wm := MeshInstance3D.new()
 		wm.mesh = water.commit(null, _water_material())
@@ -178,6 +214,7 @@ func _vertex_color(p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) ->
 	var col: Color
 	match course.surface(s, d, slope):
 		Course.Surface.WATER: col = SAND
+		Course.Surface.ICE: col = Color(0.7, 0.82, 0.92)
 		Course.Surface.SCREE: col = SCREE.lerp(STONE, course._detail.get_noise_2d(s * 2.0, d * 2.0) * 0.5 + 0.5)
 		Course.Surface.DIRT: col = DIRT.lerp(DIRT_DARK, clampf(course._noise.get_noise_2d(s * 6.0, d * 6.0) + 0.3, 0.0, 0.6))
 		_:
@@ -228,6 +265,19 @@ func _props() -> void:
 			if course.surface(ss, d) in [Course.Surface.WATER, Course.Surface.SCREE, Course.Surface.ROCK]: continue
 			var p := course.world(ss, d)
 			var roll := _rng.randf()
+			if course.biome == "snow":
+				# Drifts, rocks poking out, bare twigs.
+				if roll < 0.45:
+					lp.blob(p + Vector3(0, 0.05, 0), Vector3(1.0, 0.35, 0.8) * _rng.randf_range(0.6, 1.6), SNOW, _rng, 2, 7, 0.1)
+				elif roll < 0.7:
+					lp.blob(p + Vector3(0, 0.1, 0), Vector3(0.3, 0.2, 0.28), STONE, _rng, 2, 5)
+					lp.blob(p + Vector3(0, 0.26, 0), Vector3(0.26, 0.08, 0.24), SNOW, _rng, 2, 5, 0.0)
+				else:
+					var twig := Color(0.38, 0.3, 0.26)
+					for k in 3:
+						var a := _rng.randf() * TAU
+						lp.beam(p, p + Vector3(cos(a) * 0.3, 0.6, sin(a) * 0.3), 0.04, twig)
+				continue
 			if course.biome == "desert":
 				# Dry ground: barrel cacti, dry grass, pale pebbles.
 				if roll < 0.3:
@@ -272,6 +322,22 @@ func _tree(lp: LowPoly, p: Vector3, look: String) -> void:
 				lp.cone(p + tilt.y * y, r, 0.0, (2.6 if look == "pine" else 2.0) * scale, 6, col.lightened(layer * 0.035), tilt, 0.0, _rng)
 				y += (1.25 if look == "pine" else 1.0) * scale
 				r *= 0.72 if look == "pine" else 0.8
+		"snowfir", "snowpine":
+			# Conifers with snow lying on every tier.
+			var fir := look == "snowfir"
+			lp.cone(p - Vector3(0, 0.3, 0), 0.28 * scale, 0.2 * scale, 1.6 * scale, 5, TRUNK, tilt)
+			var col: Color = PINES[_rng.randi() % PINES.size()].darkened(0.3)
+			var tiers := 5 if fir else 3
+			var y := 1.0 * scale
+			var r := (1.25 if fir else 1.7) * scale
+			var th := (2.0 if fir else 2.6) * scale
+			for layer in tiers:
+				lp.cone(p + tilt.y * y, r, 0.0, th, 6, col, tilt, 0.0, _rng)
+				# The snow sits on the upper half of each tier, so the dark
+				# needles only show round the hem.
+				lp.cone(p + tilt.y * (y + th * 0.3), r * 0.8, 0.0, th * 0.74, 6, SNOW.darkened(layer * 0.015), tilt, 0.0, _rng)
+				y += (1.0 if fir else 1.25) * scale
+				r *= 0.8 if fir else 0.72
 		"oak", "autumn":
 			lp.cone(p - Vector3(0, 0.3, 0), 0.32 * scale, 0.22 * scale, 2.4 * scale, 6, TRUNK, tilt)
 			var greens := [Color(0.3, 0.52, 0.2), Color(0.38, 0.58, 0.22), Color(0.26, 0.46, 0.22)]
@@ -318,6 +384,8 @@ func _tree(lp: LowPoly, p: Vector3, look: String) -> void:
 func _rock(lp: LowPoly, p: Vector3, r: float) -> void:
 	var col := STONE.lightened(_rng.randf_range(-0.12, 0.08))
 	lp.blob(p + Vector3(0, r * 0.25, 0), Vector3(r, r * 0.8, r * _rng.randf_range(0.8, 1.2)), col, _rng, 3, 6, 0.22)
+	if course.biome == "snow":
+		lp.blob(p + Vector3(r * 0.1, r * 0.8, 0), Vector3(r * 0.6, r * 0.22, r * 0.55), SNOW, _rng, 2, 7, 0.3)
 
 ## A fan of long leaves, the bracken that lines every forest trail.
 func _fern(lp: LowPoly, p: Vector3) -> void:

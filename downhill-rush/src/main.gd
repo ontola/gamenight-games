@@ -11,6 +11,8 @@ const LENGTHS := {"short": 600.0, "medium": 800.0, "long": 1200.0}
 const SETTINGS := [
 	{"key": "rounds_to_win", "label": "Rounds to win", "kind": "number", "default": 3, "min": 1, "max": 9},
 	{"key": "mountain", "label": "Mountain length (next round)", "kind": "choice", "default": "medium", "options": ["short", "medium", "long"]},
+	{"key": "difficulty", "label": "Difficulty (next round)", "kind": "choice", "default": "normal", "options": ["easy", "normal", "hard", "extreme"]},
+	{"key": "landscape", "label": "Landscape (next round)", "kind": "choice", "default": "random", "options": ["random", "alpine", "forest", "autumn", "desert", "snow"]},
 ]
 const MAX_RIDERS := 8
 const PHYSICS_DT := 1.0 / 120.0
@@ -25,6 +27,10 @@ var hud: Hud
 var round_number := 0
 var rounds_to_win := 3
 var mountain_length := "medium"
+var difficulty := "normal"
+var landscape := "random"
+var _snowfall: CPUParticles3D
+var _env: Environment
 var phase_time := 0.0
 var race_time := 0.0
 var focus_s := 0.0
@@ -87,6 +93,8 @@ func _parse_args() -> void:
 		elif arg.begins_with("--shot-time="): _shot_time = float(arg.substr(12))
 		elif arg.begins_with("--seed="): _seed_override = int(arg.substr(7))
 		elif arg.begins_with("--length="): mountain_length = arg.substr(9)
+		elif arg.begins_with("--difficulty="): difficulty = arg.substr(13)
+		elif arg.begins_with("--biome="): landscape = arg.substr(8)
 		elif arg.begins_with("--skip="): _skip = float(arg.substr(7))
 		elif arg.begins_with("--shot-phase="): _shot_phase = arg.substr(13)
 		elif arg == "--shot-air": _shot_air = true
@@ -124,6 +132,7 @@ func _build_environment() -> void:
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.2
 	env.adjustment_contrast = 1.08
+	_env = env
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -147,7 +156,8 @@ func _build_environment() -> void:
 func _new_course() -> void:
 	var seed_value := _seed_override if _seed_override >= 0 else _rng.randi_range(1, 999999)
 	if _seed_override >= 0: _seed_override += 1
-	course = Course.new(seed_value, LENGTHS.get(mountain_length, 900.0))
+	course = Course.new(seed_value, LENGTHS.get(mountain_length, 900.0), maxi(0, Course.DIFFICULTIES.find(difficulty)), landscape)
+	_set_weather()
 	if mountain: mountain.queue_free()
 	mountain = MountainView.new()
 	add_child(mountain)
@@ -158,6 +168,48 @@ func _new_course() -> void:
 	cam_yaw = course.view_heading(10.0)
 	_update_camera(1.0)
 
+func _bot_skill() -> float:
+	match difficulty:
+		"easy": return _rng.randf_range(0.45, 0.75)
+		"hard": return _rng.randf_range(0.75, 1.0)
+		"extreme": return _rng.randf_range(0.85, 1.0)
+	return _rng.randf_range(0.62, 0.95)
+
+## Snow mountains get a white haze and flakes drifting past the camera.
+func _set_weather() -> void:
+	var snow := course.biome == "snow"
+	if _env:
+		_env.fog_light_color = Color(0.9, 0.93, 0.98) if snow else Color(0.78, 0.85, 0.92)
+		_env.fog_density = 0.0036 if snow else 0.0022
+	if snow and _snowfall == null:
+		_snowfall = CPUParticles3D.new()
+		_snowfall.amount = 2400
+		_snowfall.lifetime = 5.0
+		_snowfall.preprocess = 5.0
+		_snowfall.local_coords = true   # Moves with the camera, so the flakes never fall behind.
+		_snowfall.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_snowfall.emission_box_extents = Vector3(45, 2, 45)
+		_snowfall.direction = Vector3(0.2, -1, 0.1)
+		_snowfall.spread = 20.0
+		_snowfall.initial_velocity_min = 2.0
+		_snowfall.initial_velocity_max = 3.2
+		_snowfall.gravity = Vector3(0.5, -0.4, 0.3)
+		_snowfall.scale_amount_min = 0.6
+		_snowfall.scale_amount_max = 1.4
+		var flake := QuadMesh.new()
+		flake.size = Vector2(0.26, 0.26)
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		mat.albedo_color = Color(1, 1, 1, 0.9)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		flake.material = mat
+		_snowfall.mesh = flake
+		add_child(_snowfall)
+	if _snowfall:
+		_snowfall.emitting = snow
+		_snowfall.visible = snow
+
 func _mountain_name(seed_value: int) -> String:
 	var r := RandomNumberGenerator.new()
 	r.seed = seed_value
@@ -166,6 +218,7 @@ func _mountain_name(seed_value: int) -> String:
 	match course.biome:
 		"forest": a = ["Oak", "Mossy", "Fern", "Badger", "Elder", "Hazel", "Owl", "Thicket"]
 		"autumn": a = ["Amber", "Maple", "Rusty", "Copper", "Harvest", "Hollow", "Ember", "Russet"]
+		"snow": a = ["Frosty", "Glacier", "Polar", "Icicle", "Blizzard", "Yeti", "Avalanche", "Powder"]
 		"desert": a = ["Cactus", "Rattlesnake", "Sunburnt", "Coyote", "Dusty", "Red Rock", "Vulture", "Mesa"]; b = ["Canyon", "Gulch", "Butte", "Wash", "Ridge", "Gorge"]
 	return "%s %s" % [a[r.randi() % a.size()], b[r.randi() % b.size()]]
 
@@ -180,7 +233,7 @@ func _add_player(p_name: String, controls: Controls, bot: Bot, color: Color, id:
 
 func _add_bot() -> void:
 	var index := players.size()
-	_add_player(BOT_NAMES[index % BOT_NAMES.size()], null, Bot.new(_rng.randi(), _rng.randf_range(0.62, 0.95)), Color(PALETTE[index % PALETTE.size()]))
+	_add_player(BOT_NAMES[index % BOT_NAMES.size()], null, Bot.new(_rng.randi(), _bot_skill()), Color(PALETTE[index % PALETTE.size()]))
 
 func _spawn_riders() -> void:
 	for child in _riders_root.get_children():
@@ -439,7 +492,8 @@ func _update_camera(delta: float) -> void:
 		var target := lead
 		var follow := lerpf(focus_s, target, 1.0 - exp(-delta * 4.0))
 		if phase == Phase.RACE:
-			var pace := minf(2.0 + race_time * 0.1, 7.0)
+			var tune: Array = Course._PACE[course.difficulty]
+			var pace := minf(tune[0] + race_time * tune[1], tune[2])
 			focus_s = maxf(focus_s + pace * delta, follow)
 		else:
 			focus_s = maxf(focus_s, follow)
@@ -470,6 +524,7 @@ func _update_camera(delta: float) -> void:
 		camera.position = centre - up_dir * 19.0 + Vector3.UP * 32.0
 		camera.look_at(centre, up_dir)
 	sun.rotation = Vector3(deg_to_rad(-44.0), cam_yaw + deg_to_rad(140.0), 0)
+	if _snowfall: _snowfall.global_position = focus + Vector3.UP * 16.0
 
 
 # ── Standalone join screen ───────────────────────────────────────────────────
@@ -586,6 +641,8 @@ func _on_roster(_seats: Array, party_players: Array, _presence: Array) -> void:
 func _on_setting(key: String, value: Variant) -> void:
 	if key == "rounds_to_win": rounds_to_win = clampi(int(value), 1, 9)
 	elif key == "mountain" and LENGTHS.has(str(value)): mountain_length = str(value)
+	elif key == "difficulty" and str(value) in Course.DIFFICULTIES: difficulty = str(value)
+	elif key == "landscape": landscape = str(value)
 
 func _set_paused(value: bool) -> void:
 	get_tree().paused = value
