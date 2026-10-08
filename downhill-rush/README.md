@@ -43,7 +43,13 @@ The scoreboard lists riders in race order, with riders who are out struck
 through at the bottom. Under GameNight the names and colours come from the
 party. On the join
 screen, press A (Space, Enter) to join; the first rider presses A again to
-start. B toggles bots, which fill the field up to four riders. Escape pauses.
+start. Bots are off by default; B (on a pad or the keyboard) turns them on,
+and then they fill the field up to four riders. Riding alone works too.
+
+Start (or Escape) during a race opens the menu: resume, start a new race, or
+change difficulty, landscape, mountain length and bots. Settings apply from
+the next mountain; New race builds one straight away. "Back to join screen"
+lets new riders join.
 
 ## How a mountain works
 

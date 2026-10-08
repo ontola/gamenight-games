@@ -30,6 +30,7 @@ var mountain_length := "medium"
 var difficulty := "normal"
 var landscape := "random"
 var _snowfall: CPUParticles3D
+var menu: PauseMenu
 var _env: Environment
 var phase_time := 0.0
 var race_time := 0.0
@@ -41,7 +42,7 @@ var match_winner := -1
 var managed := false
 var session := ""
 var demo := false
-var bots_enabled := true
+var bots_enabled := false   ## Bots are opt-in: B on the join screen turns them on.
 var _riders_root: Node3D
 var _shot_path := ""
 var _shot_time := 0.0
@@ -66,6 +67,11 @@ func _ready() -> void:
 	add_child(_riders_root)
 	hud = Hud.new()
 	add_child(hud)
+	menu = PauseMenu.new()
+	menu.main = self
+	add_child(menu)
+	menu.closed.connect(_close_menu)
+	menu.chosen.connect(_menu_action)
 	if "--no-hud" in OS.get_cmdline_user_args(): hud.visible = false
 	managed = GameNight.launched_by_daemon
 	GameNight.prepared.connect(_on_prepared)
@@ -295,6 +301,11 @@ func _end_round(winner: int) -> void:
 
 func _process(delta: float) -> void:
 	phase_time += delta
+	if phase in [Phase.COUNTDOWN, Phase.RACE, Phase.ROUND_OVER, Phase.MATCH_OVER]:
+		for p in players:
+			if p.controls and p.controls.pressed("start", p.controls.raw().start):
+				_open_menu()
+				break
 	match phase:
 		Phase.JOIN: _join_input()
 		Phase.COUNTDOWN:
@@ -553,10 +564,14 @@ func _join_input() -> void:
 		elif existing == 0 or r.start:
 			_begin_standalone()
 			return
-	if Input.is_physical_key_pressed(KEY_B) and not _join_pads.get("bots", false):
+	# B on the keyboard or any pad turns bots on and off.
+	var b_down := Input.is_physical_key_pressed(KEY_B)
+	for device in Input.get_connected_joypads():
+		b_down = b_down or Input.is_joy_button_pressed(device, JOY_BUTTON_B)
+	if b_down and not _join_pads.get("bots", false):
 		bots_enabled = not bots_enabled
 		hud.show_phase(phase, self)
-	_join_pads["bots"] = Input.is_physical_key_pressed(KEY_B)
+	_join_pads["bots"] = b_down
 
 func _begin_standalone() -> void:
 	var humans := players.size()
@@ -569,7 +584,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if managed: return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
 		if phase == Phase.JOIN: get_tree().quit()
-		else: _set_paused(not get_tree().paused)
+		elif phase != Phase.IDLE: _open_menu()
+		get_viewport().set_input_as_handled()
 
 
 # ── GameNight ────────────────────────────────────────────────────────────────
@@ -643,6 +659,44 @@ func _on_setting(key: String, value: Variant) -> void:
 	elif key == "mountain" and LENGTHS.has(str(value)): mountain_length = str(value)
 	elif key == "difficulty" and str(value) in Course.DIFFICULTIES: difficulty = str(value)
 	elif key == "landscape": landscape = str(value)
+
+# ── Start menu ───────────────────────────────────────────────────────────────
+
+func _open_menu() -> void:
+	if menu.visible: return
+	get_tree().paused = true
+	menu.open()
+
+func _close_menu() -> void:
+	get_tree().paused = false
+	# Swallow the Start press that closed the menu so it doesn't reopen it.
+	for p in players:
+		if p.controls: p.controls.pressed("start", true)
+
+func _menu_action(action: String) -> void:
+	_close_menu()
+	match action:
+		"new_race":
+			if not managed:
+				_drop_bots()
+				if bots_enabled:
+					while players.size() < maxi(4, players.size() + 1) and players.size() < MAX_RIDERS:
+						_add_bot()
+				if players.is_empty(): _add_bot()
+			_new_course()
+			_start_match()
+		"leave":
+			_drop_bots()
+			for child in _riders_root.get_children(): child.queue_free()
+			for p in players: p.view = null
+			_new_course()
+			_enter(Phase.JOIN)
+
+func _drop_bots() -> void:
+	var humans: Array[Dictionary] = []
+	for p in players:
+		if not p.bot: humans.append(p)
+	players = humans
 
 func _set_paused(value: bool) -> void:
 	get_tree().paused = value

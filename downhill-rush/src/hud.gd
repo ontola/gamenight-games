@@ -205,7 +205,7 @@ func show_phase(phase: int, main: Node) -> void:
 				lines.append("%s  ·  %s" % [p.name, p.controls.label() if p.controls else "bot"])
 			if main.players.is_empty(): lines.append("Nobody on the hill yet")
 			lines.append("")
-			lines.append("Bots fill up to four riders: %s   (B toggles)" % ("on" if main.bots_enabled else "off"))
+			lines.append("Bots: %s   (press B to %s)" % (["on, filling up to four riders", "turn them off"] if main.bots_enabled else ["off", "add some"]))
 			lines.append("Rider one: press A again to drop in")
 			_join_text.text = "\n".join(lines)
 		1:
