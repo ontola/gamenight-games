@@ -103,11 +103,13 @@ Whether you fall is one function per kind of hit. A landing
 (`Bike.landing_severity`) adds up how hard you hit the ground, how far the
 bike's pitch is from the slope (nose first is much worse than back wheel
 first) and how crooked the bike is to where you are flying, the last one
-counting for more the faster you go. Over 1 is a crash, over 0.6 a hard
-landing that costs speed. Obstacles go by closing speed: trees stop you at
-4 m/s, boulders at a speed that drops as they get bigger, small rocks buck you
-into the air. Below that you glance off. Riding straight into a steep face
-also puts you down. Riders are
+counting for more the faster you go. Over the difficulty's limit (1.15 on
+normal) is a crash, over 0.6 of it a hard landing that costs speed. Obstacles
+go by closing speed: trees stop you at 5.5 m/s, boulders at a speed that drops
+as they get bigger, both scaled by difficulty. Small rocks never crash you;
+they buck you into the air. Below that you glance off. Riding straight into a
+steep face also puts you down. A rider who makes no headway for 3 s is walked
+a few metres on to clear ground. Riders are
 solid and shove each other around; a hard hit can take someone down.
 
 Bots (`src/bot.gd`) read the slope ahead: they score a fan of lines for

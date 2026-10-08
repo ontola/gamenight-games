@@ -50,11 +50,11 @@ func think(b: Bike, c: Course, dt: float) -> Dictionary:
 		target_v = minf(target_v, 6.0 + skill * 1.5)
 	var desired := atan2(_target_d - b.d, look)
 	var across := (c.height_rough(b.s, b.d + 0.5) - c.height_rough(b.s, b.d - 0.5))
-	var feed := c.curvature(b.s) * b.v / maxf(0.4, minf(2.3, 15.0 / (b.v + 4.0)))
+	var feed := c.curvature(b.s) * b.v / maxf(0.4, Bike.turn_rate(b.v))
 	# Lean into the side slope so it doesn't drag us off the line.
 	var steer := clampf((desired - b.psi) * 3.0 + feed + across * 0.6, -1.0, 1.0)
 	# Never ask the tyres for more than they have.
-	var rate := minf(2.3, 15.0 / (b.v + 4.0))
+	var rate := Bike.turn_rate(b.v)
 	var hold := Bike.GRIP * c.grip(b.s, b.d, 0.5) / maxf(b.v, 1.0) / rate
 	steer = clampf(steer, -hold, hold)
 	# Something solid right in front: swerve and scrub speed.

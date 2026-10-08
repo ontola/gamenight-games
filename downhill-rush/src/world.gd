@@ -225,13 +225,15 @@ func _vertex_color(p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) ->
 	col = col.darkened(clampf(steep * 0.6, 0.0, 0.3))
 	var edge := course.edges(s)
 	var wall := maxf(d - edge.y, edge.x - d)
-	if wall > 1.0:
-		# Valley sides: forest floor with grey outcrops breaking through.
+	# Up the valley sides the ground turns to forest floor, but in drifts and
+	# tongues, never along a line, so the floor and the hills read as one slope.
+	var woods := clampf((wall + course._noise.get_noise_2d(s * 1.1 + 5300.0, d * 1.1) * 10.0 - 3.0) / 8.0, 0.0, 1.0)
+	if woods > 0.0:
 		var crag := course._noise.get_noise_2d(s * 2.5 + 1200.0, d * 2.5)
-		col = GRASS_DARK.lerp(FOREST_FLOOR, clampf(course._noise.get_noise_2d(s * 1.5, d * 1.5) + 0.5, 0.0, 1.0))
-		col = col.darkened(clampf(steep * 0.4, 0.0, 0.25))
-		if crag > 0.15: col = col.lerp(CLIFF.lightened(crag * 0.4), clampf((crag - 0.15) * 5.0, 0.0, 1.0))
-	elif steep > 0.35:
+		var floor := GRASS_DARK.lerp(FOREST_FLOOR, clampf(course._noise.get_noise_2d(s * 1.5, d * 1.5) + 0.5, 0.0, 1.0))
+		col = col.lerp(floor.darkened(clampf(steep * 0.4, 0.0, 0.25)), woods)
+		if crag > 0.15 and wall > 2.0: col = col.lerp(CLIFF.lightened(crag * 0.4), clampf((crag - 0.15) * 5.0, 0.0, 1.0))
+	if steep > 0.35 and wall < 2.0:
 		# Ledges and cliff faces are bare rock, so they read from far above.
 		col = col.lerp(CLIFF, clampf((steep - 0.35) * 3.0, 0.0, 1.0))
 	# Gorges fall away into shadow.

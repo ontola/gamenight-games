@@ -380,7 +380,7 @@ func _aim_steer(b: Bike, stick: Vector2) -> float:
 	var facing := course.heading(b.s) - b.psi - b.yaw
 	var err := wrapf(atan2(want.x, want.z) - facing, -PI, PI)
 	# Positive steer is to the right, which turns the world heading down.
-	return clampf(-err * 2.2, -1.0, 1.0) * minf(1.0, stick.length() * 1.3)
+	return clampf(-err * 3.5, -1.0, 1.0) * minf(1.0, stick.length() * 1.3)
 
 ## Riders are solid: each bike is two circles, front and back wheel. Overlaps
 ## are pushed apart completely and the bikes trade momentum, so you can

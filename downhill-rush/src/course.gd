@@ -56,7 +56,7 @@ const _DENSITY := [0.55, 1.0, 1.3, 1.6]    ## Trees and rocks on the open slope.
 const _GAP := [1.35, 1.0, 0.88, 0.78]      ## Gully and slalom lane width.
 const _GORGE := [-1.5, 0.0, 0.8, 1.6]      ## Extra gorge width, m.
 const _BRIDGE := [1.0, 0.0, -0.3, -0.5]    ## Extra bridge width, m.
-const _CRASH := [1.35, 1.0, 0.9, 0.8]      ## Landing severity you survive.
+const _CRASH := [1.5, 1.15, 1.0, 0.85]    ## How much of a hit you survive: landings, trees, rocks, banks.
 const _PACE := [[1.5, 0.07, 5.5], [2.0, 0.1, 7.0], [2.5, 0.12, 8.0], [3.0, 0.15, 9.0]]  ## Camera: start, ramp, top speed.
 var crash_limit := 1.0
 var _buckets: Dictionary = {}           ## int(s/10) -> Array of obstacle indices
@@ -306,15 +306,23 @@ func height(s: float, d: float) -> float:
 	# Valley walls keep the field together. They wander in and out, so the
 	# valley pinches and opens like a real one.
 	var edge := edges(s)
-	var o := maxf(d - edge.y, edge.x - d)
+	# The foot of the hillside is warped so it runs out in spurs and bays
+	# instead of following the valley like a kerb.
+	var dw := d + _noise.get_noise_2d(s * 2.6 + 4400.0, d * 2.6) * 7.0 * wild
+	var o := maxf(dw - edge.y, edge.x - dw)
 	if o > 0.0:
-		# Hillsides, not walls: how steeply they rise wanders, and they're
-		# heaped with knolls and spurs.
+		# Hillsides, not walls: in places they rear up, in others the slope
+		# just carries on sideways and you can ride out across it.
+		var side_seed := 7700.0 if dw > edge.y else 8800.0
+		var rise := clampf(0.55 + 0.75 * _noise.get_noise_2d(s * 0.9 + side_seed, 0.0), 0.08, 1.0)
 		var lump := _noise.get_noise_2d(s * 2.2 + 600.0, d * 2.2)
-		h += o * (0.45 + 0.35 * (lump + 0.5)) + 0.012 * o * o
+		h += rise * (o * (0.4 + 0.35 * (lump + 0.5)) + 0.01 * o * o)
 		h += _noise.get_noise_2d(s * 1.6, d * 1.6) * minf(o * 0.5, 6.0)
 	var across := d - valley_mid(s)
-	h += 0.006 * across * across
+	h += 0.003 * across * across
+	# Big knolls and hollows across the whole slope, so the valley floor
+	# rolls instead of lying flat between two banks.
+	h += wild * _lake_calm(s, d) * _noise.get_noise_2d(s * 1.3 + 2600.0, d * 1.3) * 3.2
 	# Rolls, spines and hollows, then rubble on top. Calm round a lake.
 	var calm := _lake_calm(s, d)
 	wild *= calm
@@ -558,8 +566,10 @@ func _place_obstacles() -> void:
 			var rocky := _noise.get_noise_2d(ss * 1.8 + 2300.0, dd * 1.8)
 			var roll := _rng.randf()
 			var e := edges(ss)
-			var wall := maxf(dd - e.y, e.x - dd)
-			if wall > 1.5 and roll < 0.3 and _noise.get_noise_2d(ss * 2.5 + 1200.0, dd * 2.5) < 0.15:
+			# The woods reach down into the valley in tongues and leave
+			# clearings up the sides, so no tree line traces the valley edge.
+			var wall := maxf(dd - e.y, e.x - dd) + _noise.get_noise_2d(ss * 1.1 + 5300.0, dd * 1.1) * 10.0
+			if wall > 3.0 and roll < 0.3 and _noise.get_noise_2d(ss * 2.5 + 1200.0, dd * 2.5) < 0.15:
 				# The valley sides are wooded.
 				_add_obstacle(ss, dd, 0.45, 9.0, "tree")
 			elif forest > 0.12 and roll < 0.38 * _DENSITY[difficulty]:

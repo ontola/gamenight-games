@@ -28,6 +28,16 @@ var _whip := 0.0
 var _whip_rate := 0.0
 var _time := 0.0
 var _rng := RandomNumberGenerator.new()
+## Legs are separate pieces so the feet can go round with the cranks:
+## per side {thigh, shin, shoe} nodes, each a unit-length mesh stretched in place.
+var _legs: Array = []
+var _crank := 0.0
+
+const HIP := Vector3(0, 0.92, -0.2)
+const CRANK_AT := Vector3(0, WHEEL + 0.06, -0.03)
+const CRANK_R := 0.16
+const THIGH := 0.4
+const SHIN := 0.42
 
 
 func setup(p_color: Color, p_name: String, p_style: int = 0) -> void:
@@ -50,6 +60,7 @@ func setup(p_color: Color, p_name: String, p_style: int = 0) -> void:
 	var rider_mesh := MeshInstance3D.new()
 	rider_mesh.mesh = _rider_mesh()
 	rider.add_child(rider_mesh)
+	_build_legs()
 	body.scale = Vector3.ONE * SCALE
 	tag = Label3D.new()
 	tag.text = p_name.to_upper()
@@ -157,12 +168,6 @@ func _rider_mesh() -> ArrayMesh:
 	var hands := Vector3(0, 0.96, 0.3)
 	for side in [-1.0, 1.0]:
 		var x: float = side * 0.1
-		var knee := Vector3(x * 1.7, 0.68, 0.12)
-		var foot := Vector3(x * 1.3, WHEEL + 0.05, -0.05 + side * 0.06)
-		pants.beam(hip + Vector3(x, 0, 0), knee, 0.15, trousers)
-		pants.beam(knee, foot + Vector3(0, 0.08, 0), 0.13, trousers)
-		gear.box(foot + Vector3(0, -0.01, 0.04), Vector3(0.12, 0.09, 0.25), accent)
-		gear.box(foot + Vector3(0, -0.05, 0.04), Vector3(0.13, 0.03, 0.26), Color(0.92, 0.9, 0.85))
 		# Shoulder, short sleeve, then bare arm out to the grips.
 		var arm_top := shoulder + Vector3(side * 0.17, -0.06, -0.01)
 		var elbow := Vector3(side * 0.3, 1.06, 0.14)
@@ -199,6 +204,53 @@ func _rider_mesh() -> ArrayMesh:
 	return mesh
 
 const HEAD_AT := Vector3(0, 1.5, 0.12)
+
+func _build_legs() -> void:
+	var trousers: Color = TROUSERS[(style / 2) % TROUSERS.size()]
+	var denim := Tex.material(Tex.denim(), 3.0, false)
+	var cotton := Tex.material(Tex.cotton(), 3.0, false)
+	for side in [-1.0, 1.0]:
+		var leg := {"side": side}
+		for part in ["thigh", "shin"]:
+			var lp := LowPoly.new()
+			lp.beam(Vector3.ZERO, Vector3(0, 0, -1), 0.15 if part == "thigh" else 0.13, trousers)
+			var mi := MeshInstance3D.new()
+			mi.mesh = lp.commit(null, denim)
+			rider.add_child(mi)
+			leg[part] = mi
+		var shoe := LowPoly.new()
+		shoe.box(Vector3(0, -0.01, 0.04), Vector3(0.12, 0.09, 0.25), accent)
+		shoe.box(Vector3(0, -0.05, 0.04), Vector3(0.13, 0.03, 0.26), Color(0.92, 0.9, 0.85))
+		var smi := MeshInstance3D.new()
+		smi.mesh = shoe.commit(null, cotton)
+		rider.add_child(smi)
+		leg.shoe = smi
+		_legs.append(leg)
+	_pose_legs()
+
+## Feet on the pedals, knees found by two-bone IK, bent forward and a little out.
+func _pose_legs() -> void:
+	for leg in _legs:
+		var side: float = leg.side
+		var a := _crank + (0.0 if side > 0.0 else PI)
+		var foot := CRANK_AT + Vector3(side * 0.13, cos(a) * CRANK_R, sin(a) * CRANK_R)
+		var hip := HIP + Vector3(side * 0.1, 0, 0)
+		var to_foot := foot - hip
+		var dist := clampf(to_foot.length(), 0.1, THIGH + SHIN - 0.01)
+		var dir := to_foot.normalized()
+		var along := (THIGH * THIGH - SHIN * SHIN + dist * dist) / (2.0 * dist)
+		var rise := sqrt(maxf(0.0, THIGH * THIGH - along * along))
+		var bend := Vector3(0, -dir.z, dir.y).normalized()
+		if bend.z < 0.0: bend = -bend
+		var knee := hip + dir * along + bend * rise + Vector3(side * 0.06, 0, 0)
+		_stretch(leg.thigh, hip, knee)
+		_stretch(leg.shin, knee, foot + Vector3(0, 0.08, 0))
+		leg.shoe.position = foot
+
+func _stretch(node: Node3D, from: Vector3, to: Vector3) -> void:
+	var dir := to - from
+	var basis := Basis.looking_at(dir, Vector3.RIGHT if absf(dir.normalized().x) < 0.9 else Vector3.UP)
+	node.transform = Transform3D(basis * Basis.from_scale(Vector3(1, 1, dir.length())), from)
 
 ## Elliptical rings from waist to neck: (height 0..1, half width, half depth).
 const TORSO_RINGS := [Vector3(0.0, 0.15, 0.1), Vector3(0.45, 0.16, 0.105), Vector3(0.8, 0.185, 0.11), Vector3(0.93, 0.15, 0.095), Vector3(1.0, 0.07, 0.06)]
@@ -250,6 +302,15 @@ func pose(b: Bike, c: Course, delta: float) -> void:
 	bike.rotation.y = _whip
 	front_wheel.rotate_x(spin)
 	rear_wheel.rotate_x(spin)
+	# Pedalling turns the cranks with the back wheel; coasting, the feet
+	# settle level, the way BMX riders stand on the pedals.
+	if b.pedaling > 0.1 and b.grounded and not b.crashed:
+		_crank += maxf(spin / 2.2, 7.0 * delta)
+	else:
+		var level := roundf((_crank - PI * 0.5) / PI) * PI + PI * 0.5
+		_crank = move_toward(_crank, level, 4.0 * delta)
+	_crank = fmod(_crank, TAU * 100.0)
+	_pose_legs()
 	if b.crashed:
 		if not _was_crashed:
 			rider.position = Vector3.ZERO

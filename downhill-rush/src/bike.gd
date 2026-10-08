@@ -7,7 +7,7 @@ const G := 9.81
 const RIDER_RADIUS := 0.35
 const CRASH_TIME := 1.8
 const INVULNERABLE := 1.3
-const GRIP := 6.5              ## Sideways grip on dirt, m/s². Corner faster and you skid.
+const GRIP := 10.0             ## Sideways grip on dirt, m/s². Corner faster and you skid.
 const RADIUS := 0.45           ## Each bike is two of these circles, front and back.
 const HALF_LENGTH := 0.65
 
@@ -37,6 +37,9 @@ var yaw := 0.0          ## Bike twisted away from the direction of travel (in th
 var severity := 0.0     ## How bad the last landing was; above 1 is a crash.
 var pinned := 0.0       ## How long we've been stuck against rocks or trees.
 var touching := false   ## Leaning on an obstacle this step.
+var pedaling := 0.0     ## How hard the rider is pedalling, for the legs.
+var _stuck_s := 0.0     ## Where we last made real progress downhill, and how long ago.
+var _stuck_t := 0.0
 
 func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
 	s = p_s
@@ -51,6 +54,10 @@ func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
 
 ## `input`: steer (-1..1, right positive), pedal (0..1), brake (0..1),
 ## hop (bool, pressed this step). In the air brake lifts the nose.
+## How fast full lock turns the bike, rad/s: quick at walking pace, calmer flat out.
+static func turn_rate(v: float) -> float:
+	return minf(3.4, 26.0 / (v + 4.0))
+
 static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	b.hard_landing = false
 	b.landed = false
@@ -63,6 +70,7 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	var steer: float = clampf(input.get("steer", 0.0), -1.0, 1.0)
 	var pedal: float = clampf(input.get("pedal", 0.0), 0.0, 1.0)
 	var brake: float = clampf(input.get("brake", 0.0), 0.0, 1.0)
+	b.pedaling = pedal
 	if b.wobble > 0.0:
 		steer += sin(b.wobble * 23.0) * 0.5
 		pedal = 0.0
@@ -80,10 +88,10 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		var acc := -G * along / sqrt(1.0 + along * along)
 		acc -= 0.12 + (6.0 if wet else 0.0)
 		acc -= 0.0042 * b.v * b.v
-		acc += pedal * 3.4 * clampf((12.5 - b.v) / 5.0, 0.0, 1.0)
+		acc += pedal * 6.0 * clampf((14.0 - b.v) / 5.0, 0.0, 1.0)
 		acc -= brake * 8.0 * (0.4 + 0.6 * ground_grip)
 		b.v = maxf(0.0, b.v + acc * dt)
-		var rate := minf(2.3, 15.0 / (b.v + 4.0)) * (1.25 if brake > 0.3 else 1.0)
+		var rate := turn_rate(b.v) * (1.25 if brake > 0.3 else 1.0)
 		# Grip limits how hard you can turn at speed; braking hard eats into it.
 		# Ask for more and the tyres slide: you scrub speed and run wide.
 		var grip := GRIP * ground_grip * (1.0 - 0.35 * brake) / maxf(b.v, 1.0)
@@ -168,9 +176,18 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	# Same when you've ground to a halt on a bank without braking.
 	var stalled := b.grounded and b.v < 0.8 and brake < 0.1
 	b.pinned = b.pinned + dt if (b.touching and b.v < 4.5) or stalled else maxf(0.0, b.pinned - dt * 2.0)
-	if b.pinned > (1.2 if b.touching else 2.0):
+	# Rocking back and forth in a thicket without getting anywhere counts too.
+	if b.s > b._stuck_s + 1.5 or b.s < b._stuck_s - 6.0 or (brake > 0.3 and b.v < 0.3):
+		b._stuck_s = b.s
+		b._stuck_t = 0.0
+	else:
+		b._stuck_t += dt
+	if b.pinned > (1.2 if b.touching else 2.0) or b._stuck_t > 3.0:
+		# Truly stuck: carry the bike a few metres on, past whatever holds it.
+		var on := 4.0 if b._stuck_t > 3.0 else 0.0
+		if on > 0.0: b._stuck_t = 0.0
 		b.pinned = 0.0
-		var spot := clear_spot(c, b.s, b.d, true)
+		var spot := clear_spot(c, b.s + on, b.d, true)
 		b.s = spot.x
 		b.d = spot.y
 		b.psi = 0.0
@@ -226,12 +243,14 @@ static func _collide_obstacles(b: Bike, c: Course, steer := 0.0) -> void:
 		var dist := sqrt(ds * ds + dd * dd)
 		var n := Vector2(ds, dd) / maxf(dist, 0.001)
 		var closing := Vector2(cos(b.psi), sin(b.psi)).dot(n) * b.v
+		# Small rocks never throw you off; they're hard to spot from above.
+		var small: bool = o.kind == "rock" and o.r < 0.6
 		# The bigger the thing, the less speed it takes to go over the bars.
-		var limit := 4.0 if o.kind == "tree" else clampf(7.5 - o.h * 1.8, 3.5, 7.0)
-		if closing > limit:
+		var limit: float = (5.5 if o.kind == "tree" else clampf(9.0 - o.h * 1.8, 4.5, 8.5)) * c.crash_limit
+		if closing > limit and not small:
 			_crash(b, "obstacle")
 			return
-		if o.kind == "rock" and o.r < 0.6 and b.grounded:
+		if small and b.grounded:
 			# Small rock: the front wheel rides up it and bucks you.
 			b.vy = maxf(b.vy, 1.2 + b.v * 0.18)
 			b.y += 0.05

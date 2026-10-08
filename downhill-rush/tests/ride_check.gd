@@ -13,7 +13,7 @@ func _ride(c: Course, mode: String, seed_value: int) -> Dictionary:
 		if mode == "bot":
 			input = bot.think(b, c, dt)
 		else:
-			var steer := clampf((atan2(-b.d, 8.0) - b.psi) * 3.0 + c.curvature(b.s) * b.v / maxf(0.4, minf(2.3, 15.0 / (b.v + 4.0))), -1, 1)
+			var steer := clampf((atan2(-b.d, 8.0) - b.psi) * 3.0 + c.curvature(b.s) * b.v / maxf(0.4, Bike.turn_rate(b.v)), -1, 1)
 			input = {"steer": steer, "pedal": 1.0 if mode == "pedal" else 0.0}
 		Bike.step(b, c, input, dt)
 		t += dt
