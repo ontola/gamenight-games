@@ -7,8 +7,15 @@ extends RefCounted
 
 static var _cache := {}
 static var _materials := {}
+static var _lock := Mutex.new()   ## The next mountain is built on a thread.
 
 static func _make(key: String, size: int, paint: Callable) -> ImageTexture:
+	_lock.lock()
+	var tex := _make_locked(key, size, paint)
+	_lock.unlock()
+	return tex
+
+static func _make_locked(key: String, size: int, paint: Callable) -> ImageTexture:
 	if _cache.has(key): return _cache[key]
 	var img := Image.create(size, size, false, Image.FORMAT_RGB8)
 	var rng := RandomNumberGenerator.new()
@@ -61,6 +68,12 @@ static func ripples() -> ImageTexture:
 
 ## A vertex-coloured material with one of the textures above projected on it.
 static func material(tex: ImageTexture, scale: float, world: bool) -> StandardMaterial3D:
+	_lock.lock()
+	var m := _material_locked(tex, scale, world)
+	_lock.unlock()
+	return m
+
+static func _material_locked(tex: ImageTexture, scale: float, world: bool) -> StandardMaterial3D:
 	var key := "%s|%s|%s" % [tex.get_instance_id(), scale, world]
 	if _materials.has(key): return _materials[key]
 	var m := StandardMaterial3D.new()

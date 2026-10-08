@@ -4,8 +4,7 @@ extends RefCounted
 ## keyboard half, and turns them into bike input with press edges.
 ##
 ## Pad: point the left stick where you want to go on screen, A hops, RT/X
-## pedals, LT/B brakes. In the air the stick twists the bike and the brake
-## lifts the nose.
+## pedals, LT/B brakes. In the air the brake lifts the nose.
 
 enum Source { SEAT, PAD, KEYS }
 

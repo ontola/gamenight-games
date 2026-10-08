@@ -41,23 +41,83 @@ var _rng := RandomNumberGenerator.new()
 var _columns := PackedFloat32Array()
 
 
+## Build the whole mountain now.
 func build(c: Course) -> void:
+	build_streaming(c)
+	_drain()
+
+## Build the mountain a chunk at a time, top first. Safe to run on a thread:
+## each finished chunk is queued, and the view adds it to itself on its next
+## frame, so a race can start once the first chunks are in while the rest of
+## the mountain keeps arriving ahead of the riders.
+func build_streaming(c: Course) -> void:
 	course = c
 	if PALETTES.has(c.biome):
 		var pal: Array = PALETTES[c.biome]
 		GRASS = pal[0]; GRASS_DARK = pal[1]; MEADOW = pal[2]; DIRT = pal[3]; DIRT_DARK = pal[4]
 		STONE = pal[5]; CLIFF = pal[6]; SCREE = pal[7]; SAND = pal[8]; FOREST_FLOOR = pal[9]; FERN = pal[10]
 	_rng.seed = c.seed_value * 31 + 5
-	for child in get_children():
-		child.queue_free()
 	_columns = _make_columns()
 	var s := 0.0
+	var key := 0
 	while s < c.total - 1.0:
-		_terrain_chunk(s, minf(s + CHUNK, c.total - 1.0))
+		if cancelled: break
+		var chunk := Node3D.new()
+		chunk.name = "Chunk%d" % key
+		_terrain_chunk(chunk, s, minf(s + CHUNK, c.total - 1.0))
+		_props(chunk, key)
+		if Course.START_LINE >= s and Course.START_LINE < s + CHUNK: _gate(chunk, Course.START_LINE, false)
+		if c.length >= s and c.length < s + CHUNK: _gate(chunk, c.length, true)
+		_lock.lock()
+		_pending.append(chunk)
+		_built += 1
+		_lock.unlock()
 		s += CHUNK
-	_props()
-	_gate(Course.START_LINE, false)
-	_gate(c.length, true)
+		key += 1
+	_lock.lock()
+	_done = true
+	_lock.unlock()
+
+var cancelled := false   ## Set to stop a streaming build early.
+var _pending: Array[Node3D] = []
+var _built := 0
+var _done := false
+var _lock := Mutex.new()
+
+## Chunks finished so far, and whether the whole mountain is done.
+func chunks_built() -> int:
+	_lock.lock()
+	var n := _built
+	_lock.unlock()
+	return n
+
+func is_done() -> bool:
+	_lock.lock()
+	var d := _done
+	_lock.unlock()
+	return d
+
+func _process(_delta: float) -> void:
+	_drain()
+
+func _drain() -> void:
+	_lock.lock()
+	var ready := _pending.duplicate()
+	_pending.clear()
+	_lock.unlock()
+	for chunk in ready: add_child(chunk)
+
+## Chunks built but never shown (the build was cancelled) go with the view.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		_lock.lock()
+		for chunk in _pending: chunk.free()
+		_pending.clear()
+		_lock.unlock()
+
+## The start gate, wherever it ended up.
+func start_gate() -> Node3D:
+	return find_child("Start", true, false)
 
 
 func _make_columns() -> PackedFloat32Array:
@@ -74,7 +134,7 @@ func _make_columns() -> PackedFloat32Array:
 
 const ROW := 0.5   ## Fine rows so ledges are as sharp on screen as under the wheels.
 
-func _terrain_chunk(s0: float, s1: float) -> void:
+func _terrain_chunk(parent: Node3D, s0: float, s1: float) -> void:
 	var lp := LowPoly.new()
 	var rows: Array = []
 	var s := s0
@@ -179,16 +239,16 @@ func _terrain_chunk(s0: float, s1: float) -> void:
 		ice_mat.metallic_specular = 0.4
 		im.mesh = ice.commit(null, ice_mat)
 		im.name = "Ice"
-		add_child(im)
+		parent.add_child(im)
 	if not water.is_empty():
 		var wm := MeshInstance3D.new()
 		wm.mesh = water.commit(null, _water_material())
 		wm.name = "Water"
-		add_child(wm)
+		parent.add_child(wm)
 	var mi := MeshInstance3D.new()
 	mi.mesh = lp.commit(null, Tex.material(Tex.grit(), 0.7, true))
 	mi.name = "Terrain"
-	add_child(mi)
+	parent.add_child(mi)
 
 static var _water_mat: StandardMaterial3D
 
@@ -217,6 +277,10 @@ func _vertex_color(p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) ->
 		Course.Surface.ICE: col = Color(0.7, 0.82, 0.92)
 		Course.Surface.SCREE: col = SCREE.lerp(STONE, course._detail.get_noise_2d(s * 2.0, d * 2.0) * 0.5 + 0.5)
 		Course.Surface.DIRT: col = DIRT.lerp(DIRT_DARK, clampf(course._noise.get_noise_2d(s * 6.0, d * 6.0) + 0.3, 0.0, 0.6))
+		Course.Surface.TRAIL:
+			# Packed dirt, or trodden snow, a shade apart from loose dirt.
+			var worn := clampf(course._noise.get_noise_2d(s * 5.0 + 90.0, d * 5.0) + 0.5, 0.0, 1.0)
+			col = (GRASS_DARK.lerp(STONE, 0.35) if course.biome == "snow" else PACKED.lerp(DIRT, 0.35)).lerp(DIRT_DARK, worn * 0.25)
 		_:
 			var patch := course._noise.get_noise_2d(s * 0.9 + 400.0, d * 0.9)
 			col = GRASS.lerp(GRASS_DARK, clampf(patch * 1.6 + 0.4, 0.0, 1.0))
@@ -244,27 +308,23 @@ func _vertex_color(p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) ->
 
 # ── Props ────────────────────────────────────────────────────────────────────
 
-func _props() -> void:
-	# Meshes built once per chunk, in world space, so we skip per-instance
-	# transforms entirely and keep the draw-call count low.
-	var chunks := {}
+## Trees, rocks and undergrowth for one chunk, as one mesh in world space,
+## so there are no per-instance transforms and few draw calls.
+func _props(parent: Node3D, key: int) -> void:
+	var lp := LowPoly.new()
+	var s0 := key * CHUNK
 	for o in course.obstacles:
-		var key := int(o.s / CHUNK)
-		if not chunks.has(key): chunks[key] = LowPoly.new()
-		var lp: LowPoly = chunks[key]
+		if int(o.s / CHUNK) != key: continue
 		var p := course.world(o.s, o.d)
 		if o.kind == "tree": _tree(lp, p, o.get("look", "pine"))
 		else: _rock(lp, p, o.r)
 	# Decoration without collisions: bushes, grass tufts, flowers.
-	var s := 0.0
-	while s < course.total:
-		var key := int(s / CHUNK)
-		if not chunks.has(key): chunks[key] = LowPoly.new()
-		var lp: LowPoly = chunks[key]
+	var s := s0
+	while s < minf(s0 + CHUNK, course.total):
 		for i in 9:
 			var d := _rng.randf_range(-Course.EDGE + 1.0, Course.EDGE - 1.0)
 			var ss := s + _rng.randf_range(0.0, 4.0)
-			if course.surface(ss, d) in [Course.Surface.WATER, Course.Surface.SCREE, Course.Surface.ROCK]: continue
+			if course.surface(ss, d) in [Course.Surface.WATER, Course.Surface.SCREE, Course.Surface.ROCK, Course.Surface.TRAIL]: continue
 			var p := course.world(ss, d)
 			var roll := _rng.randf()
 			if course.biome == "snow":
@@ -303,11 +363,11 @@ func _props() -> void:
 					var q := p + Vector3(_rng.randf_range(-0.5, 0.5), 0, _rng.randf_range(-0.5, 0.5))
 					lp.cone(q, 0.07, 0.0, 0.22, 3, flower)
 		s += 4.0
-	for key in chunks:
-		var mi := MeshInstance3D.new()
-		mi.mesh = chunks[key].commit(null, Tex.material(Tex.grit(), 1.6, true))
-		mi.name = "Props%d" % key
-		add_child(mi)
+	if lp.is_empty(): return
+	var mi := MeshInstance3D.new()
+	mi.mesh = lp.commit(null, Tex.material(Tex.grit(), 1.6, true))
+	mi.name = "Props%d" % key
+	parent.add_child(mi)
 
 func _tree(lp: LowPoly, p: Vector3, look: String) -> void:
 	var scale := _rng.randf_range(0.8, 1.35)
@@ -413,7 +473,7 @@ func _tuft(lp: LowPoly, p: Vector3) -> void:
 
 # ── Gates ────────────────────────────────────────────────────────────────────
 
-func _gate(s: float, finish: bool) -> void:
+func _gate(parent: Node3D, s: float, finish: bool) -> void:
 	var lp := LowPoly.new()
 	var w := Course.TRACK_HALF + 1.2
 	var left := course.world(s, -w)
@@ -445,4 +505,4 @@ func _gate(s: float, finish: bool) -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = lp.commit()
 	mi.name = "Finish" if finish else "Start"
-	add_child(mi)
+	parent.add_child(mi)

@@ -17,7 +17,7 @@ const START_FLAT := 75.0
 const START_LINE := 50.0       ## Riders line up here, with hillside behind for the camera.
 const RUNOUT := 60.0
 
-enum Surface { GRASS, DIRT, ROCK, SCREE, WATER, ICE }
+enum Surface { GRASS, DIRT, ROCK, SCREE, WATER, ICE, TRAIL }
 
 var seed_value := 0
 var length := 900.0            ## Finish line position.
@@ -57,8 +57,10 @@ const _GAP := [1.35, 1.0, 0.88, 0.78]      ## Gully and slalom lane width.
 const _GORGE := [-1.5, 0.0, 0.8, 1.6]      ## Extra gorge width, m.
 const _BRIDGE := [1.0, 0.0, -0.3, -0.5]    ## Extra bridge width, m.
 const _CRASH := [1.5, 1.15, 1.0, 0.85]    ## How much of a hit you survive: landings, trees, rocks, banks.
+const _TRAIL := [3.2, 2.4, 1.9, 1.6]      ## Half width of the trail kept clear of trees.
 const _PACE := [[1.5, 0.07, 5.5], [2.0, 0.1, 7.0], [2.5, 0.12, 8.0], [3.0, 0.15, 9.0]]  ## Camera: start, ramp, top speed.
 var crash_limit := 1.0
+var trail := PackedFloat32Array()   ## Across-position of the trail per sample (see _make_trail).
 var _buckets: Dictionary = {}           ## int(s/10) -> Array of obstacle indices
 var _noise := FastNoiseLite.new()
 var _detail := FastNoiseLite.new()
@@ -212,7 +214,9 @@ func _generate_line() -> void:
 		var want: float = sec.grade if not sec.is_empty() and sec.grade >= 0.0 else target
 		if want > 0.2: want *= _STEEP[difficulty]
 		g = lerpf(g, want, 0.12)
-		grade[j] = 0.06 if sj < START_FLAT else (0.08 if sj > length + 8.0 else g)
+		# The start eases into the mountain instead of kinking from flat to steep.
+		var lead := smoothstep(START_FLAT - 45.0, START_FLAT + 15.0, sj)
+		grade[j] = 0.08 if sj > length + 8.0 else lerpf(0.1, g, lead)
 	var th := 0.0
 	var x := 0.0
 	var z := 0.0
@@ -295,9 +299,11 @@ func world(s: float, d: float, y: float = INF) -> Vector3:
 
 # ── Height ───────────────────────────────────────────────────────────────────
 
-## How wild the ground is: 0 on the start and finish, 1 on the mountain.
+## How wild the ground is: gently rolling on the start and finish, 1 on the
+## mountain, so the start is a sloping alp that rolls into the mountain.
 func _wild(s: float) -> float:
-	return smoothstep(START_FLAT - 10.0, START_FLAT + 25.0, s) * (1.0 - smoothstep(length - 25.0, length - 5.0, s))
+	var start := lerpf(0.3, 1.0, smoothstep(5.0, START_FLAT + 25.0, s))
+	return start * (1.0 - 0.7 * smoothstep(length - 25.0, length - 5.0, s))
 
 func height(s: float, d: float) -> float:
 	var h := base_height(s)
@@ -435,6 +441,63 @@ func on_path(s: float, d: float) -> bool:
 			if s - lip.s > -lip.run - 2.0 and s - lip.s < 0.6 and absf(d - lip.d) < lip.w + 0.6: return true
 	return false
 
+# ── Trail ─────────────────────────────────────────────────────────────────────
+# One way down that is always rideable: a winding line of packed dirt with no
+# trees or big boulders on it. It finds a chute through every cliff band, a
+# bridge (or the ramp) over every gorge, a lane through every slalom, the
+# path down every gully, and goes round lakes. It doesn't avoid kickers, and
+# it's narrower on harder mountains. Leave it and you're on your own.
+
+func trail_half() -> float:
+	return _TRAIL[difficulty]
+
+func trail_d(s: float) -> float:
+	return _sample(trail, s)
+
+func on_trail(s: float, d: float) -> bool:
+	return s > START_LINE + 4.0 and absf(d - trail_d(s)) < trail_half()
+
+func _make_trail() -> void:
+	var n := theta.size()
+	var raw := PackedFloat32Array()
+	raw.resize(n)
+	for j in n:
+		var s := j * DS
+		var e := edges(s)
+		# On open ground it wanders across the valley on its own.
+		var d := valley_mid(s) + 9.0 * _noise.get_noise_2d(s * 0.45 + 8800.0, 0.0)
+		for sec in sections:
+			var pull := smoothstep(sec.s - 22.0, sec.s - 4.0, s) * (1.0 - smoothstep(sec.s + sec.len + 2.0, sec.s + sec.len + 16.0, s))
+			if pull <= 0.0: continue
+			var want := d
+			match sec.kind:
+				"gully": want = gully_line(sec, clampf(s, sec.s, sec.s + sec.len))
+				"slalom":
+					var lane: Dictionary = sec.lanes[0]
+					var at := clampf(s, sec.s, sec.s + sec.len)
+					want = valley_mid(at) + lane.off + lane.amp * sin(at * lane.freq + lane.phase)
+				"chasm":
+					var crossing: Dictionary = sec.bridges[0] if not sec.bridges.is_empty() else sec.ramp
+					want = crossing.d
+				"lake":
+					# Round the side with more room.
+					var room: bool = e.y - (sec.cd + sec.rd) > (sec.cd - sec.rd) - e.x
+					want = sec.cd + (sec.rd * 1.3 + trail_half() + 1.0) * (1.0 if room else -1.0)
+			d = lerpf(d, want, pull)
+		for b in bands:
+			var pull := smoothstep(b.s - b.approach - 24.0, b.s - b.approach, s) * (1.0 - smoothstep(b.s + 3.0, b.s + 16.0, s))
+			if pull > 0.0 and not b.chutes.is_empty(): d = lerpf(d, b.chutes[0].d, pull)
+		raw[j] = clampf(d, e.x + trail_half() + 0.5, e.y - trail_half() - 0.5)
+	# A little smoothing so it bends like a trail, not a staircase.
+	trail.resize(n)
+	for j in n:
+		var acc := 0.0
+		var cnt := 0
+		for q in range(maxi(0, j - 3), mini(n, j + 4)):
+			acc += raw[q]
+			cnt += 1
+		trail[j] = acc / cnt
+
 func _bands_at(s: float, d: float) -> float:
 	var total_h := 0.0
 	for b in bands:
@@ -510,6 +573,7 @@ func surface(s: float, d: float, slope: float = -1.0) -> int:
 	if in_water(s, d): return Surface.WATER
 	if on_ice(s, d): return Surface.ICE
 	if on_path(s, d): return Surface.DIRT
+	if on_trail(s, d): return Surface.TRAIL
 	if slope < 0.0: slope = gradient(s, d).length()
 	if slope > 1.3: return Surface.ROCK
 	# Warp the patch noise so dirt and scree come in winding, uneven shapes.
@@ -527,6 +591,7 @@ func grip(s: float, d: float, slope: float = -1.0) -> float:
 		Surface.SCREE: return 0.6
 		Surface.ROCK: return 0.85
 		Surface.GRASS: return 0.75 if biome == "snow" else 0.9
+		Surface.TRAIL: return 0.85 if biome == "snow" else 1.0
 	return 1.0
 
 
@@ -585,6 +650,14 @@ func _place_obstacles() -> void:
 
 ## Gully banks thick with boulders and pines; slalom rows with a few gaps.
 func _place_set_piece_obstacles() -> void:
+	# Slalom lanes first: the trail threads one of them.
+	for sec in sections:
+		if sec.kind != "slalom": continue
+		sec.lanes = []
+		for k in _rng.randi_range(2, 3):
+			sec.lanes.append({"off": _rng.randf_range(-9.0, 9.0), "amp": _rng.randf_range(2.0, 5.0),
+				"freq": TAU / _rng.randf_range(18.0, 34.0), "phase": _rng.randf() * TAU})
+	_make_trail()
 	for sec in sections:
 		if sec.kind == "gully":
 			var s: float = sec.s + 6.0
@@ -606,10 +679,7 @@ func _place_set_piece_obstacles() -> void:
 		elif sec.kind == "slalom":
 			# A thicket of trees and boulders with two or three lanes winding
 			# through it. No rows: it should look grown, not planted.
-			var lanes: Array = []
-			for k in _rng.randi_range(2, 3):
-				lanes.append({"off": _rng.randf_range(-9.0, 9.0), "amp": _rng.randf_range(2.0, 5.0),
-					"freq": TAU / _rng.randf_range(18.0, 34.0), "phase": _rng.randf() * TAU})
+			var lanes: Array = sec.lanes
 			var s: float = sec.s + 4.0
 			while s < sec.s + sec.len - 2.0:
 				var d := -CORRIDOR - 2.0
@@ -620,6 +690,7 @@ func _place_set_piece_obstacles() -> void:
 					for lane in lanes:
 						var at: float = valley_mid(ps) + lane.off + lane.amp * sin(ps * lane.freq + lane.phase)
 						if absf(pd - at) < 1.9 * _GAP[difficulty]: clear = true
+					if absf(pd - trail_d(ps)) < trail_half() + 0.6: clear = true
 					if not clear and _rng.randf() < 0.62:
 						if _noise.get_noise_2d(ps * 3.0 + 800.0, pd * 3.0) > 0.0:
 							_add_obstacle(ps, pd, 0.45, 9.0, "tree", true)
@@ -631,6 +702,9 @@ func _place_set_piece_obstacles() -> void:
 
 func _add_obstacle(s: float, d: float, r: float, h: float, kind: String, set_piece := false) -> void:
 	if not set_piece:
+		# The trail stays clear of trees and boulders. Now and then a small
+		# rock lies on it, which bucks you but never throws you off.
+		if absf(d - trail_d(s)) < trail_half() + r and not (kind == "rock" and r < 0.6 and _rng.randf() < 0.4): return
 		var sec := section_at(s)
 		if not sec.is_empty() and sec.kind in ["gully", "slalom"]: return
 		if not sec.is_empty() and sec.kind == "chasm" and absf(s - sec.cs) < sec.w * 0.5 + 8.0: return

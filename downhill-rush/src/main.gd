@@ -15,6 +15,7 @@ const SETTINGS := [
 	{"key": "landscape", "label": "Landscape (next round)", "kind": "choice", "default": "random", "options": ["random", "alpine", "forest", "autumn", "desert", "snow"]},
 ]
 const MAX_RIDERS := 8
+const COUNTDOWN := 2.0   ## Seconds on the grid before the gate drops.
 const PHYSICS_DT := 1.0 / 120.0
 
 var phase := Phase.IDLE
@@ -84,6 +85,7 @@ func _ready() -> void:
 	GameNight.declare_settings(SETTINGS)
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	_new_course()
+	_prepare_next()
 	if managed:
 		_enter(Phase.IDLE)
 	elif demo:
@@ -150,6 +152,7 @@ func _build_environment() -> void:
 	sun.shadow_normal_bias = 2.5
 	sun.directional_shadow_max_distance = 110.0
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.directional_shadow_blend_splits = true
 	sun.shadow_blur = 1.5
 	add_child(sun)
 	camera = Camera3D.new()
@@ -160,19 +163,102 @@ func _build_environment() -> void:
 	camera.make_current()
 
 func _new_course() -> void:
-	var seed_value := _seed_override if _seed_override >= 0 else _rng.randi_range(1, 999999)
-	if _seed_override >= 0: _seed_override += 1
-	course = Course.new(seed_value, LENGTHS.get(mountain_length, 900.0), maxi(0, Course.DIFFICULTIES.find(difficulty)), landscape)
+	var job := _take_next()
+	if job.is_empty():
+		var seed_value := _seed_override if _seed_override >= 0 else _rng.randi_range(1, 999999)
+		if _seed_override >= 0: _seed_override += 1
+		job = _start_build(seed_value)
+	# The first chunks are all the start needs; the rest streams in ahead of
+	# the riders. Usually it was built during the last round and this is instant.
+	while job.course == null or (job.view.chunks_built() < 2 and not job.view.is_done()):
+		OS.delay_msec(5)
+	_running.append(job)
+	var old := mountain
+	course = job.course
 	_set_weather()
-	if mountain: mountain.queue_free()
-	mountain = MountainView.new()
+	if old: _retire(old)
+	mountain = job.view
 	add_child(mountain)
-	mountain.build(course)
-	hud.set_mountain(_mountain_name(seed_value), course)
+	mountain._drain()
+	hud.set_mountain(_mountain_name(job.seed), course)
 	focus_s = Course.START_LINE + 2.0
 	focus_d = 0.0
 	cam_yaw = course.view_heading(10.0)
 	_update_camera(1.0)
+
+# ── Next mountain ────────────────────────────────────────────────────────────
+# Building a mountain's meshes takes seconds, so it happens on a thread, a
+# chunk at a time. The next mountain is built while you ride this one, so a
+# new round starts straight away; if it isn't done yet, the race starts as soon
+# as its first chunks are and the rest keeps arriving ahead of you.
+
+var _next := {}                    ## The build for the next round, if one is under way.
+var _running: Array[Dictionary] = []   ## Builds whose threads may still be going.
+
+func _course_key() -> String:
+	return "%s|%s|%s" % [mountain_length, difficulty, landscape]
+
+func _start_build(seed_value: int) -> Dictionary:
+	var job := {"seed": seed_value, "key": _course_key(), "course": null, "view": MountainView.new(), "stale": false}
+	var length: float = LENGTHS.get(mountain_length, 900.0)
+	var level := maxi(0, Course.DIFFICULTIES.find(difficulty))
+	var biome := landscape
+	var view: MountainView = job.view
+	job.thread = Thread.new()
+	job.thread.start(func() -> void:
+		var c := Course.new(seed_value, length, level, biome)
+		job.course = c
+		view.build_streaming(c), Thread.PRIORITY_LOW)
+	return job
+
+## Start building the next mountain for the current settings, unless one is
+## already on the way.
+func _prepare_next() -> void:
+	if _seed_override >= 0: return   # Screenshots and tests want their exact seeds.
+	if not _next.is_empty() and _next.key == _course_key(): return
+	if not _next.is_empty():
+		_next.view.cancelled = true
+		_next.stale = true
+		_running.append(_next)
+	_next = _start_build(_rng.randi_range(1, 999999))
+
+## The prepared build, if it matches the settings.
+func _take_next() -> Dictionary:
+	if _next.is_empty() or _next.key != _course_key(): return {}
+	var job := _next
+	_next = {}
+	return job
+
+## Take a mountain off the stage. One still streaming is stopped and freed
+## once its thread lets go of it.
+func _retire(view: MountainView) -> void:
+	remove_child(view)
+	for job in _running:
+		if job.view == view:
+			view.cancelled = true
+			job.stale = true
+			return
+	view.queue_free()
+
+## Join finished build threads; free mountains nobody uses any more.
+func _reap_builds() -> void:
+	for job in _running.duplicate():
+		if job.thread.is_alive(): continue
+		job.thread.wait_to_finish()
+		if job.stale: job.view.free()
+		_running.erase(job)
+
+func _exit_tree() -> void:
+	if not _next.is_empty():
+		_next.view.cancelled = true
+		_next.stale = true
+		_running.append(_next)
+		_next = {}
+	for job in _running:
+		job.view.cancelled = true
+		job.thread.wait_to_finish()
+		if job.stale or not job.view.is_inside_tree(): job.view.free()
+	_running.clear()
 
 func _bot_skill() -> float:
 	match difficulty:
@@ -280,6 +366,7 @@ func _start_match() -> void:
 func _start_round(regenerate: bool = true) -> void:
 	round_number += 1
 	if regenerate: _new_course()
+	_prepare_next()
 	_spawn_riders()
 	focus_s = Course.START_LINE - 4.0
 	race_time = 0.0
@@ -301,21 +388,33 @@ func _end_round(winner: int) -> void:
 
 func _process(delta: float) -> void:
 	phase_time += delta
-	if phase in [Phase.COUNTDOWN, Phase.RACE, Phase.ROUND_OVER, Phase.MATCH_OVER]:
+	if not _running.is_empty(): _reap_builds()
+	if managed and phase in [Phase.COUNTDOWN, Phase.RACE, Phase.ROUND_OVER, Phase.MATCH_OVER]:
+		# Under GameNight the seats' own Start buttons open the menu.
 		for p in players:
 			if p.controls and p.controls.pressed("start", p.controls.raw().start):
 				_open_menu()
 				break
+	if not managed and phase != Phase.IDLE:
+		_drop_in()
+		# Start on any pad opens the menu, joined or not.
+		var start := false
+		for device in Input.get_connected_joypads():
+			if Input.is_joy_button_pressed(device, JOY_BUTTON_START): start = true
+		if start and not _join_pads.get("start", true): _open_menu()
+		_join_pads["start"] = start
 	match phase:
-		Phase.JOIN: _join_input()
+		Phase.JOIN: pass
 		Phase.COUNTDOWN:
-			if phase_time >= 3.0:
+			if phase_time >= COUNTDOWN:
 				_enter(Phase.RACE)
 				_fast_forward()
 		Phase.ROUND_OVER:
-			if phase_time >= 4.0: _start_round()
+			# A winner gets a moment in the spotlight; if nobody made it, go
+			# straight to the next mountain.
+			if phase_time >= (2.0 if round_winner >= 0 else 0.0): _start_round()
 		Phase.MATCH_OVER:
-			if phase_time >= 8.0: _start_match_again()
+			if phase_time >= 5.0: _start_match_again()
 	# Names show at the start, then only for riders about to drop off screen.
 	var names := phase != Phase.RACE or phase_time < 4.0
 	var view_size := get_viewport().get_visible_rect().size
@@ -380,7 +479,7 @@ func _physics_process(_delta: float) -> void:
 	if racing: _referee()
 
 ## Pads steer by pointing: the stick is a direction on screen, and the bike
-## turns towards it (in the air it twists towards it). Hold it to the bottom
+## turns towards it (in the air it only nudges it). Hold it to the bottom
 ## right to ride the main way down the mountain.
 func _aim_steer(b: Bike, stick: Vector2) -> float:
 	if stick.length() < Controls.DEADZONE: return 0.0
@@ -395,7 +494,7 @@ func _aim_steer(b: Bike, stick: Vector2) -> float:
 
 ## Riders are solid: each bike is two circles, front and back wheel. Overlaps
 ## are pushed apart completely and the bikes trade momentum, so you can
-## shoulder someone off the line, and a big hit knocks a rider off balance.
+## shoulder someone off the line, and a big hit makes a rider wobble.
 func _bump_riders() -> void:
 	for i in players.size():
 		var a: Dictionary = players[i]
@@ -435,11 +534,11 @@ func _collide(ba: Bike, bb: Bike) -> void:
 	for pair in [[ba, va], [bb, vb]]:
 		var bike: Bike = pair[0]
 		var vel: Vector2 = pair[1]
-		bike.v = maxf(0.0, vel.x) if vel.length() < 0.01 else vel.length()
-		if vel.length() > 0.5: bike.psi = clampf(atan2(vel.y, maxf(vel.x, 0.1)), -1.45, 1.45)
+		# Shoves change your speed, never which way the bike points.
+		bike.v = maxf(0.0, vel.dot(Vector2(cos(bike.psi), sin(bike.psi))))
 		if closing > 3.5: bike.wobble = maxf(bike.wobble, 0.35)
-		if closing > 7.5 and bike.invulnerable <= 0.0 and randf() < 0.5:
-			Bike._crash(bike)
+		# A big shoulder charge makes you wobble, but never puts you down.
+		if closing > 4.0: Bike.knock(bike, (closing - 4.0) / 7.0)
 
 ## Eliminations by the camera, finishes and the end of the round.
 func _referee() -> void:
@@ -488,15 +587,29 @@ func _last_out() -> int:
 ## A top-down camera that follows the leader down the mountain.
 ## It never backs up and creeps forward on its own, so stragglers drop off
 ## the bottom edge.
+var _ahead := 0.0   ## How far ahead of the leader the camera looks, m.
+
 func _update_camera(delta: float) -> void:
 	var lead := -INF
+	var last := INF
 	var sum_d := 0.0
 	var count := 0
 	for p in players:
 		if p.out: continue
 		lead = maxf(lead, p.bike.s)
+		last = minf(last, p.bike.s)
 		sum_d += p.bike.d
 		count += 1
+	# Look ahead down the slope, so riders sit towards the top left and see
+	# what's coming. A lone rider gets the most; a pack gets less the more
+	# it spreads out, so the stragglers stay on screen.
+	var want_ahead := 0.0
+	var riding := phase in [Phase.RACE, Phase.ROUND_OVER, Phase.MATCH_OVER]
+	if riding and count > 0:
+		want_ahead = 14.0 if count == 1 else clampf(10.0 - (lead - last) * 0.5, 2.0, 10.0)
+	elif riding:
+		want_ahead = _ahead   # Everyone's out: hold the shot.
+	_ahead = lerpf(_ahead, want_ahead, 1.0 - exp(-delta * 1.2))
 	if phase in [Phase.COUNTDOWN, Phase.JOIN, Phase.IDLE]:
 		focus_s = lerpf(focus_s, Course.START_LINE + 2.0, 1.0 - exp(-delta * 3.0))
 	elif count > 0:
@@ -523,25 +636,35 @@ func _update_camera(delta: float) -> void:
 	if _showcase and phase != Phase.RACE:
 		# Screenshot helper: face the start grid to show off the riders.
 		var grid := course.world(Course.START_LINE - 3.5, 0.0)
-		var gate := mountain.get_node_or_null("Start")
+		var gate := mountain.start_gate()
 		if gate: gate.visible = false
 		camera.position = course.world(Course.START_LINE + 6.5, 5.0) + Vector3.UP * 5.5
 		camera.look_at(grid + Vector3.UP * 1.6, Vector3.UP)
 	else:
-		# Downhill runs to the bottom right. The leader sits just past the
-		# middle with room to read the slope; stragglers drift to the top left.
-		var centre := course.world(focus_s - 4.0, focus_d, course.base_height(focus_s - 4.0)) if phase == Phase.RACE else focus
+		# Downhill runs to the bottom right. The camera looks ahead of the
+		# leader (see _ahead), so riders sit up and left with the slope below.
+		var at := focus_s - 4.0 + _ahead
+		# Same framing through the end of the round, so the shot doesn't jump
+		# when the winner is called.
+		var centre := course.world(at, focus_d, course.base_height(at)) if riding else focus
 		var up_dir := -fwd.rotated(Vector3.UP, deg_to_rad(-45.0))
-		camera.position = centre - up_dir * 19.0 + Vector3.UP * 32.0
+		# Tilted ~44° off vertical: steep enough to read the slope below, flat
+		# enough that rises, drops and jumps read as height.
+		camera.position = centre - up_dir * 26.0 + Vector3.UP * 27.0
 		camera.look_at(centre, up_dir)
-	sun.rotation = Vector3(deg_to_rad(-44.0), cam_yaw + deg_to_rad(140.0), 0)
+	# The sun stays put over the mountain. It used to turn with the camera,
+	# which swept every shadow across the slope whenever the view swung round.
+	sun.rotation = Vector3(deg_to_rad(-58.0), course.view_heading(Course.START_LINE) + deg_to_rad(140.0), 0)
 	if _snowfall: _snowfall.global_position = focus + Vector3.UP * 16.0
 
 
-# ── Standalone join screen ───────────────────────────────────────────────────
+# ── Dropping in ──────────────────────────────────────────────────────────────
+# There is no title screen. The mountain is there from the start, and pressing
+# A on any controller (or Space / Enter) puts you on a bike: before the first
+# race that starts the countdown, on the grid you line up, mid-race you drop
+# in just behind the leader.
 
-func _join_input() -> void:
-	# Keyboard halves and every connected pad can join or start.
+func _drop_in() -> void:
 	var candidates: Array[Controls] = [Controls.new(Controls.Source.KEYS, 0), Controls.new(Controls.Source.KEYS, 1)]
 	for device in Input.get_connected_joypads():
 		candidates.append(Controls.new(Controls.Source.PAD, device))
@@ -549,29 +672,65 @@ func _join_input() -> void:
 		var key := "%d:%d" % [c.source, c.id]
 		var r := c.raw()
 		var was: bool = _join_pads.get(key, true)
-		_join_pads[key] = r.a or r.start
-		if not (r.a or r.start) or was: continue
-		var existing := -1
-		for i in players.size():
-			var pc: Controls = players[i].controls
-			if pc and pc.source == c.source and pc.id == c.id: existing = i
-		if existing == -1 and players.size() < MAX_RIDERS:
-			var color := Color(PALETTE[players.size() % PALETTE.size()])
-			var p := _add_player("P%d" % (players.size() + 1), c, null, color)
-			c.pressed("a", true)
-			hud.toast("%s joined (%s)" % [p.name, c.label()], color)
-			hud.show_phase(phase, self)
-		elif existing == 0 or r.start:
+		_join_pads[key] = r.a
+		if not r.a or was or _rider_for(c) >= 0: continue
+		join(c)
+
+## The player riding with these controls, or -1.
+func _rider_for(c: Controls) -> int:
+	for i in players.size():
+		var pc: Controls = players[i].controls
+		if pc and pc.source == c.source and pc.id == c.id: return i
+	return -1
+
+## Put a new rider on the mountain with these controls.
+func join(c: Controls) -> void:
+	if managed or _rider_for(c) >= 0: return
+	if players.size() >= MAX_RIDERS:
+		# Make room by sending a bot home.
+		var bot := -1
+		for i in players.size(): if players[i].bot: bot = i
+		if bot < 0: return
+		_remove_player(bot)
+	var humans := 0
+	for p in players: if not p.bot: humans += 1
+	var color := Color(PALETTE[players.size() % PALETTE.size()])
+	var p := _add_player("P%d" % (humans + 1), c, null, color)
+	c.pressed("a", true)
+	hud.toast("%s IS IN (%s)" % [p.name, c.label()], color)
+	match phase:
+		Phase.JOIN:
 			_begin_standalone()
-			return
-	# B on the keyboard or any pad turns bots on and off.
-	var b_down := Input.is_physical_key_pressed(KEY_B)
-	for device in Input.get_connected_joypads():
-		b_down = b_down or Input.is_joy_button_pressed(device, JOY_BUTTON_B)
-	if b_down and not _join_pads.get("bots", false):
-		bots_enabled = not bots_enabled
-		hud.show_phase(phase, self)
-	_join_pads["bots"] = b_down
+		Phase.COUNTDOWN:
+			_spawn_riders()
+			hud.set_players(players)
+		_:
+			_spawn_mid_race(p)
+			hud.set_players(players)
+
+func _remove_player(i: int) -> void:
+	var p: Dictionary = players[i]
+	if p.view and is_instance_valid(p.view): p.view.queue_free()
+	players.remove_at(i)
+
+## Drop a rider in behind the leader, on the trail, briefly untouchable.
+func _spawn_mid_race(p: Dictionary) -> void:
+	var lead := Course.START_LINE
+	for q in players:
+		if not q.out and q != p: lead = maxf(lead, q.bike.s)
+	var s := maxf(Course.START_LINE, lead - 4.0)
+	var spot := Bike.clear_spot(course, s, course.trail_d(s), false)
+	p.bike = Bike.new()
+	p.bike.place(course, spot.x, spot.y, 5.0)
+	p.bike.invulnerable = Bike.INVULNERABLE * 1.5
+	p.out = false
+	p.finished = false
+	p.offscreen = 0.0
+	var view := RiderView.new()
+	_riders_root.add_child(view)
+	view.setup(p.color, p.name, players.find(p))
+	view.pose(p.bike, course, 0.0)
+	p.view = view
 
 func _begin_standalone() -> void:
 	var humans := players.size()
@@ -583,8 +742,7 @@ func _begin_standalone() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if managed: return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
-		if phase == Phase.JOIN: get_tree().quit()
-		elif phase != Phase.IDLE: _open_menu()
+		if phase != Phase.IDLE: _open_menu()
 		get_viewport().set_input_as_handled()
 
 
@@ -659,6 +817,7 @@ func _on_setting(key: String, value: Variant) -> void:
 	elif key == "mountain" and LENGTHS.has(str(value)): mountain_length = str(value)
 	elif key == "difficulty" and str(value) in Course.DIFFICULTIES: difficulty = str(value)
 	elif key == "landscape": landscape = str(value)
+	_prepare_next()
 
 # ── Start menu ───────────────────────────────────────────────────────────────
 
@@ -669,9 +828,14 @@ func _open_menu() -> void:
 
 func _close_menu() -> void:
 	get_tree().paused = false
-	# Swallow the Start press that closed the menu so it doesn't reopen it.
+	_prepare_next()   # Settings may have changed: get their mountain going.
+	# Swallow the presses that closed the menu so they don't reopen it,
+	# join anyone or make someone hop.
+	_join_pads.clear()
 	for p in players:
-		if p.controls: p.controls.pressed("start", true)
+		if p.controls:
+			p.controls.pressed("start", true)
+			p.controls.pressed("a", true)
 
 func _menu_action(action: String) -> void:
 	_close_menu()
@@ -685,12 +849,8 @@ func _menu_action(action: String) -> void:
 				if players.is_empty(): _add_bot()
 			_new_course()
 			_start_match()
-		"leave":
-			_drop_bots()
-			for child in _riders_root.get_children(): child.queue_free()
-			for p in players: p.view = null
-			_new_course()
-			_enter(Phase.JOIN)
+		"quit":
+			get_tree().quit()
 
 func _drop_bots() -> void:
 	var humans: Array[Dictionary] = []

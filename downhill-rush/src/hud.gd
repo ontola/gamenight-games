@@ -192,7 +192,7 @@ func set_paused(value: bool) -> void:
 	_paused.visible = value
 
 func show_phase(phase: int, main: Node) -> void:
-	_join.visible = phase == 0
+	_join.visible = false   # No title screen: the menu carries the name.
 	_center.text = ""
 	_center_sub.text = ""
 	_hint.text = ""
@@ -200,26 +200,16 @@ func show_phase(phase: int, main: Node) -> void:
 	_center.add_theme_font_size_override("font_size", 150)
 	match phase:
 		0:
-			var lines := ["Press A, Space or Enter to join", ""]
-			for p in main.players:
-				lines.append("%s  ·  %s" % [p.name, p.controls.label() if p.controls else "bot"])
-			if main.players.is_empty(): lines.append("Nobody on the hill yet")
-			lines.append("")
-			lines.append("Bots: %s   (press B to %s)" % (["on, filling up to four riders", "turn them off"] if main.bots_enabled else ["off", "add some"]))
-			lines.append("Rider one: press A again to drop in")
-			_join_text.text = "\n".join(lines)
+			_hint.text = "Press A (or Space / Enter) to ride    Start / Esc: menu"
 		1:
-			_hint.text = "Steer: stick    Pedal: RT / X    Brake: LT / B    Hop: A    Air: stick tilts the bike"
+			_hint.text = "Steer: stick    Pedal: RT / X    Brake: LT / B    Hop: A    Air: brake lifts the nose"
 		3:
 			var w: int = main.round_winner
 			_center.add_theme_font_size_override("font_size", 96)
 			if w >= 0:
 				_center.text = WIN_LINES[_rng.randi() % WIN_LINES.size()] % main.players[w].name.to_upper()
 				_center.add_theme_color_override("font_color", main.players[w].color.lightened(0.15))
-			else:
-				_center.text = "NOBODY MADE IT"
-				_center.add_theme_color_override("font_color", PAPER)
-			_center_sub.text = "NEXT MOUNTAIN INCOMING"
+				_center_sub.text = "NEXT MOUNTAIN INCOMING"
 			_pop = 0.0
 		4:
 			var w: int = main.match_winner
@@ -241,7 +231,7 @@ func update(main: Node, delta: float) -> void:
 	_overlay.queue_redraw()
 	_pop += delta
 	if phase == 1:
-		var left := 3.0 - float(main.phase_time)
+		var left: float = main.COUNTDOWN - float(main.phase_time)
 		var n := int(ceil(left))
 		_center.text = str(n) if left > 0.0 else ""
 		if n != _last_count: _pop = 0.0

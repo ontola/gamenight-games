@@ -3,8 +3,9 @@
 A top-down BMX downhill survival race for GameNight: everyone rides the same
 procedurally generated mountain on one shared screen, seen from above. The
 mountain's main direction runs to the bottom right, but the valley swings hard
-to the side now and then before the camera follows it round. The camera keeps the leader a
-little past the middle, so they still see the slope ahead, and never waits. Fall behind, crash once too often or take the scenic route and
+to the side now and then before the camera follows it round. The camera looks ahead of the
+leader, so riders sit towards the top left with the slope below them (a lone
+rider furthest, a spread-out pack less), and it never waits. Fall behind, crash once too often or take the scenic route and
 you drop off the bottom of the screen: you're out. Last rider standing, or
 first through the finish gate, takes the round. First to three rounds wins.
 
@@ -28,34 +29,41 @@ filtering, so they read as chunky texels on the low-poly shapes.
 ## Play
 
 ```sh
-godot --path downhill-rush            # join screen
+godot --path downhill-rush            # straight onto the mountain
 godot --path downhill-rush -- --demo  # six bots, no input needed
 ```
 
 Pads: point the left stick where you want to go on screen (mostly to the
 bottom right) and the bike turns towards it. **A** hops, **RT / X** pedals,
-**LT / B** brakes. In the air the stick twists the bike, so point it the way
-you are flying to land straight; let go and it slowly squares up. Brake in the
-air to lift the nose. Keyboard riders steer left and right relative to the bike
+**LT / B** brakes. In the air the bike stays lined up with where it's flying;
+the stick can only nudge it a little. Brake in the air to lift the nose. Keyboard riders steer left and right relative to the bike
 with WASD + Space or the arrow keys + Enter.
 
 The scoreboard lists riders in race order, with riders who are out struck
 through at the bottom. Under GameNight the names and colours come from the
-party. On the join
-screen, press A (Space, Enter) to join; the first rider presses A again to
-start. Bots are off by default; B (on a pad or the keyboard) turns them on,
-and then they fill the field up to four riders. Riding alone works too.
+party.
 
-Start (or Escape) during a race opens the menu: resume, start a new race, or
-change difficulty, landscape, mountain length and bots. Settings apply from
-the next mountain; New race builds one straight away. "Back to join screen"
-lets new riders join.
+There is no title screen: the game opens on the mountain. Press A on any pad
+(or Space / Enter) and you're on a bike. Before the first race that starts
+the countdown; during the countdown you join the grid; mid-race you drop in
+just behind the leader. Riding alone works too.
+
+Start (or Escape) opens the menu, the only one there is: the game's name, who
+is riding, Add rider (puts whoever picks it on a bike), New race, difficulty,
+landscape, mountain length, rounds to win, bots (off by default; on, they fill
+the field up to four riders) and Quit. Settings apply from the next mountain;
+New race builds one straight away.
 
 ## How a mountain works
 
-There is no trail. `src/course.gd` builds a steep, rough mountainside and you
-pick your own line down it. The run is a shuffled string of set pieces with
-open mountain between them:
+`src/course.gd` builds a steep, rough mountainside and you pick your own line
+down it. One way down is always rideable: a winding trail of packed dirt (or
+trodden snow) with no trees or big boulders on it, only the odd small rock
+that bucks you. It finds a chute through every cliff band, a bridge or the
+ramp over every gorge, a lane through every slalom and the path down every
+gully, and goes round lakes. It doesn't avoid kickers, and it's narrower on
+harder mountains (6.4 m on easy down to 3.2 m on extreme). The run is a
+shuffled string of set pieces with open mountain between them:
 
 - **band**: a cliff band across the slope (below);
 - **turn**: the valley swings about 60 degrees to one side;
@@ -105,18 +113,46 @@ tyres have limited grip that depends on the ground (`Bike.GRIP`,
 `Course.grip`); ask for more and you slide, and hold a big slide and you wash
 out. Side slopes keep pulling you down the fall line.
 
-Whether you fall is one function per kind of hit. A landing
-(`Bike.landing_severity`) adds up how hard you hit the ground, how far the
-bike's pitch is from the slope (nose first is much worse than back wheel
-first) and how crooked the bike is to where you are flying, the last one
-counting for more the faster you go. Over the difficulty's limit (1.15 on
-normal) is a crash, over 0.6 of it a hard landing that costs speed. Obstacles
-go by closing speed: trees stop you at 5.5 m/s, boulders at a speed that drops
-as they get bigger, both scaled by difficulty. Small rocks never crash you;
-they buck you into the air. Below that you glance off. Riding straight into a
-steep face also puts you down. A rider who makes no headway for 3 s is walked
-a few metres on to clear ground. Riders are
-solid and shove each other around; a hard hit can take someone down.
+You only fall for a reason you can see. There are two:
+
+- **Landing at the wrong angle** (`Bike.landing_severity`). Legs soak up the
+  impact, so how hard you land doesn't matter until it's huge (~16 m/s into
+  the slope). What matters is the bike meeting the ground the way it points:
+  nose first more than ~35° off the slope digs the front wheel in, back wheel
+  first is fine up to ~57°. In the air the bike stays lined up with where it
+  flies (the stick only nudges it), so a crooked landing comes from a crooked
+  take-off. Short hops off bumps you didn't see are mostly forgiven.
+- **The front wheel catching** (`Bike._collide_obstacles`): riding nearly
+  head-on (within 40°) into something taller than the front axle, so the
+  wheel stops while you keep going. A trunk stops it at 2.5 m/s, a rounded
+  boulder at up to 7 m/s depending on its height. Clip it at an angle and you
+  glance off; anything lower than the axle you ride over, and small rocks
+  buck you into the air. Riding into a bank steeper than 45° counts too.
+
+Both limits scale with difficulty. Shoves from other riders make you wobble
+but never put you down, and sliding a turn just scrubs speed. Riding into deep
+water is a crash. A rider who makes no headway for 3 s is walked a few metres
+on to clear ground.
+
+The rider's body moves on its own over the bike (`RiderView._ride_body`):
+the bike follows every bump and slope, the body keeps its pitch and roll with
+its own inertia, the legs are a spring-damper against the bike's jolts (a
+landing drops you into a squat), and weight shifts back on steep descents and
+forward when the bike slows. Two-bone IK puts the feet on the pedals and the
+hands on the grips, so knees and elbows take up the difference.
+
+A crash is simulated, not animated. The rider goes limp as a ragdoll
+(`src/ragdoll.gd`): fifteen joints, from pelvis and head to hands and feet,
+held together by sticks and integrated with Verlet, so arms and legs flop as
+the body flies over the bars, hits the ground, slides with friction and
+bounces off trees and rocks. The bike is one tumbling body (`src/tumble.gd`)
+that skids and settles on its side. On a slope too steep for friction to hold
+you, you keep sliding. Hard impacts leave a little blood on the ground for
+the rest of the round. Once they've come to
+rest (at least 1.1 s, at most 2.8 s) you get back on where the bike lies.
+
+Building a mountain's meshes takes a few seconds, so the next one is built on
+a thread while you ride the current one; the next round starts straight away.
 
 Bots (`src/bot.gd`) read the slope ahead: they score a fan of lines for
 ledges, trees and boulders, head for a chute when a big cliff comes up, and
