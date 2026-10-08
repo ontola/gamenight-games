@@ -120,8 +120,10 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		# In the air the stick twists the bike, not your path: land it
 		# straight or pay for it.
 		# Let go and it slowly squares up again by itself.
+		# It also squares up on its own, quicker once you let go, so holding a
+		# turn over a hump you didn't see doesn't throw you down.
 		b.yaw = clampf(b.yaw + steer * 2.4 * dt, -1.6, 1.6)
-		if absf(steer) < 0.05: b.yaw = move_toward(b.yaw, 0.0, 0.8 * dt)
+		b.yaw = move_toward(b.yaw, 0.0, (1.6 if absf(steer) < 0.05 else 0.5) * dt)
 		var flight := atan2(b.vy, maxf(b.v, 0.5))
 		b.pitch = lerpf(b.pitch, flight, minf(1.0, dt * 2.2))
 		# Grabbing the brake in the air lifts the nose for a back-wheel landing.
@@ -199,11 +201,14 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 ## up: how hard you hit the ground (speed into the slope), how far the bike's
 ## pitch is from the slope (nose first is far worse than back wheel first),
 ## and how crooked the bike is to where you're going. Above 1 you crash.
-static func landing_severity(impact: float, pitch_error: float, yaw: float, speed: float) -> float:
+## A short hop off a bump you barely saw counts the angles for far less: only
+## real jumps have to be landed well.
+static func landing_severity(impact: float, pitch_error: float, yaw: float, speed: float, air_time: float = 1.0) -> float:
 	var hit := maxf(0.0, impact) / 8.5
-	var nose := (-pitch_error / 0.75) if pitch_error < 0.0 else (pitch_error / 1.2)
-	var crooked := absf(yaw) / 0.6 * clampf(speed / 6.0, 0.4, 1.5)
-	return sqrt(hit * hit + nose * nose + crooked * crooked)
+	var nose := (-pitch_error / 0.9) if pitch_error < 0.0 else (pitch_error / 1.2)
+	var crooked := absf(yaw) / 0.72 * clampf(speed / 6.0, 0.4, 1.5)
+	var hop := lerpf(0.4, 1.0, smoothstep(0.25, 0.6, air_time))
+	return sqrt(hit * hit + (nose * nose + crooked * crooked) * hop * hop)
 
 static func _land(b: Bike, c: Course, ground: float) -> void:
 	var grad := c.gradient(b.s, b.d)
@@ -212,7 +217,7 @@ static func _land(b: Bike, c: Course, ground: float) -> void:
 	var path := atan2(b.vy, maxf(b.v, 0.1))
 	var speed := sqrt(b.v * b.v + b.vy * b.vy)
 	var impact := speed * sin(slope - path)
-	b.severity = landing_severity(impact, b.pitch - slope, b.yaw, speed)
+	b.severity = landing_severity(impact, b.pitch - slope, b.yaw, speed, b.air_time)
 	b.y = ground
 	b.grounded = true
 	b.landed = true
