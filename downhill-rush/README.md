@@ -117,7 +117,8 @@ brake for whatever their line throws at them.
 ## GameNight
 
 The [GameNight Godot addon](https://github.com/ontola/gamenight/tree/main/sdk/godot)
-is vendored in `addons/gamenight` (from gamenight `ba2cce0`). Under a GameNight
+is vendored in `addons/gamenight` and kept identical to gamenight `main`; CI fails
+when it falls behind (update with gamenight's `sdk/godot/sync.py`). Under a GameNight
 host the game:
 
 - reads each seat's input with `GameNight.frame_for_seat` and plays `ai` seats
