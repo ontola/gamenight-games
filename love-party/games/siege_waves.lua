@@ -1,6 +1,7 @@
 -- Authored formations repeat in a readable order; difficulty follows clears,
 -- never elapsed time. A struggling team cannot accumulate another wave.
 local W = { names = { "SWEEP", "PINCER", "CORNERS", "CROSSWIND" }, rest = 2, warning = 1.4 }
+W.bosses = { { kind = "boss", name = "OVERSEER" }, { kind = "hive", name = "HIVE QUEEN" }, { kind = "serpent", name = "SERPENT" } }
 function W.plan(number, players, width, height, difficulty)
 	local pressure = ({relaxed=0.7,standard=1,intense=1.35})[difficulty or "standard"] or 1
 	local count = math.min(60, math.floor((14 + (number - 1) * 4 + math.max(0, players - 2) * 4) * pressure))
@@ -35,7 +36,11 @@ function W.plan(number, players, width, height, difficulty)
 			x, y = 60 + t * (width - 120), height - 30
 		end
 		local kind = "chaser"
-		if number >= 4 and i % 8 == 0 then
+		if number >= 6 and i % 11 == 0 then
+			kind = "orbiter"
+		elseif number >= 5 and i % 9 == 0 then
+			kind = "dasher"
+		elseif number >= 4 and i % 8 == 0 then
 			kind = "fort"
 		elseif number >= 3 and i % 7 == 0 then
 			kind = "splitter"
@@ -44,9 +49,11 @@ function W.plan(number, players, width, height, difficulty)
 		end
 		plan[#plan + 1] = { x = x, y = y, kind = kind, at = group * 2.2, group = group }
 	end
-	if number%5==0 then
-		plan[#plan+1]={x=width/2,y=50,kind="boss",at=0,group=0}
-		return plan,"OVERSEER"
+	-- Every fourth wave a boss joins the formation, rotating through three kinds.
+	if number%4==0 then
+		local boss=W.bosses[(number/4-1)%#W.bosses+1]
+		plan[#plan+1]={x=width/2,y=50,kind=boss.kind,at=0,group=0}
+		return plan,boss.name
 	end
 	return plan, W.names[pattern]
 end

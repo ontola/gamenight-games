@@ -58,13 +58,13 @@ local function crates(density)
 end
 assert(crates(85)>crates(20));defaults(blast)
 local siege=games[3];local gravity=require('games.siege_gravity');local waves=require('games.siege_waves')
-siege.setting('gravity',0);siege.setting('wormholes',false)
+siege.setting('gravity',0)
 local space=siege.new(roster(),U.rng(1));space.wave=7;space.time=10
-assert(#gravity.fields(space)==0 and #gravity.portals(space)==0)
-siege.setting('gravity',150);siege.setting('wormholes',true)
+assert(#gravity.fields(space)==0 and gravity.portals==nil)
+siege.setting('gravity',150)
 assert(#gravity.fields(space)==0,'running round must retain its settings')
 space=siege.new(roster(),U.rng(1));space.wave=7;space.time=10
-assert(#gravity.fields(space)==1 and #gravity.portals(space)==2)
+assert(#gravity.fields(space)==1)
 assert(#waves.plan(2,2,1280,720,'intense')>#waves.plan(2,2,1280,720,'relaxed'));defaults(siege)
 local tanks=games[4];tanks.setting('cover',false);tanks.setting('bounces',0);tanks.setting('shot_speed',150)
 local arena=tanks.new(roster(),U.rng(1));assert(#arena.cover==0)

@@ -22,6 +22,23 @@ function A.load()
 		end
 		A.sources[name] = love.audio.newSource(data, "static")
 	end
+	-- A pilot going down: a long falling wail over a crackle, unmistakable
+	-- next to the short blips of the rest of the set.
+	local rate, count = 22050, 19845
+	local data = love.sound.newSoundData(count, rate, 16, 1)
+	local phase, noise, held = 0, 0, 0
+	for i = 0, count - 1 do
+		local t = i / count
+		phase = phase + (620 * (1 - t) ^ 2.2 + 55) / rate
+		if i % 6 == 0 then
+			held = (((i * 1103515245 + 12345) % 2147483648) / 1073741824) - 1
+		end
+		noise = noise * 0.7 + held * 0.3
+		local tone = math.sin(phase * math.pi * 2) + 0.35 * (phase % 1 < 0.5 and 1 or -1)
+		local envelope = math.min(1, i / 300) * (1 - t) ^ 1.6
+		data:setSample(i, (tone * 0.13 + noise * 0.09 * (1 - t)) * envelope)
+	end
+	A.sources.death = love.audio.newSource(data, "static")
 end
 function A.play(name)
 	local source = A.sources[name]

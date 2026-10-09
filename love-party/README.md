@@ -139,14 +139,20 @@ Waves cycle through sweeps, pincers, corner attacks and crosswinds. Groups arriv
 break before the next wave. Counts increase gradually (up to 32 main enemies);
 weavers unlock at wave 3, splitters at 5 and forts at 7. Enemy speed rises modestly
 with wave number, capped at +30%. Warnings stay harmless while a player is too close.
+From wave 5 dashers lock a flashing line and then charge along it; from wave 6
+orbiters circle at range and fire small aimed fans. Every fourth wave brings a boss,
+rotating through the Overseer (radial volleys), the Hive Queen (hatches chasers and
+fires wide fans) and the Serpent (an armoured body that blocks shots and dies with
+its head). Bosses shrug off dashes and take only a little damage from pulses.
+From wave 7 a lethal black hole appears on every other wave.
 Kills build a shared multiplier up to x5; damage or a 2.5-second gap resets it.
 Pickups permanently add spread, piercing or rapid fire for the current round, or repair one HP. Different upgrades combine; collecting the same type again does not multiply its effect. Upgrades survive revives and reset on a new round. Firing uses unlimited ammunition.
 
 Each player has three HP. Stay close to a fallen teammate for 1.2 seconds to
 revive them; they also return after six seconds if someone remains alive.
-An entire team down for two seconds ends the match. Everyone shares the score.
-Player bullets never hurt teammates. Shapes, particles and synthesized sounds
-are generated in code; there are no external art assets.
+Going down plays a falling death wail. An entire team down for two seconds ends the match. Everyone shares the score.
+Player bullets never hurt teammates. The nebula sky, parallax stars, ringed planet, shapes, particles and synthesized
+sounds are generated in code; there are no external art assets.
 
 Simulation tests cover swept bullet collisions, piercing, immunity, revives,
 team wipes, pulse cooldowns, splitters, pickups, aim deadzones and entity caps.

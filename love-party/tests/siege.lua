@@ -31,8 +31,58 @@ function tests.boss_is_not_killed_by_one_pulse()
 	local boss=M.spawn(s,"boss",p.x+100,p.y,0)
 	M.pulse(s,p)
 	assert(not boss.dead and boss.hp==boss.maxHp-12)
-	local plan,name=require("games.siege_waves").plan(5,2,1280,800)
+	local plan,name=require("games.siege_waves").plan(4,2,1280,800)
 	assert(name=="OVERSEER" and plan[#plan].kind=="boss")
+end
+function tests.bosses_rotate_every_fourth_wave()
+	local W=require("games.siege_waves")
+	local expected={[4]="boss",[8]="hive",[12]="serpent",[16]="boss"}
+	for wave=1,16 do
+		local plan,name=W.plan(wave,2,1280,800)
+		local bosses=0
+		for _,entry in ipairs(plan) do if M.specs[entry.kind].boss then bosses=bosses+1 end end
+		assert(bosses==(expected[wave] and 1 or 0),"wave "..wave)
+		if expected[wave] then assert(plan[#plan].kind==expected[wave] and name~=W.names[(wave-1)%4+1]) end
+	end
+	local kinds={}
+	for _,entry in ipairs(W.plan(7,2,1280,800)) do kinds[entry.kind]=true end
+	assert(kinds.dasher and kinds.orbiter,"late waves mix in dashers and orbiters")
+end
+function tests.serpent_body_blocks_shots_and_dies_with_its_head()
+	local s=fresh(1);s.waveRest=100
+	local p=s.players[1];p.invul=100
+	local head=M.spawn(s,"serpent",p.x+300,p.y,0)
+	assert(#head.segments==M.SEGMENTS and #s.enemies==M.SEGMENTS+1)
+	for _=1,120 do tick(s) end
+	local segment=head.segments[1]
+	assert(math.abs(((segment.x-head.x)^2+(segment.y-head.y)^2)^0.5-24)<1,"body follows the head")
+	-- Fire from beyond the body toward the head: the segment is in the way.
+	local ux,uy=(segment.x-head.x)/24,(segment.y-head.y)/24
+	s.shots={{x=segment.x+ux*30,y=segment.y+uy*30,vx=-ux*860,vy=-uy*860,ttl=1,owner=p,hits=1,damage=1,hit={}}}
+	local hp=head.hp
+	for _=1,3 do tick(s) end
+	assert(not segment.dead and #s.shots==0 and head.hp==hp,"armour absorbs the shot")
+	M.pulse(s,p);assert(not segment.dead)
+	head.hp=1;M.kill(s,head);tick(s)
+	assert(#s.enemies==0,"the body goes down with the head")
+end
+function tests.hive_hatches_and_dasher_telegraphs()
+	local s=fresh(1);s.waveRest=100
+	local p=s.players[1];p.invul=100
+	local hive=M.spawn(s,"hive",p.x+400,p.y,0)
+	for _=1,120*4 do tick(s) end
+	assert(not hive.dead and #s.enemies>1 and #s.hostile>0,"the queen hatches and fires")
+	s=fresh(1);s.waveRest=100;p=s.players[1];p.invul=100
+	local d=M.spawn(s,"dasher",p.x+250,p.y,0);d.fire=0
+	tick(s);assert(d.aim and d.aim>0 and d.lockX<-0.99,"locks its line first")
+	local x=d.x;for _=1,60 do tick(s) end
+	assert(d.x==x,"holds still while aiming")
+	for _=1,60 do tick(s) end
+	assert(d.x<x-100,"then rushes along the line")
+end
+function tests.going_down_plays_the_death_sound()
+	local s=fresh(1);local p=s.players[1];p.invul=0;p.hp=1
+	M.hurt(s,p);assert(p.hp==0 and s.sfx.death==1)
 end
 function tests.releasing_aim_stops_fire_even_while_moving()
 	local s = fresh(1)
@@ -217,7 +267,7 @@ function tests.waves_warn_clear_and_rest_before_advancing()
 	assert(s.wave == 2)
 	for number = 1, 12 do
 		local plan, name = W.plan(number, 4, 1422, 800)
-		assert(#plan <= 61 and name == (number%5==0 and "OVERSEER" or W.names[(number - 1) % 4 + 1]))
+		assert(#plan <= 61 and name == (number%4==0 and W.bosses[(number/4-1)%3+1].name or W.names[(number - 1) % 4 + 1]))
 		for _, e in ipairs(plan) do
 			assert(e.x >= 0 and e.x <= 1422 and e.y >= 0 and e.y <= 800)
 			if number < 2 then
@@ -248,21 +298,18 @@ function tests.fullscreen_bounds_resize_and_spawn_safety()
 end
 function tests.gravity_escalates_and_bends_projectiles()
  local G=require('games.siege_gravity');local s=fresh(1);s.time=10
- s.wave=1;assert(#G.fields(s)==0 and #G.portals(s)==0)
- s.wave=3;assert(#G.portals(s)==2)
+ s.wave=1;assert(#G.fields(s)==0 and G.portals==nil,'wormholes are gone')
  for _,w in ipairs({1,2,3,4,5,6,8,10}) do s.wave=w;assert(#G.fields(s)==0,'no black hole before late game or on off waves') end
  for _,w in ipairs({7,9,13}) do s.wave=w;assert(#G.fields(s)==1 and G.fields(s)[1].lethal) end
  s.wave=7;s.waveClock=5;local f=G.fields(s)[1];local ax=G.force(s,f.x-90,f.y);assert(ax>0)
  s.shots={{x=s.width*0.73-100,y=s.height*0.67-60,vx=100,vy=0,ttl=1}}
  G.step(s,1/60);assert(s.shots[1].vy>0)
 end
-function tests.wormholes_do_not_bounce_and_black_holes_kill()
- local G=require('games.siege_gravity');local s=fresh(1);s.time=10;s.wave=3
- local p=s.players[1];local portals=G.portals(s);p.x,p.y=portals[1].x,portals[1].y
- G.step(s,1/60);assert(p.x>s.width/2 and p.portalCooldown>0)
- G.step(s,1/60);assert(p.x>s.width/2)
+function tests.black_holes_kill_with_a_death_sound()
+ local G=require('games.siege_gravity');local s=fresh(1);s.time=10
+ local p=s.players[1]
  s.wave=7;s.waveClock=5;local hole=G.fields(s)[1];p.x,p.y=hole.x,hole.y;p.spaceX,p.spaceY=p.x,p.y
- G.step(s,1/60);assert(p.hp==0 and p.x<hole.x-50)
+ G.step(s,1/60);assert(p.hp==0 and p.x<hole.x-50 and s.sfx.death==1)
 end
 function tests.special_ammo_expires_into_standard_fire()
  local s=fresh(1);s.waveRest=100;local p=s.players[1];p.powers.pierce=1

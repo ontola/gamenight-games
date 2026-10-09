@@ -13,7 +13,6 @@ local M = {
 require("shared.settings").bind(M, {
     {key="difficulty", label="Enemy pressure (next round)", kind="choice", default="standard", options={"relaxed","standard","intense"}},
     {key="gravity", label="Gravity strength % (next round)", kind="number", default=100, min=0, max=175},
-    {key="wormholes", label="Wormholes (next round)", kind="toggle", default=true},
 })
 
 local specs = {
@@ -23,7 +22,18 @@ local specs = {
 	splitter = { hp = 4, r = 21, speed = 65, value = 45 },
 	fort = { hp = 4, r = 18, speed = 43, value = 55 },
 	shard = { hp = 1, r = 7, speed = 190, value = 8 },
+	dasher = { hp = 2, r = 12, speed = 70, value = 25 },
+	orbiter = { hp = 2, r = 13, speed = 150, value = 30 },
+	hive = { hp = 150, r = 44, speed = 32, value = 1200, boss = true },
+	serpent = { hp = 120, r = 24, speed = 155, value = 1400, boss = true },
+	segment = { hp = 1, r = 17, speed = 0, value = 5, armor = true },
 }
+specs.boss.boss = true
+M.SEGMENTS = 12
+-- Bosses and serpent armour shrug off pulses and dashes; only fire wears them down.
+function M.tough(e)
+	return specs[e.kind].boss or specs[e.kind].armor
+end
 M.specs = specs
 M.ammo = {spread=90,pierce=60,rapid=300}
 local function alive(p)
@@ -79,9 +89,21 @@ function M.spawn(s, kind, x, y, delay)
 		fire = 1.0 + s.rng(),
 		flash = 0,
 	}
-	if kind == "boss" then e.hp=def.hp + math.max(0,#s.players-1)*60 end
+	if def.boss then e.hp=def.hp + math.max(0,#s.players-1)*60 end
 	e.maxHp=e.hp
 	s.enemies[#s.enemies + 1] = e
+	if kind == "serpent" then
+		-- The body trails off-screen behind the head and follows it link by link.
+		e.segments = {}
+		local lead = e
+		for i = 1, M.SEGMENTS do
+			local segment = M.spawn(s, "segment", x, y - i * 26, delay)
+			if not segment then break end
+			segment.lead, segment.head = lead, e
+			e.segments[#e.segments + 1] = segment
+			lead = segment
+		end
+	end
 	return e
 end
 function M.new(players, rng)
@@ -124,7 +146,7 @@ function M.new(players, rng)
 		p.aimX, p.aimY = 1, 0
 		p.powers = {}
 		p.revive = 0
-		p.gravityX,p.gravityY,p.spaceX,p.spaceY,p.portalCooldown=0,0,nil,nil,0
+		p.gravityX,p.gravityY,p.spaceX,p.spaceY=0,0,nil,nil
 		p.score = 0
 	end
 	return s
@@ -160,6 +182,11 @@ local enemyColors = {
 	splitter = { 1, 0.76, 0.23 },
 	fort = { 1, 0.42, 0.19 },
 	shard = { 1, 0.9, 0.5 },
+	dasher = { 1, 0.2, 0.25 },
+	orbiter = { 0.35, 0.75, 1 },
+	hive = { 1, 0.85, 0.15 },
+	serpent = { 0.25, 1, 0.75 },
+	segment = { 0.2, 0.75, 0.6 },
 }
 M.enemyColors = enemyColors
 function M.kill(s, e)
@@ -176,6 +203,16 @@ function M.kill(s, e)
 	ring(s, e.x, e.y, e.r * 2, color)
 	s.shake = math.min(5, s.shake + 0.7)
 	sound(s, "burst")
+	if e.segments then
+		for _, segment in ipairs(e.segments) do
+			M.kill(s, segment)
+		end
+	end
+	if specs[e.kind].boss then
+		s.shake = 5
+		ring(s, e.x, e.y, 160, color)
+		burst(s, e.x, e.y, color, 60)
+	end
 	if e.kind == "splitter" then
 		for i = 1, 3 do
 			local a = i * 2.094
@@ -199,6 +236,7 @@ function M.hurt(s, p)
 	sound(s, "hurt")
 	burst(s, p.x, p.y, { 0.75, 0.85, 1 }, 20)
 	if p.hp == 0 then
+		sound(s, "death")
 		p.downTime = 0
 		p.revive = 0
 		ring(s, p.x, p.y, 70, { 1, 0.25, 0.3 })
@@ -218,7 +256,9 @@ function M.pulse(s, p)
 	for i = 1, count do
 		local e = s.enemies[i]
 		if not e.dead and (e.x - p.x) ^ 2 + (e.y - p.y) ^ 2 < 190 ^ 2 then
-			if e.kind=="boss" then
+			if e.kind=="segment" then
+				e.flash=0.2
+			elseif M.tough(e) then
 				e.hp=e.hp-12;e.flash=0.2
 				if e.hp<=0 then M.kill(s,e) end
 			else M.kill(s, e) end
@@ -356,6 +396,95 @@ local function playerStep(s, p, c, dt)
 		p.fireClock = p.powers.rapid and 0.045 or 0.095
 	end
 end
+local function fireAt(s, e, dx, dy, count, spread, speed)
+	for i = 1, count do
+		if #s.hostile >= M.limits.hostile then
+			return
+		end
+		local a = (i - (count + 1) / 2) * spread
+		local x, y = dx * math.cos(a) - dy * math.sin(a), dx * math.sin(a) + dy * math.cos(a)
+		s.hostile[#s.hostile + 1] = { x = e.x + x * e.r, y = e.y + y * e.r, vx = x * speed, vy = y * speed, ttl = 6 }
+	end
+end
+-- Returns the speed override for the newer enemy types, or nil to keep chasing.
+local function special(s, e, dx, dy, length, dt)
+	if e.kind == "dasher" then
+		-- Telegraphed charge: stop, lock a line, then rush along it.
+		e.fire = e.fire - dt
+		if e.rush and e.rush > 0 then
+			e.rush = e.rush - dt
+			e.x = U.clamp(e.x + e.lockX * 600 * dt, e.r, s.width - e.r)
+			e.y = U.clamp(e.y + e.lockY * 600 * dt, e.r, s.height - e.r)
+			if e.rush <= 0 then e.fire = 1.4 end
+			return 0
+		elseif e.aim and e.aim > 0 then
+			e.aim = e.aim - dt
+			if e.aim <= 0 then
+				e.rush = 0.5
+				sound(s, "pulse")
+			end
+			return 0
+		elseif e.fire <= 0 and length < 360 then
+			e.aim, e.lockX, e.lockY = 0.6, dx, dy
+			return 0
+		end
+	elseif e.kind == "orbiter" then
+		-- Circles at range and lobs small aimed fans.
+		e.fire = e.fire - dt
+		if e.fire <= 0 then
+			e.fire = 2.4
+			fireAt(s, e, dx, dy, 3, 0.22, 210)
+		end
+		local turn = (e.phase > 3.14) and 1 or -1
+		local radial = U.clamp((length - 230) / 80, -1, 1)
+		local tx, ty = dx * radial - dy * turn, dy * radial + dx * turn
+		local n = math.max(0.001, U.length(tx, ty))
+		e.x, e.y = e.x + tx / n * specs.orbiter.speed * dt, e.y + ty / n * specs.orbiter.speed * dt
+		return 0
+	elseif e.kind == "hive" then
+		-- Hive queen: slow, keeps hatching chasers and fires wide aimed fans.
+		local enraged = e.hp < e.maxHp / 2
+		e.fire = e.fire - dt
+		e.hatch = (e.hatch or 2) - dt
+		if e.fire <= 0 then
+			e.fire = enraged and 1.6 or 2.4
+			fireAt(s, e, dx, dy, enraged and 7 or 5, 0.2, 200)
+		end
+		if e.hatch <= 0 then
+			e.hatch = enraged and 2.2 or 3.4
+			for i = 1, 3 do
+				if #s.enemies < M.limits.enemies - 8 then
+					local a = s.rng() * math.pi * 2
+					M.spawn(s, enraged and i == 2 and "weaver" or "chaser", e.x + math.cos(a) * 60, e.y + math.sin(a) * 60, 0.45)
+				end
+			end
+			ring(s, e.x, e.y, 90, enemyColors.hive)
+		end
+		if length < 200 then return 0 end
+	elseif e.kind == "serpent" then
+		-- Weaves toward the team; its armoured body blocks shots.
+		e.fire = e.fire - dt
+		if e.fire <= 0 then
+			e.fire = e.hp < e.maxHp / 2 and 1.5 or 2.4
+			fireAt(s, e, dx, dy, 3, 0.25, 230)
+		end
+		local wave = math.sin(s.time * 2.4 + e.phase) * 0.9
+		local x, y = dx - dy * wave, dy + dx * wave
+		local n = math.max(0.001, U.length(x, y))
+		local speed = specs.serpent.speed * (e.hp < e.maxHp / 2 and 1.25 or 1)
+		e.x = U.clamp(e.x + x / n * speed * dt, e.r, s.width - e.r)
+		e.y = U.clamp(e.y + y / n * speed * dt, e.r, s.height - e.r)
+		return 0
+	end
+end
+local function follow(e)
+	local lead = e.lead
+	local dx, dy = e.x - lead.x, e.y - lead.y
+	local d = U.length(dx, dy)
+	if d > 24 then
+		e.x, e.y = lead.x + dx / d * 24, lead.y + dy / d * 24
+	end
+end
 local function enemiesStep(s, dt)
 	for _, e in ipairs(s.enemies) do
 		if not e.dead then
@@ -370,6 +499,24 @@ local function enemiesStep(s, dt)
 			end
 			e.flash = math.max(0, e.flash - dt)
 			local p = nearest(s, e.x, e.y)
+			if e.kind == "segment" then
+				-- A swallowed link is skipped; a lost head takes the whole body.
+				while e.lead.dead and e.lead ~= e.head do e.lead = e.lead.lead end
+				if e.head.dead then
+					M.kill(s, e)
+				elseif e.warm == 0 then
+					follow(e)
+				end
+				p = e.warm == 0 and p
+				if p then
+					for _, pilot in ipairs(s.players) do
+						if alive(pilot) and (pilot.x - e.x) ^ 2 + (pilot.y - e.y) ^ 2 < (e.r + 11) ^ 2 then
+							M.hurt(s, pilot)
+						end
+					end
+				end
+				p = nil
+			end
 			if p and e.warm == 0 then
 				local dx, dy = p.x - e.x, p.y - e.y
 				local length = math.max(1, U.length(dx, dy))
@@ -392,6 +539,7 @@ local function enemiesStep(s, dt)
 						end
 					end
 				end
+				speed = special(s, e, dx, dy, length, dt) or speed
 				if e.kind == "fort" then
 					if length < 300 then
 						speed = 0
@@ -406,7 +554,7 @@ local function enemiesStep(s, dt)
 				for _, pilot in ipairs(s.players) do
 					if not e.dead and alive(pilot) and (pilot.x - e.x) ^ 2 + (pilot.y - e.y) ^ 2 < (e.r + 11) ^ 2 then
 						M.hurt(s, pilot)
-						if pilot.dash > 0 and e.kind~="boss" then
+						if pilot.dash > 0 and not M.tough(e) then
 							M.kill(s, e)
 						end
 					end
@@ -447,7 +595,9 @@ local function shotsStep(s, dt)
 			end
 			b.hit[best] = true
 			b.hits = b.hits - 1
-			best.hp = best.hp - (b.damage or 1)
+			if not specs[best.kind].armor then
+				best.hp = best.hp - (b.damage or 1)
+			end
 			best.flash = 0.09
 			burst(s, b.x + (x - b.x) * t, b.y + (y - b.y) * t, { 0.8, 0.9, 1 }, 3)
 			if best.hp <= 0 then
