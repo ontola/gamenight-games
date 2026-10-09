@@ -1,6 +1,6 @@
 # GameNight LÖVE Party Pack
 
-Eight local multiplayer games sharing one GameNight integration. MIT licensed.
+Seven local multiplayer games sharing one GameNight integration. MIT licensed.
 No assets or accounts to download, no internet connection during play.
 Requires LÖVE 11.5; GameNight downloads this shared runtime separately.
 
@@ -12,18 +12,17 @@ Requires LÖVE 11.5; GameNight downloads this shared runtime separately.
 | Volley Trouble | Win volleyball rounds across four courts, with rotating rules | Move, A/LB jump, X/RB/RT smash, right stick aim |
 | Stack Together | Build a tower together | Move, A rotate, B drop |
 | Bubble Buddies | Clear bubbles cooperatively | Move, A fire |
-| Pinpals | Cooperative pinball across two boards | LB/RB flippers, A gate, B paddle |
 | Neon Siege | Survive together; shared score and combo, no friendly fire | Move, right stick to aim, A to dash, B for pulse |
 
 Games own their round rules and score screens. Rounds repeat automatically after
 results; only an explicit game switch ends the host session. Back/Select pauses
-and opens the lobby. All eight games use the same lifecycle, controller ownership,
+and opens the lobby. All seven games use the same lifecycle, controller ownership,
 prewarming, focus and continuous-play implementation. Volley Trouble adds its
 own simulation, full-screen renderer, sounds and live setting declarations.
 
 ## Play
 
-Run `love love-party` from the repository. Choose a game with 1–8 or
+Run `love love-party` from the repository. Choose a game with 1–7 or
 the controller D-pad, Enter/A to start, F2 to choose 2–4 players.
 A packaged `.love` file opens its game directly. Escape/Back returns to the
 standalone menu; rounds otherwise restart automatically.
@@ -50,8 +49,7 @@ reports ready; shows fullscreen on Start; freezes and hides on Pause;
 resumes; reports round completion; and disposes without leaving a window.
 Back/Escape requests the lobby. Daemon disconnection exits the game.
 
-Use each game's ID in the table's source module or generated shelf. The
-Pinpals package includes its board simulation and authoring source from `pinpals`; its managed lifecycle uses this runner.
+Use each game's ID in the table's source module or generated shelf.
 
 ## Build
 
@@ -61,7 +59,7 @@ Run packaging and integration commands below from the sibling GameNight host che
 python scripts/package-love-party.py --output dist/party --love /path/to/love
 ```
 
-Produces eight deterministic `.love` files, checksums, a collection ZIP and
+Produces seven deterministic `.love` files, checksums, a collection ZIP and
 an optional `shelf.json` with absolute local paths. Merge those shelf entries
 with your lobby entry when configuring `GAMENIGHT_LIBRARY`. The build never
 changes the Windows installer's contents or assumes an unpublished download URL.
@@ -69,7 +67,7 @@ changes the Windows installer's contents or assumes an unpublished download URL.
 For a release, pass `--base-url https://your-host/immutable-release` to also
 generate Windows catalogue entries. Publish the `.love` files at that URL,
 then add the generated entries to the starter catalogue. The shared LÖVE
-runtime is reused, not included eight times.
+runtime is reused, not included seven times.
 
 ## Develop and test
 
@@ -195,10 +193,6 @@ still needs hardware testing. Visibility is measured, not foreground focus owner
 Missing renderer support is a failed check, never inferred from accepting protocol fields.
 `game-contract.py` imports each result with hashed raw observations into catalog evidence.
 
-Pinpals keeps its own board authoring tools and physics tests. Run `make check` in
-`pinpals` as well as the shared runner tests. Its upstream provenance is recorded
-in `pinpals/UPSTREAM.json`.
-
 ## Party settings
 
-All eight active modes declare game-specific settings. See [the settings reference](https://gamenight.ontola.io/docs/settings) for keys, ranges and when changes apply. The shared test runner stages the same Pinpals modules as the release pack, then checks declarations, validation and gameplay effects.
+All seven active modes declare game-specific settings. See [the settings reference](https://gamenight.ontola.io/docs/settings) for keys, ranges and when changes apply. The shared test runner checks declarations, validation and gameplay effects.

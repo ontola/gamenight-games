@@ -2,7 +2,7 @@
 local U=require('shared.util')
 local Lifecycle=require('shared.lifecycle')
 local coop=require('games.coop')
-local games={require('games.trails'),require('games.blast'),require('games.siege'),require('games.ricochet'),require('games.volley'),coop(require('games.coop.stack')),coop(require('games.coop.bubbles')),require('games.pinpals')}
+local games={require('games.trails'),require('games.blast'),require('games.siege'),require('games.ricochet'),require('games.volley'),coop(require('games.coop.stack')),coop(require('games.coop.bubbles'))}
 local function roster() return {{slot=1,name='A',score=0},{slot=2,name='B',score=0}} end
 local idle={{x=0,y=0},{x=0,y=0}}
 local function defaults(game) for _,spec in ipairs(game.settings) do assert(game.setting(spec.key,spec.default)) end end
@@ -80,13 +80,7 @@ local bubbles=games[7];bubbles.setting('hearts',2);bubbles.setting('wave_seconds
 local bubble=bubbles.new(roster());assert(bubble.hearts==2 and bubble.clock==30)
 bubble.phase='clear';bubble.timer=0;require('games.coop.bubbles').step(bubble,{},.01)
 assert(bubble.phase=='won');defaults(bubbles)
-local pinpals=games[8];pinpals.setting('speed',60)
-local board=pinpals.new(roster());local before=board.match.state.tick
-pinpals.update(board,1/30,{{},{}})
-local slowTicks=board.match.state.tick-before;pinpals.dispose(board)
-pinpals.setting('speed',125);board=pinpals.new(roster());before=board.match.state.tick
-pinpals.update(board,1/30,{{},{}});assert(board.match.state.tick-before>slowTicks);pinpals.dispose(board);defaults(pinpals)
-print('PASS settings affect gameplay and respect round boundaries for all eight shared games')
+print('PASS settings affect gameplay and respect round boundaries for all seven shared games')
 
 
 

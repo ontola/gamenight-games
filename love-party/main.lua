@@ -8,7 +8,6 @@ local modes = {
     require("games.volley"),
     require("games.coop")(require("games.coop.stack")),
     require("games.coop")(require("games.coop.bubbles")),
-    require("games.pinpals"),
 }
 local U = require("shared.util")
 local Input = require("shared.input")
