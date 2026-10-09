@@ -1,14 +1,17 @@
 -- Softened inverse-square fields: bounded at the core and frame-rate independent.
 local M = {}
+-- One black hole, and it kills. It only shows up late, on every other wave
+-- from LATE_WAVE on, and grows in over its first seconds so nobody is caught.
+M.LATE_WAVE=7
+function M.holeWave(s) return s.wave>=M.LATE_WAVE and (s.wave-M.LATE_WAVE)%2==0 end
 function M.fields(s)
  if s.settings and s.settings.gravity==0 then return {} end
- local t=s.time
- local fields={}
- if s.wave>=1 then fields[1]={x=s.width*(0.30+0.045*math.sin(t*0.22)),y=s.height*(0.30+0.06*math.cos(t*0.18)),mass=1600000*math.min(1,s.wave/4),r=19} end
- if s.wave>=5 then fields[#fields+1]={x=s.width*0.73,y=s.height*0.67,mass=6500000,r=24,lethal=true} end
- for _,field in ipairs(fields) do field.mass=field.mass*((s.settings and s.settings.gravity or 100)/100) end
- return fields
+ if not M.holeWave(s) then return {} end
+ local mass=6500000*((s.settings and s.settings.gravity or 100)/100)
+ return {{x=s.width*0.73,y=s.height*0.67,mass=mass,r=24,lethal=true}}
 end
+-- Seconds into the wave before the core kills; the pull ramps in alongside.
+function M.ramp(s) return math.min(1,math.max(0,((s.waveClock or 0)-1)/3)) end
 function M.portals(s)
  if s.wave<3 or (s.settings and not s.settings.wormholes) then return {} end
  return {{x=s.width*0.12,y=s.height*0.70,r=25},{x=s.width*0.88,y=s.height*0.28,r=25}}
@@ -19,9 +22,7 @@ function M.force(s,x,y)
  for _,f in ipairs(M.fields(s)) do
   local dx,dy=f.x-x,f.y-y
   local d2=dx*dx+dy*dy+65*65
-  local ramp=f.lethal and math.min(1,math.max(0,(s.waveClock-1)/3)) or 1
-  if s.wave>5 then ramp=1 end
-  local a=f.mass/(d2*math.sqrt(d2))*M.strength(s)*ramp
+  local a=f.mass/(d2*math.sqrt(d2))*M.strength(s)*M.ramp(s)
   ax,ay=ax+dx*a,ay+dy*a
  end
  return ax,ay
@@ -40,8 +41,7 @@ end
 -- displacement near the core without introducing phase seams along a line.
 function M.flowSample(s,f,x,y,layer)
  local strength=M.strength(s)
- local ramp=f.lethal and s.wave==5 and math.min(1,math.max(0,(s.waveClock-1)/3)) or 1
- local intensity=math.min(2.5,f.mass/1600000)*strength*ramp
+ local intensity=math.min(2.5,f.mass/1600000)*strength*M.ramp(s)
  local phase=(s.time*(0.32+intensity*0.48)+layer/3)%1
  local dx,dy=f.x-x,f.y-y
  local falloff=math.max(0,1-(dx*dx+dy*dy)/(260*260))^2
@@ -121,7 +121,7 @@ function M.step(s,dt)
       end
      end
     end
-    if s.wave>=5 and (s.wave>5 or s.waveClock>=3) then
+    if M.holeWave(s) and (s.waveClock or 0)>=3 then
      for _,f in ipairs(fields) do
       if f.lethal and crossed(px,py,v.x,v.y,f.x,f.y,f.r) then
        if list==s.players then

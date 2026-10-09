@@ -248,10 +248,11 @@ function tests.fullscreen_bounds_resize_and_spawn_safety()
 end
 function tests.gravity_escalates_and_bends_projectiles()
  local G=require('games.siege_gravity');local s=fresh(1);s.time=10
- s.wave=1;assert(#G.fields(s)==1 and #G.portals(s)==0)
- local f=G.fields(s)[1];local ax=G.force(s,f.x-90,f.y);assert(ax>0)
+ s.wave=1;assert(#G.fields(s)==0 and #G.portals(s)==0)
  s.wave=3;assert(#G.portals(s)==2)
- s.wave=5;s.waveClock=5;assert(#G.fields(s)==2)
+ for _,w in ipairs({1,2,3,4,5,6,8,10}) do s.wave=w;assert(#G.fields(s)==0,'no black hole before late game or on off waves') end
+ for _,w in ipairs({7,9,13}) do s.wave=w;assert(#G.fields(s)==1 and G.fields(s)[1].lethal) end
+ s.wave=7;s.waveClock=5;local f=G.fields(s)[1];local ax=G.force(s,f.x-90,f.y);assert(ax>0)
  s.shots={{x=s.width*0.73-100,y=s.height*0.67-60,vx=100,vy=0,ttl=1}}
  G.step(s,1/60);assert(s.shots[1].vy>0)
 end
@@ -260,7 +261,7 @@ function tests.wormholes_do_not_bounce_and_black_holes_kill()
  local p=s.players[1];local portals=G.portals(s);p.x,p.y=portals[1].x,portals[1].y
  G.step(s,1/60);assert(p.x>s.width/2 and p.portalCooldown>0)
  G.step(s,1/60);assert(p.x>s.width/2)
- s.wave=5;s.waveClock=5;local hole=G.fields(s)[2];p.x,p.y=hole.x,hole.y;p.spaceX,p.spaceY=p.x,p.y
+ s.wave=7;s.waveClock=5;local hole=G.fields(s)[1];p.x,p.y=hole.x,hole.y;p.spaceX,p.spaceY=p.x,p.y
  G.step(s,1/60);assert(p.hp==0 and p.x<hole.x-50)
 end
 function tests.special_ammo_expires_into_standard_fire()
@@ -271,7 +272,7 @@ function tests.special_ammo_expires_into_standard_fire()
  assert(s.shots[#s.shots].special==nil)
 end
 function tests.flow_moves_inward_and_resets_while_invisible()
- local G=require('games.siege_gravity');local s=fresh(1);s.wave=4;s.time=10
+ local G=require('games.siege_gravity');local s=fresh(1);s.wave=4;s.time=10;s.waveClock=5
  local f={x=600,y=400,mass=1600000,r=19};local rate=0.8
  s.time=8.2/rate;local x1,y1,a1=G.flowSample(s,f,500,400,0)
  s.time=8.7/rate;local x2,y2,a2=G.flowSample(s,f,500,400,0)
