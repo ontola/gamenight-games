@@ -25,7 +25,7 @@ local specs = {
 	shard = { hp = 1, r = 7, speed = 190, value = 8 },
 }
 M.specs = specs
-M.ammo = {spread=18,pierce=12,rapid=60}
+M.ammo = {spread=90,pierce=60,rapid=300}
 local function alive(p)
 	return p.hp > 0
 end
