@@ -27,6 +27,22 @@ jobs:
             "$GODOT" --headless --path downhill-rush --script "tests/$check.gd"
           done
           python3 downhill-rush/tests/lifecycle.py --godot "$GODOT"
+      - name: Install Windows export template
+        run: |
+          curl -fL --retry 3 -o templates.tpz https://github.com/godotengine/godot-builds/releases/download/4.6.2-stable/Godot_v4.6.2-stable_export_templates.tpz
+          dir="$HOME/.local/share/godot/export_templates/4.6.2.stable"
+          mkdir -p "$dir"
+          unzip -q -j templates.tpz templates/version.txt templates/windows_release_x86_64.exe templates/windows_release_x86_64_console.exe -d "$dir"
+      - name: Export Windows package
+        run: |
+          mkdir -p dist
+          Godot_v4.6.2-stable_linux.x86_64 --headless --path downhill-rush --export-release Windows "$PWD/dist/DownhillRush.exe"
+          (cd dist && zip -q downhill-rush-windows.zip DownhillRush.exe)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: downhill-rush-windows
+          path: dist/downhill-rush-windows.zip
+          if-no-files-found: error
   games:
     runs-on: ubuntu-latest
     steps:
@@ -70,12 +86,31 @@ jobs:
         with:
           name: gamenight-party-candidate
           path: package
-      - uses: ontola/gamenight@b46414a5a513942edb16dd434b78779b68e142b0
+      - uses: ontola/gamenight@488258365a7fe55df3fd7677ca85b513980db492
         with:
           token: ${{ secrets.GAMENIGHT_API_TOKEN }}
           game: ${{ matrix.game }}
           file: package/${{ matrix.game }}.love
           platform: ${{ matrix.platform }}
           entrypoint: ${{ matrix.game }}.love
-          version: ci-${{ github.sha }}
+          version: ci-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          channel: preview
+  publish-downhill:
+    needs: [downhill-physics, gamenight-sdk]
+    if: github.event_name != 'pull_request' && vars.GAMENIGHT_PUBLISH_ENABLED == 'true' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    environment: gamenight-downhill-rush
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: downhill-rush-windows
+          path: package
+      - uses: ontola/gamenight@488258365a7fe55df3fd7677ca85b513980db492
+        with:
+          token: ${{ secrets.GAMENIGHT_API_TOKEN }}
+          game: downhill-rush
+          file: package/downhill-rush-windows.zip
+          platform: windows
+          entrypoint: DownhillRush.exe
+          version: ci-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           channel: preview
