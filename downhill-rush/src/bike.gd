@@ -92,7 +92,7 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	var wet := false
 	var face := 0.0
 	if b.grounded:
-		var grad := c.gradient(b.s, b.d)
+		var grad := riding_gradient(b, c)
 		var ground_grip := c.grip(b.s, b.d, grad.length())
 		wet = ground_grip < 0.58 and c.in_water(b.s, b.d)
 		var along := grad.x * cos(b.psi) + grad.y * sin(b.psi)
@@ -150,7 +150,7 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		b.d = signf(b.d) * limit
 		b.psi *= 0.5
 		b.v *= 0.97
-	var ground := c.height(b.s, b.d)
+	var ground := riding_height(b, c, b.s, b.d)
 	if b.grounded:
 		var follow := (ground - b.y) / dt
 		var free_y := b.y + (b.vy - G * dt) * dt
@@ -225,7 +225,7 @@ static func landing_severity(impact: float, pitch_error: float, yaw: float, spee
 	return maxf(hit, maxf(nose, crooked) * hop)
 
 static func _land(b: Bike, c: Course, ground: float) -> void:
-	var grad := c.gradient(b.s, b.d)
+	var grad := riding_gradient(b, c)
 	var along := grad.x * cos(b.psi) + grad.y * sin(b.psi)
 	var slope := atan(along)
 	var path := atan2(b.vy, maxf(b.v, 0.1))
@@ -249,6 +249,37 @@ static func _land(b: Bike, c: Course, ground: float) -> void:
 	b.yaw = 0.0
 	b.vy = b.v * along
 	b.pitch = slope
+
+## Rounded stones below axle height form part of the riding surface. The
+## tyre radius rounds their shoulder; each axle samples it independently.
+## Gravity, pedalling and the normal ground/air contact solve the climb,
+## rather than injecting a jump impulse every time a rock is touched.
+static func _rock_lift(c: Course, s: float, d: float, nearby = null) -> float:
+	var lift := 0.0
+	if nearby == null: nearby = c.obstacles_near(s)
+	for o in nearby:
+		if o.kind != "rock" or o.h >= AXLE * 1.1: continue
+		var reach: float = o.r + WHEEL_REACH
+		var q2 := Vector2(s - o.s, d - o.d).length_squared() / (reach * reach)
+		if q2 >= 1.0: continue
+		# A smooth rounded crown, tangent to the ground at its edge.
+		var crown: float = (o.h + c.height(o.s, o.d) - c.height(s, d)) * (1.0 - q2) * (1.0 - q2)
+		lift = maxf(lift, crown)
+	return lift
+
+static func riding_height(b: Bike, c: Course, s: float, d: float, nearby = null) -> float:
+	if nearby == null: nearby = c.obstacles_near(s)
+	var axle := Vector2(cos(b.psi), sin(b.psi)) * HALF_LENGTH
+	var front := _rock_lift(c, s + axle.x, d + axle.y, nearby)
+	var rear := _rock_lift(c, s - axle.x, d - axle.y, nearby)
+	return c.height(s, d) + (front + rear) * 0.5
+
+static func riding_gradient(b: Bike, c: Course) -> Vector2:
+	var e := 0.08
+	var nearby := c.obstacles_near(b.s)
+	return Vector2(
+		(riding_height(b, c, b.s + e, b.d, nearby) - riding_height(b, c, b.s - e, b.d, nearby)) / (2.0 * e),
+		(riding_height(b, c, b.s, b.d + e, nearby) - riding_height(b, c, b.s, b.d - e, nearby)) / (2.0 * e))
 
 static func _collide_obstacles(b: Bike, c: Course, steer := 0.0) -> void:
 	if b.invulnerable > 0.0: return
@@ -284,15 +315,10 @@ static func _collide_obstacles(b: Bike, c: Course, steer := 0.0) -> void:
 			if closing > limit:
 				_crash(b, "obstacle")
 				return
-		if small and b.grounded:
-			# Small rock: the front wheel rides up it and bucks you.
-			b.vy = maxf(b.vy, 1.2 + b.v * 0.18)
-			b.y += 0.05
-			b.grounded = false
-			b.launched = true
-			b.air_time = 0.0
-			b.wobble = maxf(b.wobble, 0.25)
-			return
+		if small:
+			# Low rocks support the tyres through riding_height. Never turn
+			# them into a wall on the frame after the front wheel lifts off.
+			continue
 		# Otherwise you scrape along it. A bike can't be turned by what it
 		# touches, so the heading stays; you're pushed clear and lose the part
 		# of your speed that went into it. Ride into it slowly and you just stop.

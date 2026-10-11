@@ -7,6 +7,26 @@ jobs:
     uses: ontola/gamenight/.github/workflows/godot-sdk-check.yml@main
     with:
       path: downhill-rush
+  downhill-physics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: |
+          curl -fL --retry 3 -o godot.zip https://github.com/godotengine/godot-builds/releases/download/4.6.2-stable/Godot_v4.6.2-stable_linux.x86_64.zip
+          echo "30e6b6d141f0cd5bebd629ad1d0ef1324e60091bb20662d026b402ba58c59937  godot.zip" | sha256sum -c -
+          unzip -q godot.zip -d godot-bin
+          chmod +x godot-bin/Godot_v4.6.2-stable_linux.x86_64
+          echo "$GITHUB_WORKSPACE/godot-bin" >> "$GITHUB_PATH"
+      - name: Check Downhill Rush physics, courses and host lifecycle
+        run: |
+          GODOT=Godot_v4.6.2-stable_linux.x86_64
+          "$GODOT" --headless --path downhill-rush --editor --import
+          for check in wheel_contact terrain_variety course_check scenery_check ride_check; do
+            "$GODOT" --headless --path downhill-rush --script "tests/$check.gd"
+          done
+          python3 downhill-rush/tests/lifecycle.py --godot "$GODOT"
   games:
     runs-on: ubuntu-latest
     steps:

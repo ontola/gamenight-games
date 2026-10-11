@@ -59,15 +59,17 @@ New race builds one straight away.
 `src/course.gd` builds a steep, rough mountainside and you pick your own line
 down it. One way down is always rideable: a winding trail of packed dirt (or
 trodden snow) with no trees or big boulders on it, only the odd small rock
-that bucks you. It finds a chute through every cliff band, a bridge or the
+that the wheels roll over. It finds a chute through every cliff band, a bridge or the
 ramp over every gorge, a lane through every slalom and the path down every
-gully, and goes round lakes. It doesn't avoid kickers, and it's narrower on
-harder mountains (6.4 m on easy down to 3.2 m on extreme). The run is a
+gully, and goes round lakes. It doesn't avoid kickers. Most of the route is broad,
+with a width that changes along the mountain; only bridges and short constrictions become narrow. The run is a
 shuffled string of set pieces with open mountain between them:
 
 - **band**: a cliff band across the slope (below);
 - **turn**: the valley swings about 60 degrees to one side;
 - **flat**: a bench where you have to pedal;
+- **road**: paved stretches through quiet sections, with lane markings, roadside
+  posts and parked cars. Asphalt smooths the small bumps;
 - **kicker**: one to three jumps built into the slope;
 - **gully**: a single narrow, steep path between boulder-strewn banks;
 - **slalom**: rows of trees or rocks with a few gaps;
@@ -82,6 +84,8 @@ the ground colours, which set pieces turn up (deserts get more gorges and no
 lakes or streams) and the trees: pines and firs, oaks, birches, autumn trees,
 dead trees, saguaro cacti, joshua trees and snow-laden firs. The mix of trees
 drifts along the run, so you pass through a pine stand, then a birch grove.
+Flowers and ferns grow in patches along the route. Sheep, deer or hares animate
+on the verges according to the biome; they are scenery and do not block riders.
 On a snow mountain it snows, powder grips a little less than grass, and the
 lakes are frozen: you can ride across, but the ice barely grips, so steer or
 brake hard on it and you slide out. `--biome=NAME` picks the biome and
@@ -90,12 +94,13 @@ brake hard on it and you slide out. `--biome=NAME` picks the biome and
 Difficulty (easy, normal, hard, extreme; `--difficulty=NAME`) scales the
 mountain and the race: cliff bands get taller, gorges wider and their bridges
 narrower, the slope steeper, the trees and boulders denser and the lanes
-through them tighter. Landings forgive less, the camera starts faster and
-tops out higher, and the bots ride better. Easy always has two bridges over
+through them tighter. The camera starts faster and tops out higher, and the bots ride better.
+Landing and collision tolerance stay the same at every difficulty. Easy always has two bridges over
 every gorge.
 
-Cliff bands work like this: above each
-one the ground eases into a shelf, then drops off a ledge. Small ledges can be
+Cliff bands and gorges have curved edges with coves and spurs. Their rendered
+shape and riding surface use the same height function. Above each cliff band
+the ground eases into a shelf, then drops off a ledge. Small ledges can be
 ridden; big ones will put you on your face, unless you find one of the few
 chutes where the ledge becomes a steep ramp. Between the bands there are forest
 clumps, boulder fields, loose scree with little grip, and streams that bog you
@@ -126,10 +131,12 @@ You only fall for a reason you can see. There are two:
   head-on (within 40°) into something taller than the front axle, so the
   wheel stops while you keep going. A trunk stops it at 2.5 m/s, a rounded
   boulder at up to 7 m/s depending on its height. Clip it at an angle and you
-  glance off; anything lower than the axle you ride over, and small rocks
-  buck you into the air. Riding into a bank steeper than 45° counts too.
+  glance off; rocks lower than the axle form a rounded riding surface sampled by both
+  wheels. At walking pace you pedal over them; at speed the normal wheel
+  contact and gravity can carry you into the air. They never become a wall
+  halfway through the crossing. Riding into a bank steeper than 45° counts too.
 
-Both limits scale with difficulty. Shoves from other riders make you wobble
+These limits are identical at every difficulty. Shoves from other riders make you wobble
 but never put you down, and sliding a turn just scrubs speed. Riding into deep
 water is a crash. A rider who makes no headway for 3 s is walked a few metres
 on to clear ground.
@@ -182,6 +189,9 @@ host the game:
 
 ```sh
 godot --headless --path downhill-rush --script tests/course_check.gd  # cliff bands all have a way down
+godot --headless --path downhill-rush --script tests/terrain_variety.gd # broad trails, curved cliffs, roads
+godot --headless --path downhill-rush --script tests/scenery_check.gd   # vegetation and safe wildlife
+godot --headless --path downhill-rush --script tests/wheel_contact.gd # low rocks and fast impacts
 godot --headless --path downhill-rush --script tests/ride_check.gd    # crashes and times per strategy
 python3 downhill-rush/tests/lifecycle.py --godot godot               # managed launch against a fake host
 tools/shot.sh out.png --demo --skip=30                               # screenshot via xvfb

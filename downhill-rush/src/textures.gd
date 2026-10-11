@@ -36,6 +36,11 @@ static func grit() -> ImageTexture:
 		if rng.randf() < 0.03: v = 1.12
 		return v)
 
+## Fine aggregate: quieter than dirt, so painted road markings read clearly.
+static func asphalt() -> ImageTexture:
+	return _make("asphalt", 32, func(x, y, rng):
+		return rng.randf_range(0.84, 1.0) if rng.randf() > 0.06 else 0.72)
+
 ## Denim twill.
 static func denim() -> ImageTexture:
 	return _make("denim", 16, func(x, y, rng):

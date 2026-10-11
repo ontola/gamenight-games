@@ -1,7 +1,7 @@
 class_name Course
 extends RefCounted
-## A procedurally generated mountainside. There is no trail: riders pick their
-## own line down a steep, rough slope broken by cliff bands, boulder fields,
+## A procedurally generated mountainside. A broad trail offers a way down;
+## riders can choose their own line through cliff bands, boulder fields,
 ## forest, scree and streams.
 ##
 ## Everything lives in mountain space: `s` is the distance along the fall line
@@ -17,7 +17,7 @@ const START_FLAT := 75.0
 const START_LINE := 50.0       ## Riders line up here, with hillside behind for the camera.
 const RUNOUT := 60.0
 
-enum Surface { GRASS, DIRT, ROCK, SCREE, WATER, ICE, TRAIL }
+enum Surface { GRASS, DIRT, ROCK, SCREE, WATER, ICE, TRAIL, ASPHALT }
 
 var seed_value := 0
 var length := 900.0            ## Finish line position.
@@ -37,6 +37,8 @@ var bands: Array[Dictionary] = []
 ## kicker (jumps built into the slope), gully (one narrow, steep path between
 ## boulders), slalom (rows of trees and rocks with gaps), open (bare mountain).
 var sections: Array[Dictionary] = []
+## Paved stretches of the trail on open ground: {s, len, half_width}.
+var roads: Array[Dictionary] = []
 var view := PackedFloat32Array()    ## Smoothed heading: the map's main direction, for the camera.
 ## Streams across the slope: {s, wiggle, phase}.
 var streams: Array[Dictionary] = []
@@ -46,8 +48,7 @@ var obstacles: Array[Dictionary] = []   ## {s, d, r, h, kind, look}
 var biome := "alpine"
 const BIOMES := ["alpine", "forest", "autumn", "desert", "snow"]
 ## How hard the mountain is, 0 (easy) to 3 (extreme). It scales the drops, the
-## gorges, the gaps between trees, how steep it gets, how forgiving landings
-## are and how fast the camera pushes on.
+## gorges, the gaps between trees, how steep it gets, how fast the camera pushes on. Collision and landing tolerance stay fixed.
 var difficulty := 1
 const DIFFICULTIES := ["easy", "normal", "hard", "extreme"]
 const _HAZARD := [0.6, 1.0, 1.15, 1.3]     ## Cliff band height.
@@ -56,11 +57,12 @@ const _DENSITY := [0.55, 1.0, 1.3, 1.6]    ## Trees and rocks on the open slope.
 const _GAP := [1.35, 1.0, 0.88, 0.78]      ## Gully and slalom lane width.
 const _GORGE := [-1.5, 0.0, 0.8, 1.6]      ## Extra gorge width, m.
 const _BRIDGE := [1.0, 0.0, -0.3, -0.5]    ## Extra bridge width, m.
-const _CRASH := [1.5, 1.15, 1.0, 0.85]    ## How much of a hit you survive: landings, trees, rocks, banks.
-const _TRAIL := [3.2, 2.4, 1.9, 1.6]      ## Half width of the trail kept clear of trees.
+const CRASH_TOLERANCE := 1.15 ## Same bike and rider at every difficulty (former Normal).
+const _TRAIL := [4.8, 4.2, 3.8, 3.5]      ## Half width of the trail kept clear of trees.
 const _PACE := [[1.5, 0.07, 5.5], [2.0, 0.1, 7.0], [2.5, 0.12, 8.0], [3.0, 0.15, 9.0]]  ## Camera: start, ramp, top speed.
-var crash_limit := 1.0
+var crash_limit := CRASH_TOLERANCE
 var trail := PackedFloat32Array()   ## Across-position of the trail per sample (see _make_trail).
+var _trail_widths := PackedFloat32Array()
 var _buckets: Dictionary = {}           ## int(s/10) -> Array of obstacle indices
 var _noise := FastNoiseLite.new()
 var _detail := FastNoiseLite.new()
@@ -70,7 +72,7 @@ var _rng := RandomNumberGenerator.new()
 func _init(p_seed: int = 1, p_length: float = 900.0, p_difficulty: int = 1, p_biome: String = "") -> void:
 	seed_value = p_seed
 	difficulty = clampi(p_difficulty, 0, DIFFICULTIES.size() - 1)
-	crash_limit = _CRASH[difficulty]
+	crash_limit = CRASH_TOLERANCE
 	length = p_length
 	total = length + RUNOUT
 	_rng.seed = p_seed
@@ -84,6 +86,7 @@ func _init(p_seed: int = 1, p_length: float = 900.0, p_difficulty: int = 1, p_bi
 	biome = BIOMES[_rng.randi() % BIOMES.size()]
 	if BIOMES.has(p_biome): biome = p_biome
 	_plan_sections()
+	_plan_roads()
 	_generate_line()
 	_place_streams()
 	_place_obstacles()
@@ -120,6 +123,8 @@ func _plan_sections() -> void:
 				for k in (_rng.randi_range(1, 2) if big else _rng.randi_range(2, 3)):
 					var e := edges(b.s)
 					b.chutes.append({"d": _rng.randf_range(e.x + 4.0, e.y - 4.0), "w": _rng.randf_range(2.5, 4.5)})
+				# The marked route has a generous chute; other lines remain technical.
+				b.chutes[0].w = maxf(b.chutes[0].w, _TRAIL[difficulty] * 2.0 + 1.2)
 				bands.append(b)
 				sec.len = approach + 16.0
 				sec.grade = 0.42
@@ -147,7 +152,7 @@ func _plan_sections() -> void:
 				sec.d0 = _rng.randf_range(-3.0, 3.0)
 				sec.amp = _rng.randf_range(2.5, 4.5)
 				sec.freq = TAU / _rng.randf_range(26.0, 40.0)
-				sec.hw = 2.3 * _GAP[difficulty]
+				sec.hw = maxf(3.0, 3.5 * _GAP[difficulty])
 			"slalom":
 				sec.len = _rng.randf_range(40.0, 55.0)
 				sec.grade = 0.36
@@ -181,6 +186,34 @@ func _plan_sections() -> void:
 				sec.ramp = {"d": rd, "w": 2.6, "h": 1.5, "run": 6.0}
 		sections.append(sec)
 		s += sec.len + _rng.randf_range(8.0, 18.0)
+
+func _plan_roads() -> void:
+	# Reuse quiet sections: asphalt never masks a cliff, jump or lake.
+	for sec in sections:
+		if sec.kind not in ["flat", "open"]: continue
+		roads.append({"s": sec.s, "len": sec.len, "half_width": _TRAIL[difficulty] + 0.8})
+
+func road_at(s: float) -> Dictionary:
+	for road in roads:
+		if s >= road.s and s < road.s + road.len: return road
+	return {}
+
+func road_center(s: float) -> float:
+	return trail_d(s)
+
+func road_half(s: float) -> float:
+	var road := road_at(s)
+	return road.half_width if not road.is_empty() else 0.0
+
+func on_road(s: float, d: float) -> bool:
+	var half := road_half(s)
+	return half > 0.0 and absf(d - road_center(s)) < half
+
+func _road_blend(s: float, d: float) -> float:
+	var road := road_at(s)
+	if road.is_empty() or trail.is_empty(): return 0.0
+	var along := smoothstep(road.s, road.s + 6.0, s) * (1.0 - smoothstep(road.s + road.len - 6.0, road.s + road.len, s))
+	return along * (1.0 - smoothstep(road.half_width, road.half_width + 2.0, absf(d - road_center(s))))
 
 func section_at(s: float, kind: String = "") -> Dictionary:
 	for sec in sections:
@@ -330,7 +363,7 @@ func height(s: float, d: float) -> float:
 	# rolls instead of lying flat between two banks.
 	h += wild * _lake_calm(s, d) * _noise.get_noise_2d(s * 1.3 + 2600.0, d * 1.3) * 3.2
 	# Rolls, spines and hollows, then rubble on top. Calm round a lake.
-	var calm := _lake_calm(s, d)
+	var calm := _lake_calm(s, d) * (1.0 - 0.92 * _road_blend(s, d))
 	wild *= calm
 	h += wild * (_noise.get_noise_2d(s * 4.0, d * 4.0) * 1.9 + _noise.get_noise_2d(s * 14.0 + 300.0, d * 14.0) * 0.35)
 	h += wild * _detail.get_noise_2d(s, d) * 0.16
@@ -369,8 +402,8 @@ func _set_pieces_at(s: float, d: float) -> float:
 				var up: float = lip.h * pow((u + lip.run) / lip.run, 2.2) if u <= 0.0 else lip.h * (1.0 - u / 0.6)
 				h += up * side
 		elif sec.kind == "chasm":
-			var u: float = s - sec.cs
-			var half: float = sec.w * 0.5
+			var u: float = s - chasm_center_s(sec, d)
+			var half := chasm_half(sec, d)
 			var ramp: Dictionary = sec.ramp
 			if u > -half - ramp.run and u < -half:
 				var side := 1.0 - smoothstep(ramp.w, ramp.w + 1.0, absf(d - ramp.d))
@@ -446,21 +479,38 @@ func on_path(s: float, d: float) -> bool:
 # trees or big boulders on it. It finds a chute through every cliff band, a
 # bridge (or the ramp) over every gorge, a lane through every slalom, the
 # path down every gully, and goes round lakes. It doesn't avoid kickers, and
-# it's narrower on harder mountains. Leave it and you're on your own.
+# broad stretches vary in width, with brief narrow crossings over gorges.
+# Leave it and you're on your own.
 
-func trail_half() -> float:
-	return _TRAIL[difficulty]
+func trail_half(s: float = -1.0) -> float:
+	if s < 0.0: return _TRAIL[difficulty]
+	return _sample(_trail_widths, s) if not _trail_widths.is_empty() else _trail_width_at(s)
+
+func _trail_width_at(s: float) -> float:
+	var half: float = _TRAIL[difficulty] + 0.65 * sin(s * 0.025 + seed_value) + 0.25 * sin(s * 0.071)
+	for sec in sections:
+		if sec.kind == "gully":
+			half = lerpf(half, minf(half, sec.hw - 0.35), gully_fade(sec, s))
+		elif sec.kind == "chasm" and not sec.bridges.is_empty():
+			var br: Dictionary = sec.bridges[0]
+			var gap := chasm_half(sec, br.d)
+			var distance := absf(s - chasm_center_s(sec, br.d))
+			var narrow := 1.0 - smoothstep(gap + 3.0, gap + 9.0, distance)
+			half = lerpf(half, minf(half, maxf(0.5, br.w * 0.5 - 0.15)), narrow)
+	return half
 
 func trail_d(s: float) -> float:
 	return _sample(trail, s)
 
 func on_trail(s: float, d: float) -> bool:
-	return s > START_LINE + 4.0 and absf(d - trail_d(s)) < trail_half()
+	return s > START_LINE + 4.0 and absf(d - trail_d(s)) < trail_half(s)
 
 func _make_trail() -> void:
 	var n := theta.size()
 	var raw := PackedFloat32Array()
 	raw.resize(n)
+	_trail_widths.resize(n)
+	for j in n: _trail_widths[j] = _trail_width_at(j * DS)
 	for j in n:
 		var s := j * DS
 		var e := edges(s)
@@ -482,12 +532,12 @@ func _make_trail() -> void:
 				"lake":
 					# Round the side with more room.
 					var room: bool = e.y - (sec.cd + sec.rd) > (sec.cd - sec.rd) - e.x
-					want = sec.cd + (sec.rd * 1.3 + trail_half() + 1.0) * (1.0 if room else -1.0)
+					want = sec.cd + (sec.rd * 1.3 + trail_half(s) + 1.0) * (1.0 if room else -1.0)
 			d = lerpf(d, want, pull)
 		for b in bands:
-			var pull := smoothstep(b.s - b.approach - 24.0, b.s - b.approach, s) * (1.0 - smoothstep(b.s + 3.0, b.s + 16.0, s))
+			var pull := smoothstep(b.s - b.approach - 24.0, b.s - b.approach, s) * (1.0 - smoothstep(b.s + maxf(9.0, b.h * 1.4) + 4.0, b.s + maxf(9.0, b.h * 1.4) + 17.0, s))
 			if pull > 0.0 and not b.chutes.is_empty(): d = lerpf(d, b.chutes[0].d, pull)
-		raw[j] = clampf(d, e.x + trail_half() + 0.5, e.y - trail_half() - 0.5)
+		raw[j] = clampf(d, e.x + trail_half(s) + 0.5, e.y - trail_half(s) - 0.5)
 	# A little smoothing so it bends like a trail, not a staircase.
 	trail.resize(n)
 	for j in n:
@@ -501,8 +551,9 @@ func _make_trail() -> void:
 func _bands_at(s: float, d: float) -> float:
 	var total_h := 0.0
 	for b in bands:
-		var u: float = s - b.s
-		if u < -b.approach or u > 2.0: continue
+		var u: float = s - band_edge_s(b, d)
+		# Chutes continue below the ledge: do not truncate their ramp at +2 m.
+		if u < -b.approach or u > maxf(9.0, b.h * 2.8) * 0.5: continue
 		var lift: float = b.h * (0.75 + 0.25 * _noise.get_noise_1d(d * 3.0 + b.s))
 		# The shelf builds up over the approach, so the ground eases off
 		# before the ledge, then the full height drops away at once.
@@ -511,6 +562,16 @@ func _bands_at(s: float, d: float) -> float:
 		var off := 1.0 - smoothstep(-w * 0.5, w * 0.5, u)
 		total_h += lift * shelf * off
 	return total_h
+
+## Smooth coves and spurs across each ledge, shared by rendering and contact.
+func band_edge_s(b: Dictionary, d: float) -> float:
+	return b.s + 2.1 * sin(d * 0.17 + b.s * 0.13) + 0.9 * sin(d * 0.43 + seed_value * 0.7)
+
+func chasm_center_s(sec: Dictionary, d: float) -> float:
+	return sec.cs + 1.6 * sin(d * 0.19 + sec.cs * 0.07) + 0.65 * sin(d * 0.41 + seed_value)
+
+func chasm_half(sec: Dictionary, d: float) -> float:
+	return sec.w * 0.5 + 0.45 * sin(d * 0.29 + sec.cs * 0.11)
 
 ## 0.6 m: a ledge you fly off. Inside a chute it stretches into a ramp you can roll.
 func _ledge_width(b: Dictionary, d: float) -> float:
@@ -572,6 +633,7 @@ func in_water(s: float, d: float) -> bool:
 func surface(s: float, d: float, slope: float = -1.0) -> int:
 	if in_water(s, d): return Surface.WATER
 	if on_ice(s, d): return Surface.ICE
+	if on_road(s, d): return Surface.ASPHALT
 	if on_path(s, d): return Surface.DIRT
 	if on_trail(s, d): return Surface.TRAIL
 	if slope < 0.0: slope = gradient(s, d).length()
@@ -604,6 +666,7 @@ func _place_streams() -> void:
 		var clear := true
 		for sec in sections:
 			if sec.kind != "open" and sec.kind != "flat" and s > sec.s - 6.0 and s < sec.s + sec.len + 6.0: clear = false
+		if not road_at(s).is_empty(): clear = false
 		if clear:
 			streams.append({"s": s, "wiggle": _rng.randf_range(0.08, 0.2), "phase": _rng.randf() * TAU})
 			s += _rng.randf_range(120.0, 200.0)
@@ -690,7 +753,7 @@ func _place_set_piece_obstacles() -> void:
 					for lane in lanes:
 						var at: float = valley_mid(ps) + lane.off + lane.amp * sin(ps * lane.freq + lane.phase)
 						if absf(pd - at) < 1.9 * _GAP[difficulty]: clear = true
-					if absf(pd - trail_d(ps)) < trail_half() + 0.6: clear = true
+					if absf(pd - trail_d(ps)) < trail_half(ps) + 0.6: clear = true
 					if not clear and _rng.randf() < 0.62:
 						if _noise.get_noise_2d(ps * 3.0 + 800.0, pd * 3.0) > 0.0:
 							_add_obstacle(ps, pd, 0.45, 9.0, "tree", true)
@@ -701,19 +764,20 @@ func _place_set_piece_obstacles() -> void:
 				s += 2.3
 
 func _add_obstacle(s: float, d: float, r: float, h: float, kind: String, set_piece := false) -> void:
+	# Keep the whole marked width clear, including the radius of set-piece rocks.
+	# Occasional low stones remain on dirt; paved stretches stay clear.
+	if absf(d - trail_d(s)) < maxf(trail_half(s), road_half(s)) + r:
+		if road_half(s) > 0.0 or not (kind == "rock" and r < 0.6 and (set_piece or _rng.randf() < 0.4)): return
 	if not set_piece:
-		# The trail stays clear of trees and boulders. Now and then a small
-		# rock lies on it, which bucks you but never throws you off.
-		if absf(d - trail_d(s)) < trail_half() + r and not (kind == "rock" and r < 0.6 and _rng.randf() < 0.4): return
 		var sec := section_at(s)
 		if not sec.is_empty() and sec.kind in ["gully", "slalom"]: return
-		if not sec.is_empty() and sec.kind == "chasm" and absf(s - sec.cs) < sec.w * 0.5 + 8.0: return
+		if not sec.is_empty() and sec.kind == "chasm" and absf(s - chasm_center_s(sec, d)) < chasm_half(sec, d) + 8.0: return
 		if water_depth(s, d) > 0.0 or _lake_calm(s, d) < 0.6: return
 		if on_path(s, d) or on_path(s + 6.0, d): return
 	if s < START_FLAT + 8.0: return
 	if s > length - 12.0 and s < length + 6.0 and absf(d) < TRACK_HALF + 3.0: return
 	for b in bands:
-		if absf(s - b.s) < r + 1.5: return
+		if absf(s - band_edge_s(b, d)) < r + 1.5: return
 	if _stream_at(s, d) > 0.2: return
 	var index := obstacles.size()
 	var look := kind

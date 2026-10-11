@@ -39,6 +39,8 @@ const PALETTES := {
 const SNOW := Color(0.96, 0.97, 1.0)
 var _rng := RandomNumberGenerator.new()
 var _columns := PackedFloat32Array()
+var _ambient: Array[Node3D] = []
+var _ambient_time := 0.0
 
 
 ## Build the whole mountain now.
@@ -66,6 +68,7 @@ func build_streaming(c: Course) -> void:
 		chunk.name = "Chunk%d" % key
 		_terrain_chunk(chunk, s, minf(s + CHUNK, c.total - 1.0))
 		_props(chunk, key)
+		_roads(chunk, s, minf(s + CHUNK, c.total - 1.0))
 		if Course.START_LINE >= s and Course.START_LINE < s + CHUNK: _gate(chunk, Course.START_LINE, false)
 		if c.length >= s and c.length < s + CHUNK: _gate(chunk, c.length, true)
 		_lock.lock()
@@ -97,15 +100,26 @@ func is_done() -> bool:
 	_lock.unlock()
 	return d
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_drain()
+	_ambient_time += delta
+	for animal in _ambient:
+		var phase: float = animal.get_meta("phase") + _ambient_time
+		var head: Node3D = animal.get_node("Head")
+		head.rotation.x = -0.22 + sin(phase * 0.9) * 0.24
+		head.rotation.y = sin(phase * 0.6) * 0.18
+		if animal.get_meta("hare"):
+			# Little hops in place on the verge, never across the rider's line.
+			animal.position.y = float(animal.get_meta("ground_y")) + pow(maxf(0.0, sin(phase * 1.5)), 6.0) * 0.22
 
 func _drain() -> void:
 	_lock.lock()
 	var ready := _pending.duplicate()
 	_pending.clear()
 	_lock.unlock()
-	for chunk in ready: add_child(chunk)
+	for chunk in ready:
+		add_child(chunk)
+		for animal in chunk.get_meta("animals", []): _ambient.append(animal)
 
 ## Chunks built but never shown (the build was cancelled) go with the view.
 func _notification(what: int) -> void:
@@ -273,6 +287,7 @@ func _vertex_color(p0: Vector3, p1: Vector3, p2: Vector3, s: float, d: float) ->
 	var slope := sqrt(maxf(0.0, 1.0 - n.y * n.y)) / maxf(absf(n.y), 0.05)
 	var col: Color
 	match course.surface(s, d, slope):
+		Course.Surface.ASPHALT: return Color("505963")
 		Course.Surface.WATER: col = SAND
 		Course.Surface.ICE: col = Color(0.7, 0.82, 0.92)
 		Course.Surface.SCREE: col = SCREE.lerp(STONE, course._detail.get_noise_2d(s * 2.0, d * 2.0) * 0.5 + 0.5)
@@ -324,7 +339,7 @@ func _props(parent: Node3D, key: int) -> void:
 		for i in 9:
 			var d := _rng.randf_range(-Course.EDGE + 1.0, Course.EDGE - 1.0)
 			var ss := s + _rng.randf_range(0.0, 4.0)
-			if course.surface(ss, d) in [Course.Surface.WATER, Course.Surface.SCREE, Course.Surface.ROCK, Course.Surface.TRAIL]: continue
+			if course.surface(ss, d) in [Course.Surface.WATER, Course.Surface.SCREE, Course.Surface.ROCK, Course.Surface.TRAIL, Course.Surface.ASPHALT]: continue
 			var p := course.world(ss, d)
 			var roll := _rng.randf()
 			if course.biome == "snow":
@@ -363,11 +378,210 @@ func _props(parent: Node3D, key: int) -> void:
 					var q := p + Vector3(_rng.randf_range(-0.5, 0.5), 0, _rng.randf_range(-0.5, 0.5))
 					lp.cone(q, 0.07, 0.0, 0.22, 3, flower)
 		s += 4.0
+	_verge_plants(lp, s0, minf(s0 + CHUNK, course.total))
+	_wildlife(parent, key)
 	if lp.is_empty(): return
 	var mi := MeshInstance3D.new()
 	mi.mesh = lp.commit(null, Tex.material(Tex.grit(), 1.6, true))
 	mi.name = "Props%d" % key
 	parent.add_child(mi)
+
+## Deliberate patches beside the route make the open slope feel alive without
+## hiding the riding surface or adding collision obstacles.
+func _verge_plants(lp: LowPoly, s0: float, s1: float) -> void:
+	var s := maxf(s0, Course.START_LINE + 6.0)
+	while s < s1:
+		for side in [-1.0, 1.0]:
+			var d: float = course.trail_d(s) + side * (course.trail_half(s) + _rng.randf_range(2.5, 5.0))
+			if course.surface(s, d) not in [Course.Surface.GRASS, Course.Surface.DIRT]: continue
+			if course.gradient(s, d).length() > 0.65: continue
+			for k in 4:
+				var ss := s + _rng.randf_range(-0.9, 0.9)
+				var dd: float = d + _rng.randf_range(-0.8, 0.8)
+				if course.surface(ss, dd) not in [Course.Surface.GRASS, Course.Surface.DIRT]: continue
+				var p := course.world(ss, dd)
+				if course.biome == "snow":
+					lp.cone(p, 0.2, 0.0, 0.5, 5, PINES[1].darkened(0.1))
+				elif course.biome == "desert":
+					_tuft(lp, p)
+				elif k == 0 and course.biome == "forest":
+					_fern(lp, p)
+				else:
+					_tuft(lp, p)
+					var flower: Color = [Color("f5cb56"), Color("df90b0"), Color("c1b2f0"), Color("f7edbf")][int(s / 18.0) % 4]
+					lp.beam(p, p + Vector3(0, 0.48, 0), 0.035, FERN)
+					lp.blob(p + Vector3(0, 0.5, 0), Vector3(0.18, 0.12, 0.18), flower, _rng, 2, 5, 0.05)
+		s += 5.0
+
+func _wildlife(parent: Node3D, key: int) -> void:
+	if key % 2 == 0 or key * CHUNK > course.length - 25.0: return
+	var animals: Array[Node3D] = []
+	var side := -1.0 if key % 4 == 1 else 1.0
+	var kind := "hare" if course.biome in ["desert", "snow"] else ("deer" if course.biome in ["forest", "autumn"] else "sheep")
+	for k in 3:
+		for attempt in 8:
+			var s := key * CHUNK + 12.0 + k * 4.0 + attempt * 3.0
+			var d := course.trail_d(s) + side * (course.trail_half(s) + 5.0 + k * 1.4)
+			if course.surface(s, d) not in [Course.Surface.GRASS, Course.Surface.DIRT]: continue
+			if course.gradient(s, d).length() > 0.55: continue
+			var clear := true
+			for o in course.obstacles:
+				if Vector2(o.s - s, o.d - d).length() < o.r + 1.8:
+					clear = false
+					break
+			if not clear: continue
+			var animal := _animal(kind)
+			animal.name = "%s%d" % [kind.capitalize(), k]
+			animal.position = course.world(s, d)
+			animal.rotation.y = course.heading(s) + side * 0.8 + k * 0.3
+			animal.set_meta("ground_y", animal.position.y)
+			animal.set_meta("phase", _rng.randf() * TAU)
+			animal.set_meta("hare", kind == "hare")
+			animal.set_meta("course_position", Vector2(s, d))
+			parent.add_child(animal)
+			animals.append(animal)
+			break
+	parent.set_meta("animals", animals)
+
+func _animal(kind: String) -> Node3D:
+	var animal := Node3D.new()
+	var lp := LowPoly.new()
+	var dark := Color("403a35")
+	var coat := Color("ede4cd") if kind == "sheep" else Color("b78552")
+	if kind == "hare": coat = Color("ebe7da") if course.biome == "snow" else Color("b9a48a")
+	var body_y := 0.83 if kind == "deer" else (0.65 if kind == "sheep" else 0.35)
+	var body_size := Vector3(0.46, 0.36, 0.77) if kind != "hare" else Vector3(0.3, 0.28, 0.46)
+	if kind == "sheep": body_size = Vector3(0.58, 0.46, 0.81)
+	lp.blob(Vector3(0, body_y, 0), body_size, coat, _rng, 3, 8, 0.12)
+	for x in [-1.0, 1.0]:
+		for z in [-1.0, 1.0]:
+			var foot := Vector3(x * body_size.x * 0.62, 0.08, z * body_size.z * 0.65)
+			lp.beam(foot, foot + Vector3(0, body_y - 0.15, 0), 0.12 if kind != "hare" else 0.1, coat.darkened(0.15))
+			lp.box(foot, Vector3(0.16, 0.14, 0.22), dark)
+	lp.blob(Vector3(0, body_y + 0.1, body_size.z), Vector3(0.16, 0.16, 0.2), coat.lightened(0.2), _rng, 2, 6, 0.05)
+	var body := MeshInstance3D.new()
+	body.mesh = lp.commit()
+	animal.add_child(body)
+	var head := MeshInstance3D.new()
+	head.name = "Head"
+	head.position = Vector3(0, body_y + 0.14, -body_size.z * 0.8)
+	lp = LowPoly.new()
+	var face := coat.darkened(0.2) if kind != "sheep" else dark
+	lp.blob(Vector3(0, 0.04, -0.16), Vector3(0.26, 0.28, 0.34), face, _rng, 3, 6, 0.03)
+	for x in [-1.0, 1.0]:
+		var ear := Vector3(x * 0.17, 0.28, -0.07)
+		lp.blob(ear + Vector3(x * 0.08, 0.14, 0), Vector3(0.085, 0.38 if kind == "hare" else 0.17, 0.09), coat, _rng, 2, 5, 0.0)
+		lp.box(Vector3(x * 0.235, 0.13, -0.3), Vector3(0.06, 0.075, 0.065), Color("24272a"))
+		if kind == "deer":
+			var antler := Vector3(x * 0.14, 0.23, -0.04)
+			lp.beam(antler, antler + Vector3(x * 0.18, 0.65, 0.1), 0.06, Color("d4c4a4"))
+			lp.beam(antler + Vector3(x * 0.12, 0.4, 0.06), antler + Vector3(x * 0.32, 0.52, -0.1), 0.05, Color("d4c4a4"))
+	lp.blob(Vector3(0, -0.01, -0.42), Vector3(0.13, 0.09, 0.09), dark, _rng, 2, 5, 0.0)
+	head.mesh = lp.commit()
+	animal.add_child(head)
+	return animal
+
+## Painted mountain-road stretches use exactly the surface the tyres sample.
+## The thin overlay only sharpens its silhouette against the coarser terrain.
+func _roads(parent: Node3D, s0: float, s1: float) -> void:
+	var asphalt := LowPoly.new()
+	var paint := LowPoly.new()
+	var roadside := LowPoly.new()
+	for road in course.roads:
+		var start := maxf(s0, road.s)
+		var finish := minf(s1, road.s + road.len)
+		if finish <= start: continue
+		var s := start
+		while s < finish - 0.001:
+			var next := minf(s + 0.5, finish)
+			var h0 := course.road_half(s + 0.001)
+			var h1 := course.road_half(next - 0.001)
+			# Follow crossfall and small terrain facets across both lanes too.
+			for lane in 20:
+				var f0 := float(lane) / 20.0
+				var f1 := float(lane + 1) / 20.0
+				_road_strip(asphalt, s, next, lerpf(-h0, h0, f0), lerpf(-h0, h0, f1), lerpf(-h1, h1, f0), lerpf(-h1, h1, f1), Color("505963"), 0.025)
+			for side in [-1.0, 1.0]:
+				var d0: float = side * (h0 - 0.35)
+				var d1: float = side * (h1 - 0.35)
+				_road_strip(paint, s, next, d0 - 0.065, d0 + 0.065, d1 - 0.065, d1 + 0.065, Color("e9e6cb"), 0.035)
+			if int((s - road.s) / 3.0) % 2 == 0:
+				_road_strip(paint, s, next, -0.085, 0.085, -0.085, 0.085, Color("f1ce64"), 0.04)
+			s = next
+		# Reflector posts suggest a road for cars while leaving the route open.
+		var post_s: float = ceilf((start - road.s) / 8.0) * 8.0 + road.s
+		while post_s < finish:
+			for side in [-1.0, 1.0]:
+				var d: float = course.road_center(post_s) + side * (course.road_half(post_s) + 0.8)
+				var p := course.world(post_s, d)
+				roadside.box(p + Vector3(0, 0.4, 0), Vector3(0.12, 0.8, 0.12), Color("ede8d8"))
+				roadside.box(p + Vector3(0, 0.63, 0), Vector3(0.135, 0.16, 0.135), Color("303b46"))
+			post_s += 8.0
+		# One parked support car per road, fully outside the riding surface.
+		var car_s: float = road.s + road.len * 0.55
+		if car_s >= s0 and car_s < s1:
+			_parked_car(parent, road, car_s)
+	for entry in [[asphalt, "Asphalt", Tex.material(Tex.asphalt(), 2.0, true)], [paint, "RoadMarkings", LowPoly.material()], [roadside, "Reflectors", LowPoly.material()]]:
+		var mesh: LowPoly = entry[0]
+		if mesh.is_empty(): continue
+		var mi := MeshInstance3D.new()
+		mi.name = entry[1]
+		mi.mesh = mesh.commit(null, entry[2])
+		parent.add_child(mi)
+
+func _road_strip(lp: LowPoly, s0: float, s1: float, l0: float, r0: float, l1: float, r1: float, color: Color, lift: float) -> void:
+	var c0 := course.road_center(s0)
+	var c1 := course.road_center(s1)
+	var up := Vector3.UP * lift
+	lp.quad(course.world(s0, c0 + l0) + up, course.world(s0, c0 + r0) + up,
+		course.world(s1, c1 + r1) + up, course.world(s1, c1 + l1) + up, color)
+
+func _parked_car(parent: Node3D, road: Dictionary, s: float) -> void:
+	for side in [-1.0, 1.0]:
+		var parking := _parking_spot(road, side)
+		if parking == Vector2.INF: continue
+		s = parking.x
+		var d := parking.y
+		var lp := LowPoly.new()
+		var blue := Color("76b9b2") if int(road.s) % 2 == 0 else Color("d78457")
+		var glass := Color("304756")
+		var rubber := Color("293038")
+		lp.box(Vector3(0, 0.7, 0), Vector3(1.75, 0.65, 3.5), blue)
+		lp.box(Vector3(0, 1.22, 0.2), Vector3(1.58, 0.65, 2.1), glass)
+		lp.box(Vector3(0, 1.57, 0.2), Vector3(1.68, 0.13, 2.3), Color("eee8d7"))
+		for x in [-0.83, 0.83]:
+			lp.box(Vector3(x, 1.23, 0.2), Vector3(0.08, 0.66, 0.12), blue)
+			for z in [-1.08, 1.08]: lp.ring(Vector3(x, 0.4, z), 0.3, 0.1, rubber, 10)
+			lp.box(Vector3(x * 0.7, 0.8, -1.78), Vector3(0.3, 0.18, 0.05), Color("fff1b7"))
+			lp.box(Vector3(x * 0.7, 0.8, 1.78), Vector3(0.3, 0.18, 0.05), Color("c94d46"))
+		lp.box(Vector3(0, 0.46, -1.78), Vector3(1.77, 0.13, 0.08), Color("c6c7bb"))
+		lp.box(Vector3(0, 0.46, 1.78), Vector3(1.77, 0.13, 0.08), Color("c6c7bb"))
+		# Luggage on roof rails makes it read as a trailhead support wagon.
+		for z in [-0.45, 0.85]: lp.box(Vector3(0, 1.73, z), Vector3(1.45, 0.07, 0.07), rubber)
+		lp.box(Vector3(0, 1.91, 0.2), Vector3(1.12, 0.28, 1.35), Color("cdab62"))
+		var car := MeshInstance3D.new()
+		car.name = "ParkedCar"
+		car.mesh = lp.commit()
+		var forward := (course.world(s + 0.5, d) - course.world(s - 0.5, d)).normalized()
+		var right := course.right(s)
+		var up := right.cross(forward).normalized()
+		car.transform = Transform3D(Basis(up.cross(forward).normalized(), up, forward), course.world(s, d))
+		parent.add_child(car)
+		return
+
+func _parking_spot(road: Dictionary, side: float) -> Vector2:
+	# Look along the verge too, instead of hiding a car behind the first tree.
+	for fraction in [0.55, 0.35, 0.75, 0.2, 0.85]:
+		var s: float = road.s + road.len * fraction
+		var d := course.road_center(s) + side * (float(road.half_width) + 3.0)
+		if course.gradient(s, d).length() > 0.45 or course.in_water(s, d): continue
+		var clear := true
+		for o in course.obstacles:
+			if Vector2(o.s - s, o.d - d).length() < o.r + 4.5:
+				clear = false
+				break
+		if clear: return Vector2(s, d)
+	return Vector2.INF
 
 func _tree(lp: LowPoly, p: Vector3, look: String) -> void:
 	var scale := _rng.randf_range(0.8, 1.35)
