@@ -13,6 +13,7 @@ const RADIUS := 0.45           ## Each bike is two of these circles, front and b
 const HALF_LENGTH := 0.65
 const AXLE := 0.6             ## Front axle height above the ground, m.
 const WHEEL_REACH := 0.35     ## How far in front of the front axle the tyre reaches.
+const BRAKE_LOCK := 0.8       ## Firm trigger pressure locks wheel rotation.
 
 var s := 0.0
 var d := 0.0
@@ -36,6 +37,8 @@ var wobble := 0.0
 var crashes := 0
 var skid := 0.0         ## How hard the tyres are sliding this step, 0..1.
 var skid_time := 0.0
+var brake_locked := false
+var placement_id := 0  ## Separates contact trails across respawns.
 var crash_reason := ""
 var yaw := 0.0          ## Bike twisted away from the direction of travel (in the air).
 var severity := 0.0     ## How bad the last landing was; above 1 is a crash.
@@ -47,6 +50,7 @@ var _stuck_s := 0.0     ## Where we last made real progress downhill, and how lo
 var _stuck_t := 0.0
 
 func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
+	placement_id += 1
 	s = p_s
 	d = p_d
 	v = p_v
@@ -56,6 +60,8 @@ func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
 	vy = v * c.gradient(s, d).x
 	grounded = true
 	crashed = false
+	brake_locked = false
+	skid = 0.0
 
 ## `input`: steer (-1..1, right positive), pedal (0..1), brake (0..1),
 ## hop (bool, pressed this step). In the air brake lifts the nose.
@@ -80,6 +86,8 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	b.hard_landing = false
 	b.landed = false
 	b.launched = false
+	b.skid = 0.0
+	b.brake_locked = false
 	b.invulnerable = maxf(0.0, b.invulnerable - dt)
 	b.wobble = maxf(0.0, b.wobble - dt)
 	if b.crashed:
@@ -89,6 +97,10 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	var pedal: float = clampf(input.get("pedal", 0.0), 0.0, 1.0)
 	var brake: float = clampf(input.get("brake", 0.0), 0.0, 1.0)
 	b.pedaling = pedal
+	b.brake_locked = brake >= BRAKE_LOCK
+	if b.brake_locked:
+		pedal = 0.0
+		b.pedaling = 0.0
 	if b.wobble > 0.0:
 		steer += sin(b.wobble * 23.0) * 0.5
 		pedal = 0.0
@@ -108,18 +120,21 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		acc -= 0.12 + (6.0 if wet else 0.0)
 		acc -= 0.0042 * b.v * b.v
 		acc += pedal * 9.0 * clampf((16.0 - b.v) / 6.0, 0.0, 1.0)
-		acc -= brake * 18.0 * (0.4 + 0.6 * ground_grip)
+		# Locked rubber slides instead of rolling: strong longitudinal drag,
+		# but less grip than a tyre braking just below its traction limit.
+		acc -= brake * 18.0 * (0.4 + 0.6 * ground_grip) * (0.85 if b.brake_locked else 1.0)
 		b.v = maxf(0.0, b.v + acc * dt)
 		var rate := turn_rate(b.v) * (1.4 if brake > 0.3 else 1.0)
 		# Grip limits how hard you can turn at speed; braking hard eats into it.
 		# Ask for more and the tyres slide: you scrub speed and run wide.
-		var grip := GRIP * ground_grip * (1.0 - 0.35 * brake) / maxf(b.v, 1.0)
+		var grip := GRIP * ground_grip * (0.45 if b.brake_locked else 1.0 - 0.35 * brake) / maxf(b.v, 1.0)
 		var yaw := steer * rate
 		b.skid = 0.0
 		if absf(yaw) > grip:
 			b.skid = clampf((absf(yaw) - grip) / grip, 0.0, 1.0)
 			b.v = maxf(0.0, b.v - b.skid * 5.0 * dt)
 			yaw = signf(yaw) * grip
+		if b.brake_locked: b.skid = maxf(b.skid, clampf(b.v / 2.0, 0.0, 1.0))
 		b.psi += yaw * dt
 		b.steer_angle = lerpf(b.steer_angle, steer * steer_lock(b.v), minf(1.0, dt * 14.0))
 		# Side slopes pull you down the fall line, so every roll and hollow
@@ -193,6 +208,8 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 			if b.crashed: return
 	b.touching = false
 	_collide_obstacles(b, c, steer)
+	if not b.grounded or b.crashed:
+		b.skid = 0.0
 	# Wedged in a pocket of rocks: hop off and walk the bike out.
 	# Same when you've ground to a halt on a bank without braking.
 	var stalled := b.grounded and b.v < 0.8 and brake < 0.1
@@ -351,6 +368,8 @@ static func knock(b: Bike, amount: float) -> void:
 ## Rider and bike part ways. What happens next is physics: each is thrown
 ## with the speed it had, the rider over the bars if the bike stopped dead.
 static func _crash(b: Bike, reason := "hit") -> void:
+	b.brake_locked = false
+	b.skid = 0.0
 	b.crash_reason = reason
 	b.crashed = true
 	b.crash_t = 0.0

@@ -23,7 +23,7 @@ jobs:
         run: |
           GODOT=Godot_v4.6.2-stable_linux.x86_64
           "$GODOT" --headless --path downhill-rush --editor --import
-          for check in air_speed rider_animation wheel_contact terrain_variety course_check scenery_check ride_check; do
+          for check in air_speed rider_animation braking wheel_contact terrain_variety course_check scenery_check ride_check; do
             "$GODOT" --headless --path downhill-rush --script "tests/$check.gd"
           done
           python3 downhill-rush/tests/lifecycle.py --godot "$GODOT"

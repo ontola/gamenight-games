@@ -12,6 +12,9 @@ first through the finish gate, takes the round. First to three rounds wins.
 Godot 4.5, GL Compatibility renderer, 1 to 8 riders. Everything is built from
 code at runtime: low-poly terrain, trees, rocks and riders, with no imported
 models. Bikes have spoked wheels: tyre, silver rim, hub and laced spokes.
+Light braking keeps the wheels rolling. Firm braking locks grounded tyres,
+reduces cornering grip and leaves short-lived skid marks at wheel contacts;
+airborne wheels leave no marks.
 
 Riders are ordinary 90s BMX kids in flannel, striped or plain shirts, jeans
 and sneakers, with a lid or a backwards cap. Clothes, dirt and rock carry small
@@ -199,6 +202,7 @@ godot --headless --path downhill-rush --script tests/scenery_check.gd   # vegeta
 godot --headless --path downhill-rush --script tests/wheel_contact.gd # low rocks and fast impacts
 godot --headless --path downhill-rush --script tests/air_speed.gd     # airborne momentum and landing energy
 godot --headless --path downhill-rush --script tests/rider_animation.gd # airborne pedals, legs and wheel inertia
+godot --headless --path downhill-rush --script tests/braking.gd       # rolling, wheel lock and grounded skid marks
 godot --headless --path downhill-rush --script tests/ride_check.gd    # crashes and times per strategy
 python3 downhill-rush/tests/lifecycle.py --godot godot               # managed launch against a fake host
 tools/shot.sh out.png --demo --skip=30                               # screenshot via xvfb

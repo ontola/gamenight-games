@@ -56,6 +56,7 @@ const DRIVE_RATIO := 2.2
 var _front_spin_rate := 0.0
 var _rear_spin_rate := 0.0
 var _wheels_ready := false
+var skid_marks: Node3D
 
 const HIP := Vector3(0, 0.92, -0.2)
 const CRANK_AT := Vector3(0, WHEEL + 0.06, -0.03)
@@ -65,6 +66,10 @@ const SHIN := 0.42
 
 
 func setup(p_color: Color, p_name: String, p_style: int = 0) -> void:
+	skid_marks = preload("res://src/skid_marks.gd").new()
+	# World marks must survive the rider's invulnerability visibility flash.
+	get_parent().add_child(skid_marks)
+	tree_exiting.connect(skid_marks.queue_free)
 	color = p_color
 	style = p_style
 	accent = ACCENTS[(p_style * 3 + 1) % ACCENTS.size()]
@@ -401,7 +406,8 @@ func pose(b: Bike, c: Course, delta: float) -> void:
 	_was_crashed = crashing
 	visible = b.invulnerable <= 0.0 or b.crashed or int(b.invulnerable * 10.0) % 2 == 0
 	var scraping := crashing and ((b.rider_body.grounded and b.rider_body.v.length() > 1.5) or b.rider_body.hit > 2.5 or b.bike_body.hit > 1.5)
-	dust.emitting = (b.grounded and b.v > 7.0 and not b.crashed) or b.landed or scraping or b.skid > 0.2
+	dust.emitting = (b.grounded and not b.crashed and (b.v > 7.0 or b.skid > 0.2)) or b.landed or scraping
+	skid_marks.sample(b, c, delta)
 
 ## Wheel rotation is visual state: airborne pedalling drives only the rear
 ## wheel, never Bike velocity. Free wheels retain their takeoff spin, even
@@ -415,7 +421,10 @@ func _animate_drivetrain(b: Bike, delta: float) -> void:
 	else:
 		_front_spin_rate *= exp(-0.18 * delta)
 		_rear_spin_rate *= exp(-0.18 * delta)
-	var pedalling := b.pedaling > 0.1 and not b.crashed
+	if b.brake_locked:
+		_front_spin_rate = 0.0
+		_rear_spin_rate = 0.0
+	var pedalling := b.pedaling > 0.1 and not b.crashed and not b.brake_locked
 	if pedalling:
 		var cadence := maxf(_rear_spin_rate / DRIVE_RATIO, 7.0)
 		if not b.grounded:
