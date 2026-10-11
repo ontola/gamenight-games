@@ -35,7 +35,10 @@ godot --path downhill-rush -- --demo  # six bots, no input needed
 
 Pads: point the left stick where you want to go on screen (mostly to the
 bottom right) and the bike turns towards it. **A** hops, **RT / X** pedals,
-**LT / B** brakes. In the air the bike stays lined up with where it's flying;
+**LT / B** brakes. In the air the bike keeps its world-space momentum even over
+bends in the course: pedalling adds no thrust, drag slows horizontal motion,
+and gravity only accelerates the fall. Touchdown projects that velocity onto
+the slope without adding energy. The bike stays lined up with where it's flying;
 the stick can only nudge it a little. Brake in the air to lift the nose. Keyboard riders steer left and right relative to the bike
 with WASD + Space or the arrow keys + Enter.
 
@@ -193,6 +196,7 @@ godot --headless --path downhill-rush --script tests/course_check.gd  # cliff ba
 godot --headless --path downhill-rush --script tests/terrain_variety.gd # broad trails, curved cliffs, roads
 godot --headless --path downhill-rush --script tests/scenery_check.gd   # vegetation and safe wildlife
 godot --headless --path downhill-rush --script tests/wheel_contact.gd # low rocks and fast impacts
+godot --headless --path downhill-rush --script tests/air_speed.gd     # airborne momentum and landing energy
 godot --headless --path downhill-rush --script tests/ride_check.gd    # crashes and times per strategy
 python3 downhill-rush/tests/lifecycle.py --godot godot               # managed launch against a fake host
 tools/shot.sh out.png --demo --skip=30                               # screenshot via xvfb

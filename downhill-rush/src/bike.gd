@@ -71,6 +71,11 @@ static func steer_lock(v: float) -> float:
 static func turn_rate(v: float) -> float:
 	return v * tan(steer_lock(v)) / WHEELBASE_M
 
+## Course.right = (-cos(theta), 0, sin(theta)), so world_s = (1 + k*d)
+## times course.forward. Convert world metres to distance along the centreline.
+static func path_scale(c: Course, s: float, d: float) -> float:
+	return 1.0 / maxf(0.3, 1.0 + c.curvature(s) * d)
+
 static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	b.hard_landing = false
 	b.landed = false
@@ -88,11 +93,12 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		steer += sin(b.wobble * 23.0) * 0.5
 		pedal = 0.0
 	var k := c.curvature(b.s)
-	var path_scale := 1.0 / maxf(0.3, 1.0 - k * b.d)
+	var scale := path_scale(c, b.s, b.d)
 	var wet := false
 	var face := 0.0
 	if b.grounded:
 		var grad := riding_gradient(b, c)
+		grad.x *= scale
 		var ground_grip := c.grip(b.s, b.d, grad.length())
 		wet = ground_grip < 0.58 and c.in_water(b.s, b.d)
 		var along := grad.x * cos(b.psi) + grad.y * sin(b.psi)
@@ -140,11 +146,13 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 		# Grabbing the brake in the air lifts the nose for a back-wheel landing.
 		b.pitch += brake * 1.6 * dt
 		b.lean = lerpf(b.lean, steer * 0.3, minf(1.0, dt * 4.0))
-	# The track turns underneath a rider who keeps their heading.
-	b.psi -= k * b.v * cos(b.psi) * path_scale * dt
-	b.psi = clampf(b.psi, -1.45, 1.45)
-	b.s += b.v * cos(b.psi) * path_scale * dt
+	# World heading is theta - psi: when the track turns underneath an
+	# airborne rider, psi increases with theta to preserve their flight line.
+	var ds := b.v * cos(b.psi) * scale * dt
+	b.s += ds
 	b.d += b.v * sin(b.psi) * dt
+	b.psi += k * ds
+	b.psi = clampf(b.psi, -1.45, 1.45)
 	var limit := Course.CORRIDOR + 9.0
 	if absf(b.d) > limit:
 		b.d = signf(b.d) * limit
@@ -226,6 +234,7 @@ static func landing_severity(impact: float, pitch_error: float, yaw: float, spee
 
 static func _land(b: Bike, c: Course, ground: float) -> void:
 	var grad := riding_gradient(b, c)
+	grad.x *= path_scale(c, b.s, b.d)
 	var along := grad.x * cos(b.psi) + grad.y * sin(b.psi)
 	var slope := atan(along)
 	var path := atan2(b.vy, maxf(b.v, 0.1))
@@ -238,17 +247,21 @@ static func _land(b: Bike, c: Course, ground: float) -> void:
 	if b.invulnerable <= 0.0 and b.severity > c.crash_limit:
 		_crash(b, "landing")
 		return
-	b.v = speed * cos(slope - path)
+	# Project the incoming velocity onto the final contact direction. v is
+	# HORIZONTAL speed: storing tangent speed here adds energy on every slope.
+	var next_psi := clampf(b.psi + b.yaw * 0.3, -1.45, 1.45)
+	var next_along := grad.x * cos(next_psi) + grad.y * sin(next_psi)
+	b.v = maxf(0.0, (b.v * cos(next_psi - b.psi) + b.vy * next_along) / (1.0 + next_along * next_along))
 	if b.severity > 0.6 * c.crash_limit:
 		# Rough: you stay on, but it costs speed and you wobble.
 		b.hard_landing = true
 		b.v *= lerpf(0.8, 0.45, clampf((b.severity / c.crash_limit - 0.6) / 0.4, 0.0, 1.0))
 		b.wobble = 0.6
 	# Landing crooked turns you a little towards where the bike points.
-	b.psi = clampf(b.psi + b.yaw * 0.3, -1.45, 1.45)
+	b.psi = next_psi
 	b.yaw = 0.0
-	b.vy = b.v * along
-	b.pitch = slope
+	b.vy = b.v * next_along
+	b.pitch = atan(next_along)
 
 ## Rounded stones below axle height form part of the riding surface. The
 ## tyre radius rounds their shoulder; each axle samples it independently.
