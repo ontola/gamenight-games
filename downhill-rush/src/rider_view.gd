@@ -52,6 +52,10 @@ var _rng := RandomNumberGenerator.new()
 ## per side {thigh, shin, shoe} nodes, each a unit-length mesh stretched in place.
 var _legs: Array = []
 var _crank := 0.0
+const DRIVE_RATIO := 2.2
+var _front_spin_rate := 0.0
+var _rear_spin_rate := 0.0
+var _wheels_ready := false
 
 const HIP := Vector3(0, 0.92, -0.2)
 const CRANK_AT := Vector3(0, WHEEL + 0.06, -0.03)
@@ -371,19 +375,9 @@ func pose(b: Bike, c: Course, delta: float) -> void:
 	rotation = Vector3(0, yaw_world, 0)
 	body.rotation = Vector3(-b.pitch, 0, b.lean)
 	_time += delta
-	var spin := b.v / (WHEEL * SCALE) * delta
 	if not b.crashed: _ride_body(b, delta)
 	_steer(b.steer_angle)
-	front_wheel.rotate_x(spin)
-	rear_wheel.rotate_x(spin)
-	# Pedalling turns the cranks with the back wheel; coasting, the feet
-	# settle level, the way BMX riders stand on the pedals.
-	if b.pedaling > 0.1 and b.grounded and not b.crashed:
-		_crank += maxf(spin / 2.2, 7.0 * delta)
-	else:
-		var level := roundf((_crank - PI * 0.5) / PI) * PI + PI * 0.5
-		_crank = move_toward(_crank, level, 4.0 * delta)
-	_crank = fmod(_crank, TAU * 100.0)
+	_animate_drivetrain(b, delta)
 	_pose_legs()
 	if not b.crashed: _pose_arms()
 	var crashing := b.crashed and b.rider_body != null
@@ -408,6 +402,31 @@ func pose(b: Bike, c: Course, delta: float) -> void:
 	visible = b.invulnerable <= 0.0 or b.crashed or int(b.invulnerable * 10.0) % 2 == 0
 	var scraping := crashing and ((b.rider_body.grounded and b.rider_body.v.length() > 1.5) or b.rider_body.hit > 2.5 or b.bike_body.hit > 1.5)
 	dust.emitting = (b.grounded and b.v > 7.0 and not b.crashed) or b.landed or scraping or b.skid > 0.2
+
+## Wheel rotation is visual state: airborne pedalling drives only the rear
+## wheel, never Bike velocity. Free wheels retain their takeoff spin, even
+## while the rider levels the pedals to coast.
+func _animate_drivetrain(b: Bike, delta: float) -> void:
+	var rolling_rate := b.v / (WHEEL * SCALE)
+	if b.grounded or not _wheels_ready:
+		_front_spin_rate = rolling_rate
+		_rear_spin_rate = rolling_rate
+		_wheels_ready = true
+	else:
+		_front_spin_rate *= exp(-0.18 * delta)
+		_rear_spin_rate *= exp(-0.18 * delta)
+	var pedalling := b.pedaling > 0.1 and not b.crashed
+	if pedalling:
+		var cadence := maxf(_rear_spin_rate / DRIVE_RATIO, 7.0)
+		if not b.grounded:
+			_rear_spin_rate = move_toward(_rear_spin_rate, cadence * DRIVE_RATIO, 60.0 * delta)
+		_crank += cadence * delta
+	else:
+		var level := roundf((_crank - PI * 0.5) / PI) * PI + PI * 0.5
+		_crank = move_toward(_crank, level, 4.0 * delta)
+	front_wheel.rotate_x(_front_spin_rate * delta)
+	rear_wheel.rotate_x(_rear_spin_rate * delta)
+	_crank = fmod(_crank, TAU * 100.0)
 
 ## Body over bike. The bike follows every bump and slope; the rider's mass
 ## doesn't. Their pitch and roll chase a calmer target with their own lag,
