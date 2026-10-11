@@ -37,6 +37,11 @@ func _run() -> void:
 		_check(not cars.is_empty(), "%s has a parked support car" % biome)
 		for car in cars:
 			_check(car.transform.basis.y.y > 0.8, "support car follows the ground upright")
+			var sd: Vector2 = car.get_meta("course_position")
+			_check(absf(sd.y - c.trail_d(sd.x)) > c.trail_half(sd.x) + 3.0 and not c.on_road(sd.x, sd.y, 1.0), "support car keeps road and both dirt-trail approaches clear")
+		for road in c.roads:
+			var across := c.world(c.road_line(road, 12.0), 12.0) - c.world(c.road_line(road, -12.0), -12.0)
+			_check(absf(across.normalized().dot(c.forward(road.s))) < 0.5, "painted road crosses the fall line")
 		print("    %d animals, %d parked cars" % [view._ambient.size(), view.find_children("ParkedCar*", "MeshInstance3D", true, false).size()])
 		root.remove_child(view)
 		view.free()

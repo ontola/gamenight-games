@@ -68,8 +68,9 @@ shuffled string of set pieces with open mountain between them:
 - **band**: a cliff band across the slope (below);
 - **turn**: the valley swings about 60 degrees to one side;
 - **flat**: a bench where you have to pedal;
-- **road**: paved stretches through quiet sections, with lane markings, roadside
-  posts and parked cars. Asphalt smooths the small bumps;
+- **road**: a two-lane mountain road crosses the dirt trail on a quiet bench,
+  with roadside posts and parked cars clear of both trail approaches. Asphalt
+  smooths the small bumps across the short crossing;
 - **kicker**: one to three jumps built into the slope;
 - **gully**: a single narrow, steep path between boulder-strewn banks;
 - **slalom**: rows of trees or rocks with a few gaps;

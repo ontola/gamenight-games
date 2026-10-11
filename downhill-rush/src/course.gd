@@ -37,7 +37,8 @@ var bands: Array[Dictionary] = []
 ## kicker (jumps built into the slope), gully (one narrow, steep path between
 ## boulders), slalom (rows of trees and rocks with gaps), open (bare mountain).
 var sections: Array[Dictionary] = []
-## Paved stretches of the trail on open ground: {s, len, half_width}.
+## Cross-slope roads intersect the dirt trail: {s, half_width, min_d, max_d,
+## skew, phase}. Their centre is road_line(road, d), across the whole landscape.
 var roads: Array[Dictionary] = []
 var view := PackedFloat32Array()    ## Smoothed heading: the map's main direction, for the camera.
 ## Streams across the slope: {s, wiggle, phase}.
@@ -188,32 +189,34 @@ func _plan_sections() -> void:
 		s += sec.len + _rng.randf_range(8.0, 18.0)
 
 func _plan_roads() -> void:
-	# Reuse quiet sections: asphalt never masks a cliff, jump or lake.
+	# A narrow crossing on a quiet bench; the trail stays dirt before and after.
 	for sec in sections:
 		if sec.kind not in ["flat", "open"]: continue
-		roads.append({"s": sec.s, "len": sec.len, "half_width": _TRAIL[difficulty] + 0.8})
+		roads.append({"s": sec.s + sec.len * 0.5, "half_width": 3.2,
+			"min_d": -EDGE, "max_d": EDGE, "skew": 0.045 if int(sec.s) % 2 == 0 else -0.045,
+			"phase": float(seed_value % 17) + sec.s * 0.01})
 
-func road_at(s: float) -> Dictionary:
+func road_at(s: float, d: float = INF) -> Dictionary:
 	for road in roads:
-		if s >= road.s and s < road.s + road.len: return road
+		if absf(s - road.s) > road.half_width + 8.0: continue
+		if d == INF or (d >= road.min_d and d <= road.max_d and absf(s - road_line(road, d)) < road.half_width): return road
 	return {}
 
-func road_center(s: float) -> float:
-	return trail_d(s)
+## Distance down the mountain at a road centreline's sideways coordinate.
+func road_line(road: Dictionary, d: float) -> float:
+	return road.s + road.skew * d + 1.2 * (sin(d / 24.0 + road.phase) - sin(road.phase))
 
-func road_half(s: float) -> float:
-	var road := road_at(s)
-	return road.half_width if not road.is_empty() else 0.0
-
-func on_road(s: float, d: float) -> bool:
-	var half := road_half(s)
-	return half > 0.0 and absf(d - road_center(s)) < half
+func on_road(s: float, d: float, margin: float = 0.0) -> bool:
+	for road in roads:
+		if d < road.min_d - margin or d > road.max_d + margin: continue
+		# Conservative radius clearance also covers the gentle diagonal/curve.
+		if absf(s - road_line(road, d)) < road.half_width + margin * 1.1: return true
+	return false
 
 func _road_blend(s: float, d: float) -> float:
 	var road := road_at(s)
-	if road.is_empty() or trail.is_empty(): return 0.0
-	var along := smoothstep(road.s, road.s + 6.0, s) * (1.0 - smoothstep(road.s + road.len - 6.0, road.s + road.len, s))
-	return along * (1.0 - smoothstep(road.half_width, road.half_width + 2.0, absf(d - road_center(s))))
+	if road.is_empty() or d < road.min_d or d > road.max_d: return 0.0
+	return 1.0 - smoothstep(road.half_width, road.half_width + 3.0, absf(s - road_line(road, d)))
 
 func section_at(s: float, kind: String = "") -> Dictionary:
 	for sec in sections:
@@ -666,7 +669,7 @@ func _place_streams() -> void:
 		var clear := true
 		for sec in sections:
 			if sec.kind != "open" and sec.kind != "flat" and s > sec.s - 6.0 and s < sec.s + sec.len + 6.0: clear = false
-		if not road_at(s).is_empty(): clear = false
+		if not road_at(s).is_empty() or not road_at(s - 6.0).is_empty() or not road_at(s + 6.0).is_empty(): clear = false
 		if clear:
 			streams.append({"s": s, "wiggle": _rng.randf_range(0.08, 0.2), "phase": _rng.randf() * TAU})
 			s += _rng.randf_range(120.0, 200.0)
@@ -764,10 +767,11 @@ func _place_set_piece_obstacles() -> void:
 				s += 2.3
 
 func _add_obstacle(s: float, d: float, r: float, h: float, kind: String, set_piece := false) -> void:
-	# Keep the whole marked width clear, including the radius of set-piece rocks.
-	# Occasional low stones remain on dirt; paved stretches stay clear.
-	if absf(d - trail_d(s)) < maxf(trail_half(s), road_half(s)) + r:
-		if road_half(s) > 0.0 or not (kind == "rock" and r < 0.6 and (set_piece or _rng.randf() < 0.4)): return
+	# Clear the entire transverse road, even far away from the bike trail.
+	if on_road(s, d, r + 0.6): return
+	# Occasional low stones remain on dirt.
+	if absf(d - trail_d(s)) < trail_half(s) + r:
+		if not (kind == "rock" and r < 0.6 and (set_piece or _rng.randf() < 0.4)): return
 	if not set_piece:
 		var sec := section_at(s)
 		if not sec.is_empty() and sec.kind in ["gully", "slalom"]: return

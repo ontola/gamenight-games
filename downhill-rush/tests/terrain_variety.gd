@@ -29,7 +29,7 @@ func _initialize() -> void:
 				var blocked := 0
 				for o in c.obstacles:
 					if o.kind == "rock" and o.r < 0.6: continue
-					if absf(o.d - c.trail_d(o.s)) < maxf(c.trail_half(o.s), c.road_half(o.s)) + o.r - 0.001: blocked += 1
+					if absf(o.d - c.trail_d(o.s)) < c.trail_half(o.s) + o.r - 0.001: blocked += 1
 				check(blocked == 0, "%s/%d: %d solid obstacles intrude into marked route" % [biome, difficulty, blocked])
 				for b in c.bands:
 					var edge_min := INF
@@ -51,10 +51,28 @@ func _initialize() -> void:
 					check(c.trail_half(crossing) <= br.w * 0.5, "Trail paint must fit on narrow bridge")
 					check(absf(c.trail_d(crossing) - br.d) + c.trail_half(crossing) <= br.w * 0.5 + 0.1, "Marked route must line up with bridge")
 				for road in c.roads:
-					var middle: float = road.s + road.len * 0.5
-					var d := c.road_center(middle)
+					var middle: float = road.s
+					for k in 4: middle = c.road_line(road, c.trail_d(middle))
+					var d := c.trail_d(middle)
 					check(c.surface(middle, d) == C.Surface.ASPHALT, "Road center must be asphalt")
 					check(is_equal_approx(c.world(middle, d).y, c.height(middle, d)), "Road visual and physics height must agree")
-					check(absf(c.height(road.s - 0.001, c.trail_d(road.s)) - c.height(road.s + 0.001, c.trail_d(road.s))) < 0.01, "Road entry smoothing must not create a step")
+					var road_vector := c.world(c.road_line(road, d + 1.0), d + 1.0) - c.world(c.road_line(road, d - 1.0), d - 1.0)
+					var trail_vector := c.world(middle + 1.0, c.trail_d(middle + 1.0)) - c.world(middle - 1.0, c.trail_d(middle - 1.0))
+					var road_dir := Vector2(road_vector.x, road_vector.z).normalized()
+					var trail_dir := Vector2(trail_vector.x, trail_vector.z).normalized()
+					check(absf(road_dir.dot(trail_dir)) < 0.7, "Road must cross the trail, not follow it")
+					check(road.max_d - road.min_d > road.half_width * 12.0, "Road must extend sideways into landscape")
+					for side in [-1.0, 1.0]:
+						var approach: float = middle + side * 9.0
+						check(c.surface(approach, c.trail_d(approach)) in [C.Surface.TRAIL, C.Surface.DIRT], "Dirt trail must remain visible before and after crossing")
+						for boundary in [road.half_width, road.half_width + 3.0]:
+							var edge_s: float = middle + side * boundary
+							check(absf(c.height(edge_s - 0.001, d) - c.height(edge_s + 0.001, d)) < 0.01, "Road crossing and shoulder must not create a step")
+					var road_blocked := 0
+					for o in c.obstacles:
+						if absf(o.s - c.road_line(road, o.d)) < road.half_width + o.r: road_blocked += 1
+					check(road_blocked == 0, "Full transverse road footprint must be clear of trees and rocks")
+					for across in [-50.0, -30.0, -10.0, 10.0, 30.0, 50.0]:
+						check(c.surface(c.road_line(road, across), across) == C.Surface.ASPHALT, "Asphalt contact must extend across mountain, not just bike trail")
 	print("Terrain variety: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)

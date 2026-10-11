@@ -481,46 +481,39 @@ func _animal(kind: String) -> Node3D:
 	animal.add_child(head)
 	return animal
 
-## Painted mountain-road stretches use exactly the surface the tyres sample.
-## The thin overlay only sharpens its silhouette against the coarser terrain.
+## A car road crosses the mountain from side to side. The dirt trail remains
+## legible uphill/downhill of the short asphalt crossing.
 func _roads(parent: Node3D, s0: float, s1: float) -> void:
 	var asphalt := LowPoly.new()
 	var paint := LowPoly.new()
 	var roadside := LowPoly.new()
 	for road in course.roads:
-		var start := maxf(s0, road.s)
-		var finish := minf(s1, road.s + road.len)
-		if finish <= start: continue
-		var s := start
-		while s < finish - 0.001:
-			var next := minf(s + 0.5, finish)
-			var h0 := course.road_half(s + 0.001)
-			var h1 := course.road_half(next - 0.001)
-			# Follow crossfall and small terrain facets across both lanes too.
-			for lane in 20:
-				var f0 := float(lane) / 20.0
-				var f1 := float(lane + 1) / 20.0
-				_road_strip(asphalt, s, next, lerpf(-h0, h0, f0), lerpf(-h0, h0, f1), lerpf(-h1, h1, f0), lerpf(-h1, h1, f1), Color("505963"), 0.025)
+		if road.s < s0 or road.s >= s1: continue
+		var d: float = road.min_d
+		var half: float = road.half_width
+		while d < road.max_d - 0.001:
+			var next := minf(d + 0.5, road.max_d)
+			for lane in 16:
+				var l := lerpf(-half, half, float(lane) / 16.0)
+				var r := lerpf(-half, half, float(lane + 1) / 16.0)
+				_road_strip(asphalt, road, d, next, l, r, Color("505963"), 0.035)
 			for side in [-1.0, 1.0]:
-				var d0: float = side * (h0 - 0.35)
-				var d1: float = side * (h1 - 0.35)
-				_road_strip(paint, s, next, d0 - 0.065, d0 + 0.065, d1 - 0.065, d1 + 0.065, Color("e9e6cb"), 0.035)
-			if int((s - road.s) / 3.0) % 2 == 0:
-				_road_strip(paint, s, next, -0.085, 0.085, -0.085, 0.085, Color("f1ce64"), 0.04)
-			s = next
-		# Reflector posts suggest a road for cars while leaving the route open.
-		var post_s: float = ceilf((start - road.s) / 8.0) * 8.0 + road.s
-		while post_s < finish:
+				var edge: float = side * (half - 0.25)
+				_road_strip(paint, road, d, next, edge - 0.065, edge + 0.065, Color("e9e6cb"), 0.06)
+			if int((d - road.min_d) / 3.0) % 2 == 0:
+				_road_strip(paint, road, d, next, -0.075, 0.075, Color("f1ce64"), 0.065)
+			d = next
+		var post_d: float = road.min_d + 4.0
+		while post_d < road.max_d:
 			for side in [-1.0, 1.0]:
-				var d: float = course.road_center(post_s) + side * (course.road_half(post_s) + 0.8)
-				var p := course.world(post_s, d)
+				var post_s: float = course.road_line(road, post_d) + side * (half + 0.7)
+				# Leave both approaches to the bike crossing completely open.
+				if absf(post_d - course.trail_d(post_s)) < course.trail_half(post_s) + 1.5: continue
+				var p := course.world(post_s, post_d)
 				roadside.box(p + Vector3(0, 0.4, 0), Vector3(0.12, 0.8, 0.12), Color("ede8d8"))
 				roadside.box(p + Vector3(0, 0.63, 0), Vector3(0.135, 0.16, 0.135), Color("303b46"))
-			post_s += 8.0
-		# One parked support car per road, fully outside the riding surface.
-		var car_s: float = road.s + road.len * 0.55
-		if car_s >= s0 and car_s < s1:
-			_parked_car(parent, road, car_s)
+			post_d += 8.0
+		_parked_car(parent, road)
 	for entry in [[asphalt, "Asphalt", Tex.material(Tex.asphalt(), 2.0, true)], [paint, "RoadMarkings", LowPoly.material()], [roadside, "Reflectors", LowPoly.material()]]:
 		var mesh: LowPoly = entry[0]
 		if mesh.is_empty(): continue
@@ -529,18 +522,18 @@ func _roads(parent: Node3D, s0: float, s1: float) -> void:
 		mi.mesh = mesh.commit(null, entry[2])
 		parent.add_child(mi)
 
-func _road_strip(lp: LowPoly, s0: float, s1: float, l0: float, r0: float, l1: float, r1: float, color: Color, lift: float) -> void:
-	var c0 := course.road_center(s0)
-	var c1 := course.road_center(s1)
+func _road_strip(lp: LowPoly, road: Dictionary, d0: float, d1: float, left: float, right: float, color: Color, lift: float) -> void:
+	var c0 := course.road_line(road, d0)
+	var c1 := course.road_line(road, d1)
 	var up := Vector3.UP * lift
-	lp.quad(course.world(s0, c0 + l0) + up, course.world(s0, c0 + r0) + up,
-		course.world(s1, c1 + r1) + up, course.world(s1, c1 + l1) + up, color)
+	lp.quad(course.world(c0 + left, d0) + up, course.world(c0 + right, d0) + up,
+		course.world(c1 + right, d1) + up, course.world(c1 + left, d1) + up, color)
 
-func _parked_car(parent: Node3D, road: Dictionary, s: float) -> void:
+func _parked_car(parent: Node3D, road: Dictionary) -> void:
 	for side in [-1.0, 1.0]:
 		var parking := _parking_spot(road, side)
 		if parking == Vector2.INF: continue
-		s = parking.x
+		var s := parking.x
 		var d := parking.y
 		var lp := LowPoly.new()
 		var blue := Color("76b9b2") if int(road.s) % 2 == 0 else Color("d78457")
@@ -562,18 +555,21 @@ func _parked_car(parent: Node3D, road: Dictionary, s: float) -> void:
 		var car := MeshInstance3D.new()
 		car.name = "ParkedCar"
 		car.mesh = lp.commit()
-		var forward := (course.world(s + 0.5, d) - course.world(s - 0.5, d)).normalized()
-		var right := course.right(s)
-		var up := right.cross(forward).normalized()
+		var offset := s - course.road_line(road, d)
+		var forward := (course.world(course.road_line(road, d + 0.5) + offset, d + 0.5) - course.world(course.road_line(road, d - 0.5) + offset, d - 0.5)).normalized()
+		var right := Vector3.UP.cross(forward).normalized()
+		var up := forward.cross(right).normalized()
 		car.transform = Transform3D(Basis(up.cross(forward).normalized(), up, forward), course.world(s, d))
+		car.set_meta("course_position", parking)
 		parent.add_child(car)
 		return
 
 func _parking_spot(road: Dictionary, side: float) -> Vector2:
-	# Look along the verge too, instead of hiding a car behind the first tree.
-	for fraction in [0.55, 0.35, 0.75, 0.2, 0.85]:
-		var s: float = road.s + road.len * fraction
-		var d := course.road_center(s) + side * (float(road.half_width) + 3.0)
+	# Park parallel to the car road and well away from both trail approaches.
+	for offset in [-12.0, 12.0, -17.0, 17.0, -22.0, 22.0]:
+		var d: float = course.trail_d(road.s) + offset
+		var s: float = course.road_line(road, d) + side * (float(road.half_width) + 2.0)
+		if absf(d - course.trail_d(s)) < course.trail_half(s) + 3.0: continue
 		if course.gradient(s, d).length() > 0.45 or course.in_water(s, d): continue
 		var clear := true
 		for o in course.obstacles:
