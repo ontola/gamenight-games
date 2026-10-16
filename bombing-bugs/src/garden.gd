@@ -1,5 +1,8 @@
 extends Node3D
 const Clay = preload("res://src/clay.gd")
+const Blast = preload("res://src/blast.gd")
+var blast_views: Dictionary = {}
+var blast_lights: Array[OmniLight3D] = []
 var obstacles: Dictionary = {}
 var bomb_views: Dictionary = {}
 var pickup_views: Dictionary = {}
@@ -127,7 +130,9 @@ func reset(match_state: RefCounted) -> void:
 	for n in arena_root.get_children(): n.free()
 	for n in flame_root.get_children(): n.free()
 	for n in burst_root.get_children(): n.free()
-	obstacles.clear(); bomb_views.clear(); pickup_views.clear(); last_flames = ""
+	obstacles.clear(); bomb_views.clear(); pickup_views.clear(); blast_views.clear(); last_flames = ""
+	for light in blast_lights: light.free()
+	blast_lights.clear()
 	for c in match_state.cells:
 		var value: int = match_state.cells[c]
 		if value == 1 and c.x > 0 and c.x < 12 and c.y > 0 and c.y < 10:
@@ -160,16 +165,29 @@ func sync(match_state: RefCounted, dt: float) -> void:
 		pickup_views[c].position.y = .35+sin(clock*3)*.07
 	for c in pickup_views.keys():
 		if not match_state.pickups.has(c): pickup_views[c].queue_free(); pickup_views.erase(c)
-	var signature := str(match_state.flames.map(func(f: Dictionary) -> Vector2i: return f.cell))
-	if signature != last_flames:
-		last_flames = signature
-		for n in flame_root.get_children(): n.queue_free()
-		for f in match_state.flames:
-			var at := world(Vector2(f.cell))
-			Clay.ball(flame_root,at+Vector3(0,.18,0),Vector3(.98,.40,.98),Color("ef6428"),.12)
-			Clay.ball(flame_root,at+Vector3(0,.34,0),Vector3(.64,.5,.62),Color("ffbc3e"),.15)
-			Clay.ball(flame_root,at+Vector3(.1,.65,0),Vector3(.28,.34,.29),Color("ffe38a"),.1)
+	var burning := {}
+	for f in match_state.flames:
+		burning[f.cell]=maxf(burning.get(f.cell,0),f.time)
+	for c in burning:
+		if not blast_views.has(c):
+			var blast:=Blast.new(); flame_root.add_child(blast); blast.position=world(Vector2(c)); 
+			var connections: Array[Vector2i]=[]
+			for direction in [Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
+				if burning.has(c+direction): connections.append(direction)
+			blast.setup(c.x+c.y*71,connections)
+			blast_views[c]=blast
+		blast_views[c].animate(burning[c])
+	for c in blast_views.keys():
+		if not burning.has(c): blast_views[c].queue_free(); blast_views.erase(c)
+	for light in blast_lights.duplicate():
+		var age: float=light.get_meta("age")+dt; light.set_meta("age",age)
+		if age>=.65: light.queue_free(); blast_lights.erase(light); continue
+		light.light_energy=(1.6 if age<.06 else .75)*pow(1.0-age/.65,1.2)
+		light.light_color=Color("ffe6a4").lerp(Color("ff8025"),age/.65)
 	for e in match_state.events:
+		if e.type == "boom":
+			if blast_lights.size()>=4: blast_lights.pop_front().queue_free()
+			var light:=OmniLight3D.new(); light.position=world(Vector2(e.cell))+Vector3(0,.8,0); light.omni_range=3.4; light.omni_attenuation=1.2; light.shadow_enabled=false; light.set_meta("age",0.0); add_child(light); blast_lights.append(light)
 		if e.type in ["crack","out"]: burst(world(Vector2(e.cell)),Color("b99561") if e.type == "crack" else Color("f2e9bb"))
 	for n in burst_root.get_children():
 		var life: float = n.get_meta("life")-dt; n.set_meta("life",life)
