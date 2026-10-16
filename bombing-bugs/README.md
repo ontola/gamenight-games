@@ -72,6 +72,8 @@ godot --headless --path bombing-bugs --script tests/simulation.gd
 python3 bombing-bugs/tests/lifecycle.py /path/to/godot
 mkdir -p dist
 godot --headless --path bombing-bugs --export-release Windows "$PWD/dist/BombingBugs.exe"
+# On Windows, check the exported executable as well:
+python bombing-bugs/tests/lifecycle.py C:/path/to/BombingBugs.exe --packaged
 ```
 
 Simulation tests cover continuous movement, collision, bomb exit/re-entry,
@@ -86,7 +88,10 @@ For a visual preview: `godot --path bombing-bugs -- --demo` runs AI play.
 `--screenshot=/absolute/path.png` captures the rendered viewport and exits.
 Screenshots under `docs/` are actual engine renders, not the AI concept image.
 
+The Windows export was smoke-tested and passed the same managed lifecycle test
+on Godot 4.6.2, including two separate seats. The simulation suite passed on
+Windows 4.6.2 and Linux 4.5.2 (7,848 assertions and ten completed AI battles).
 These automated checks do not certify physical controllers, Windows foreground
-handoff or a production catalog install. A Windows playtest is still required.
+handoff or a production catalog install. A physical controller playtest is still required.
 All meshes and sound effects are generated in code; no external art pack or
 runtime asset-generation service is required. License: repository MIT license.

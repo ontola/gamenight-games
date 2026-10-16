@@ -14,6 +14,7 @@ from wire import Peer
 
 def main():
     godot = sys.argv[1] if len(sys.argv) > 1 else "godot"
+    project_args = [] if "--packaged" in sys.argv else ["--path", ROOT.as_posix()]
     with socket.socket() as server:
         server.bind(("127.0.0.1", 0))
         server.listen(1)
@@ -22,7 +23,7 @@ def main():
         # Godot on Windows flushes stdout synchronously: an unread PIPE can
         # stall startup before the WebSocket connects. A file cannot deadlock.
         capture = tempfile.TemporaryFile()
-        game = subprocess.Popen([godot, "--headless", "--path", ROOT.as_posix(), "--quit-after", "36000", "--", "--test-state"], cwd=ROOT, env=env, stdout=capture, stderr=subprocess.STDOUT)
+        game = subprocess.Popen([godot, "--headless"] + project_args + ["--quit-after", "36000", "--", "--test-state"], cwd=ROOT, env=env, stdout=capture, stderr=subprocess.STDOUT)
         try:
             time.sleep(.5)
             if game.poll() is not None:
