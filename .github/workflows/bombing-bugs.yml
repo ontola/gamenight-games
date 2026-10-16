@@ -1,0 +1,44 @@
+name: Bombing Bugs
+on:
+  push:
+    paths: ['bombing-bugs/**', '.github/workflows/bombing-bugs.yml', 'downhill-rush/tests/lifecycle.py']
+  pull_request:
+    paths: ['bombing-bugs/**', '.github/workflows/bombing-bugs.yml', 'downhill-rush/tests/lifecycle.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot 4.6.2
+        run: |
+          curl -fL --retry 3 -o godot.zip https://github.com/godotengine/godot-builds/releases/download/4.6.2-stable/Godot_v4.6.2-stable_linux.x86_64.zip
+          echo "30e6b6d141f0cd5bebd629ad1d0ef1324e60091bb20662d026b402ba58c59937  godot.zip" | sha256sum -c -
+          unzip -q godot.zip -d godot-bin
+          chmod +x godot-bin/Godot_v4.6.2-stable_linux.x86_64
+          echo "$GITHUB_WORKSPACE/godot-bin" >> "$GITHUB_PATH"
+      - name: Import, simulate and check host lifecycle
+        run: |
+          GODOT=Godot_v4.6.2-stable_linux.x86_64
+          "$GODOT" --headless --path bombing-bugs --editor --import --quit
+          "$GODOT" --headless --path bombing-bugs --script tests/simulation.gd
+          python3 bombing-bugs/tests/lifecycle.py "$GODOT"
+      - name: Export Windows build
+        run: |
+          curl -fL --retry 3 -o templates.tpz https://github.com/godotengine/godot-builds/releases/download/4.6.2-stable/Godot_v4.6.2-stable_export_templates.tpz
+          dir="$HOME/.local/share/godot/export_templates/4.6.2.stable"
+          mkdir -p "$dir" dist
+          unzip -q -j templates.tpz templates/version.txt templates/windows_release_x86_64.exe templates/windows_release_x86_64_console.exe -d "$dir"
+          Godot_v4.6.2-stable_linux.x86_64 --headless --path bombing-bugs --export-release Windows "$PWD/dist/BombingBugs.exe"
+          cp bombing-bugs/gamenight.json dist/
+          cp LICENSE dist/
+          printf '{"revision":"%s","engine":"4.6.2","game":"bombing-bugs"}\n' "$GITHUB_SHA" > dist/BUILD.json
+          (cd dist && zip -q BombingBugs-windows.zip BombingBugs.exe gamenight.json LICENSE BUILD.json)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bombing-bugs-windows
+          path: dist/BombingBugs-windows.zip
+          if-no-files-found: error

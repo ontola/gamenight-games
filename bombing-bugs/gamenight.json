@@ -1,0 +1,14 @@
+{
+  "id": "bombing-bugs",
+  "title": "Bombing Bugs",
+  "tagline": "Tiny bugs. Big trouble. A clay garden bomb battle.",
+  "developer": "Joep Meindertsma",
+  "players": {"min": 1, "max": 4, "best": 4},
+  "match_minutes": 3,
+  "price": "free",
+  "tags": ["party", "arena", "versus", "teams", "local-multiplayer", "godot"],
+  "emoji": "🐞",
+  "color": "#ef7056",
+  "integration": {"level": "integrated", "protocol": 1},
+  "links": {"source": "https://github.com/ontola/gamenight-games/tree/main/bombing-bugs"}
+}
