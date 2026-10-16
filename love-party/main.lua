@@ -36,7 +36,7 @@ local function prepare(seats, players)
 	resultsTime = 0
 	if state and mode.dispose then mode.dispose(state) end
 	state = mode.new(roster, U.rng(tonumber(os.getenv("GNLOVE_SEED")) or os.time()))
-	remaining, finished, accumulator = duration or mode.duration or 60, false, 0
+	remaining, finished, accumulator = mode.untimed and math.huge or duration or mode.duration or 60, false, 0
 	menu = false
 	if managed and love.graphics then
 		-- Exercise lazy font/texture uploads before reporting Ready. Keep the
@@ -128,7 +128,8 @@ function love.load(args)
 				instantJoin = mode.join ~= nil,
 				party = function(seats, players, presence)
 					if state then
-						local roster = require("shared.participation").apply(mode, state, seats, players, presence)
+						local roster = mode.party and mode.party(state, U.players(seats, players), presence)
+                            or require("shared.participation").apply(mode, state, seats, players, presence)
                         roundRoster = roster
 						Input.bind(roster, pads())
 					end
@@ -177,12 +178,16 @@ function love.update(dt)
 	if not state or (bridge and bridge.phase ~= "running") then
 		return
 	end
+    if mode.menuUpdate and mode.menuUpdate(state, dt, Input.menu(pads()), function(key,value)
+        mode.setting(key,value)
+        if bridge then bridge.transport:send({type="set_setting",game=mode.id,key=key,value=value}) end
+    end) then return end
 	if finished then
         resultsTime = resultsTime + math.min(dt, 0.1)
         if resultsTime >= 3 then
             if mode.dispose then mode.dispose(state) end
             state = mode.new(roundRoster, U.rng(os.time()))
-            remaining, finished, accumulator, resultsTime = duration or mode.duration or 60, false, 0, 0
+            remaining, finished, accumulator, resultsTime = mode.untimed and math.huge or duration or mode.duration or 60, false, 0, 0
         end
         return
     end
@@ -265,6 +270,7 @@ function love.draw()
 	end
 end
 function love.keypressed(key)
+    if state and mode.menuUpdate and state.paused and key == "escape" then return end
 	if managed then
 		if (key == "escape" or key == "backspace") and backGate:press() then
 			bridge:back()

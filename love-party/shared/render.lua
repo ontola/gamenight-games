@@ -139,7 +139,7 @@ function R.game(mode, s, remaining, finished, managed)
 	-- A single quiet row replaces the title, scorecards and persistent instructions.
 	G.setFont(R.fonts.small)
 	G.setColor(remaining < 10 and { 1, 0.43, 0.4 } or { 0.55, 0.62, 0.7 })
-	G.printf(string.format("%02d", math.ceil(remaining)), R.width / 2 - 45, 22, 90, "center")
+	G.printf(mode.untimed and (s.layout or "") or string.format("%02d", math.ceil(remaining)), R.width / 2 - 100, 22, 200, "center")
 	local positions = { 28, R.width * 0.23, R.width * 0.59, R.width - 248 }
 	for i, p in ipairs(s.players) do
 		local x = positions[i]
@@ -200,6 +200,7 @@ function R.game(mode, s, remaining, finished, managed)
 		end
 		centered(managed and "Waiting for the party…" or "ENTER / A rematch   •   ESC menu", 490, "body")
 	end
+    if mode.menuDraw then mode.menuDraw(s,G,R.fonts) end
 	R.finish()
 end
 return R

@@ -194,4 +194,23 @@ function M.meaningful(pad)
 		"dpright"
 	)
 end
+function M.menu(devices)
+    local result={}
+    local keys={start="return",up="up",down="down",left="left",right="right",accept="space",cancel="escape"}
+    local buttons={start="start",up="dpup",down="dpdown",left="dpleft",right="dpright",accept="a",cancel="b"}
+    for name,key in pairs(keys) do
+        result[name]=love.keyboard and love.keyboard.isDown(key) or false
+        for _,pad in ipairs(devices or {}) do
+            if pad:isConnected() and pad:isGamepad() then
+                result[name]=result[name] or pad:isGamepadDown(buttons[name])
+                local x,y=pad:getGamepadAxis("leftx"),pad:getGamepadAxis("lefty")
+                if name=="left" then result[name]=result[name] or x<-.5 end
+                if name=="right" then result[name]=result[name] or x>.5 end
+                if name=="up" then result[name]=result[name] or y<-.5 end
+                if name=="down" then result[name]=result[name] or y>.5 end
+            end
+        end
+    end
+    return result
+end
 return M

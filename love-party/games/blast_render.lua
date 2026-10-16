@@ -4,8 +4,6 @@ local Face = require("shared.face")
 local glyphs = {
 	remote = "R",
 	kick = "K",
-	diagonal = "X",
-	beam = "I",
 	star = "*",
 	range = "+",
 	capacity = "2",
@@ -15,8 +13,6 @@ local glyphs = {
 local colors = {
 	remote = { 0.35, 0.9, 1 },
 	kick = { 0.5, 1, 0.6 },
-	diagonal = { 1, 0.5, 0.8 },
-	beam = { 0.8, 0.6, 1 },
 	star = { 1, 0.85, 0.35 },
 	range = { 1, 0.5, 0.35 },
 	capacity = { 0.4, 0.8, 1 },
@@ -27,16 +23,13 @@ local colors = {
 local symbols = {
     remote={"...#...","...#...",".#####.",".#...#.",".#.#.#.",".#...#.",".#####."},
     kick={".##....",".##....",".##....",".#####.",".######",".######","......."},
-    diagonal={"#.....#",".#...#.","..#.#..","...#...","..#.#..",".#...#.","#.....#"},
-    beam={"...#...","..###..","...#...","...#...","...#...","..###..","...#..."},
     star={"#..#..#",".#.#.#.","..###..","#######","..###..",".#.#.#.","#..#..#"},
     range={"...#...","..##...",".###.#.",".######","#######",".#####.","..###.."},
     capacity={"..#....",".###.#.","#####..","#####..",".###.#.","....###",".....#."},
     speed={"....##.","...##..","..##...",".#####.","...##..","..##...",".##...."},
     cross={"...#...","...#...","...#...","#######","...#...","...#...","...#..."},
 }
-local names = {remote="Remote bombs",kick="Kick bombs",diagonal="Diagonal blast",
-    beam="Beam blast",star="Eight-way blast",range="Longer blast",capacity="Extra bomb",
+local names = {remote="Remote bombs",kick="Kick bombs",star="Eight-way blast",range="Longer blast",capacity="Extra bomb",
     speed="Move faster",cross="Cross blast"}
 local function icon(g, fonts, power, x, y, size)
     g.setColor(colors[power])
@@ -127,11 +120,7 @@ function M.draw(s, g, fonts, playerColor)
 		g.setLineWidth(2)
 		g.circle("line", x, y, 16 + pulse)
 		g.setFont(fonts.small)
-		if b.shape == "beam" then
-			g.line(x - b.dx * 9, y - b.dy * 9, x + b.dx * 9, y + b.dy * 9)
-		else
-			g.printf(glyphs[b.shape], x - 16, y - 8, 32, "center")
-		end
+		g.printf(glyphs[b.shape], x - 16, y - 8, 32, "center")
 		if b.remote then
 			g.setColor(colors.remote)
 			g.line(x + 9, y - 11, x + 14, y - 24)
@@ -150,6 +139,11 @@ function M.draw(s, g, fonts, playerColor)
 			g.ellipse("fill", x, y + 17, 15, 6)
 			g.setColor(c)
 			g.rectangle("fill", x - 13, y - 14, 26, 29, 8, 8)
+            if s.settings.teams == "Teams" then
+                g.setColor(p.team==1 and {0.4,0.85,1} or {1,0.6,0.3})
+                g.setLineWidth(3); g.ellipse("line",x,y+20,18,7)
+                g.setFont(fonts.small); g.print("T"..p.team,x-9,y+24)
+            end
             Face.drawFace(p, x, y - 7, 11, {facing=p.dx<0 and -1 or 1})
 			if p.kick then
 				g.setColor(0.5, 1, 0.6)
