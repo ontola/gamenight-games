@@ -170,7 +170,7 @@ func sync(match_state: RefCounted, dt: float) -> void:
 		burning[f.cell]=maxf(burning.get(f.cell,0),f.time)
 	for c in burning:
 		if not blast_views.has(c):
-			var blast:=Blast.new(); flame_root.add_child(blast); blast.position=world(Vector2(c)); 
+			var blast:=Blast.new(); flame_root.add_child(blast); blast.position=world(Vector2(c));
 			var connections: Array[Vector2i]=[]
 			for direction in [Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
 				if burning.has(c+direction): connections.append(direction)
