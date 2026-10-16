@@ -6,6 +6,7 @@ import socket
 import subprocess
 import sys
 import time
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 from wire import Peer
@@ -18,7 +19,10 @@ def main():
         server.listen(1)
         server.settimeout(30)
         env = dict(os.environ, GAMENIGHT="1", GAMENIGHT_ADDR=f"127.0.0.1:{server.getsockname()[1]}", GAMENIGHT_GAME_ID="bombing-bugs", GAMENIGHT_TOKEN="isolated-test")
-        game = subprocess.Popen([godot, "--headless", "--path", ROOT.as_posix(), "--quit-after", "36000", "--", "--test-state"], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        # Godot on Windows flushes stdout synchronously: an unread PIPE can
+        # stall startup before the WebSocket connects. A file cannot deadlock.
+        capture = tempfile.TemporaryFile()
+        game = subprocess.Popen([godot, "--headless", "--path", ROOT.as_posix(), "--quit-after", "36000", "--", "--test-state"], cwd=ROOT, env=env, stdout=capture, stderr=subprocess.STDOUT)
         try:
             time.sleep(.5)
             if game.poll() is not None:
@@ -64,7 +68,10 @@ def main():
         finally:
             if game.poll() is None:
                 game.kill()
-            output = game.communicate(timeout=10)[0].decode(errors="replace")
+            game.wait(timeout=10)
+            capture.seek(0)
+            output = capture.read().decode(errors="replace")
+            capture.close()
             if "TEST_STATE" not in output:
                 print(output)
     assert "SCRIPT ERROR" not in output and "ERROR:" not in output, output
