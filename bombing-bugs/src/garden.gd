@@ -18,43 +18,22 @@ func build() -> void:
 	var env_node := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR; env.background_color = Color("769151")
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR; env.ambient_light_color = Color("d7e0ed"); env.ambient_light_energy = .35
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR; env.ambient_light_color = Color("d0d9db"); env.ambient_light_energy = .26
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	env_node.environment = env; add_child(env_node)
-	var sun := DirectionalLight3D.new(); sun.rotation_degrees = Vector3(-55,-30,0); sun.light_color = Color("fff4de"); sun.light_energy = .85
-	sun.shadow_enabled = true; sun.directional_shadow_max_distance = 40; add_child(sun)
-	Clay.ball(self,Vector3(0,-.8,0),Vector3(40,1.4,35),Color("64803c"))
-	Clay.ball(self,Vector3(0,-.56,0),Vector3(16,.9,14),Color("b78e55"))
-	# A rounded soil patch, with a flat top and no intersecting ground surfaces.
-	var surface := SurfaceTool.new(); surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var rim: Array[Vector3] = []
-	for i in 65:
-		var a := i*TAU/64
-		rim.append(Vector3(signf(cos(a))*pow(absf(cos(a)),.42)*7.0,-.04,signf(sin(a))*pow(absf(sin(a)),.42)*6.0))
-	for i in 64:
-		for v in [Vector3(0,-.04,0),rim[i],rim[i+1]]:
-			surface.set_normal(Vector3.UP); surface.add_vertex(v)
-	var ground := MeshInstance3D.new(); ground.mesh = surface.commit()
-	ground.material_override = Clay.material(Color("bc9566")); add_child(ground)
-	for i in 220:
-		var x := rng.randf_range(-6.6,6.6); var z := rng.randf_range(-5.5,5.5)
-		var s := rng.randf_range(.025,.085)
-		Clay.ball(self,Vector3(x,-.005,z),Vector3(s,s*.3,s),Color("9a784c").lerp(Color("dfba83"),rng.randf()))
-	for i in 150:
-		var a := rng.randf()*TAU
-		var x := cos(a)*rng.randf_range(7.4,10.8)
-		var z := sin(a)*rng.randf_range(6.1,8.6)
-		if absf(x) < 6.9 and absf(z) < 5.9: continue
-		var h := rng.randf_range(.6,2.4)
-		# Front foliage stays low enough to never hide a player.
-		if z > 4: h *= .45
-		for j in 3:
-			var leaf := Clay.ball(self,Vector3(x+j*.09,h*.5-.2,z),Vector3(.15,h,.075),Color("639b3c").lerp(Color("a8bd47"),rng.randf()))
-			leaf.rotation.z = rng.randf_range(-.5,.5)
-		if i % 9 == 0: flower(Vector3(x,0,z),h+0.3)
-	for i in 20:
-		var x := rng.randf_range(-9,9); var z := rng.randf_range(-8,-6)
-		clover(Vector3(x,0,z),rng.randf_range(.4,1.1))
+	var sun := DirectionalLight3D.new(); sun.rotation_degrees = Vector3(-52,-32,0); sun.light_color = Color("ffe7bd"); sun.light_energy = .74
+	sun.shadow_enabled = true; sun.shadow_blur = 2.0; sun.directional_shadow_max_distance = 40; add_child(sun)
+	build_terrain()
+	build_grass()
+	for i in 420:
+		var x := rng.randf_range(-5.4,5.4); var z := rng.randf_range(-4.4,4.4)
+		var size := rng.randf_range(.018,.055)
+		Clay.ball(self,Vector3(x,-.005,z),Vector3(size,size*.45,size),Color("8e7049").lerp(Color("d1ad78"),rng.randf()))
+	for i in 85:
+		var at := Vector3(rng.randf_range(-9,9),.49,rng.randf_range(-8,7))
+		if absf(at.x)<6.2 and absf(at.z)<5.2: continue
+		clover(at,rng.randf_range(.3,.75))
+		if i%5==0: flower(at,rng.randf_range(.4,.85))
 	Clay.rod(self,Vector3(-8,.25,-6.8),Vector3(7,.6,-7.6),.3,Color("74513b"))
 	for i in 4:
 		Clay.rod(self,Vector3(-6+i*3,.5,-7),Vector3(-5+i*3,.7,-8.2),.1,Color("74513b"))
@@ -73,6 +52,62 @@ func build() -> void:
 	arena_root = Node3D.new(); add_child(arena_root)
 	flame_root = Node3D.new(); add_child(flame_root)
 	burst_root = Node3D.new(); add_child(burst_root)
+
+# The collision boundary remains the outer tile row. Only its presentation changes:
+# a continuous eroded bank rises outside the playable cells, rather than a rock fence.
+func build_terrain() -> void:
+	var rings: Array[PackedVector3Array] = []
+	var profiles := [Vector3(5.53,-.04,4.53),Vector3(5.72,.18,4.72),Vector3(6.18,.53,5.18),Vector3(6.65,.49,5.65),Vector3(12,.43,10)]
+	var count := 192
+	for r in profiles.size():
+		var ring := PackedVector3Array(); var profile: Vector3 = profiles[r]
+		for i in count+1:
+			var a := i*TAU/count
+			var rough := sin(a*19)*.025+sin(a*31+.8)*.018
+			var x := signf(cos(a))*pow(absf(cos(a)),.20)*(profile.x+rough)
+			var z := signf(sin(a))*pow(absf(sin(a)),.20)*(profile.z+rough)
+			ring.append(Vector3(x,profile.y+(rough if r>0 else 0),z))
+		rings.append(ring)
+	var surface := SurfaceTool.new(); surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in count:
+		for v in [Vector3(0,-.04,0),rings[0][i],rings[0][i+1]]:
+			surface.set_color(Color("c09a68")); surface.add_vertex(v)
+	for r in profiles.size()-1:
+		var inner_color := Color("a78551") if r<2 else Color("49652b")
+		var outer_color := Color("897046") if r<2 else Color("4a692a")
+		for i in count:
+			var vertices := [rings[r][i],rings[r+1][i],rings[r+1][i+1],rings[r][i],rings[r+1][i+1],rings[r][i+1]]
+			for j in 6:
+				surface.set_color(inner_color if j in [0,3,5] else outer_color); surface.add_vertex(vertices[j])
+	surface.index(); surface.generate_normals()
+	var ground := MeshInstance3D.new(); ground.mesh=surface.commit()
+	ground.material_override=Clay.earth_material(Color.WHITE,.065); add_child(ground)
+
+func build_grass() -> void:
+	# One mesh for thousands of tapered, bent blades keeps the lush border inexpensive.
+	var surface := SurfaceTool.new(); surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in 2400:
+		var at := Vector3(rng.randf_range(-10.5,10.5),.49,rng.randf_range(-8.5,7.7))
+		if absf(at.x)<6.12 and absf(at.z)<5.12: continue
+		var height := rng.randf_range(.45,1.8)
+		if at.z>4: height *= .50
+		var width := rng.randf_range(.065,.16)
+		var a := rng.randf()*TAU
+		var side := Vector3(cos(a),0,sin(a))*width
+		var bend := Vector3(sin(a),0,cos(a))*rng.randf_range(.15,.60)
+		var base := Color("315325").lerp(Color("66832e"),rng.randf())
+		var tip := Color("84a73c").lerp(Color("b3bd52"),rng.randf())
+		for segment in 4:
+			var t := segment/4.0; var u := (segment+1)/4.0
+			var low := at+Vector3(0,height*t,0)+bend*t*t
+			var high := at+Vector3(0,height*u,0)+bend*u*u
+			var vs := [low-side*(1-t),high-side*(1-u),high+side*(1-u),low-side*(1-t),high+side*(1-u),low+side*(1-t)]
+			for j in 6:
+				surface.set_color(base.lerp(tip,t if j in [0,3,5] else u)); surface.add_vertex(vs[j])
+	surface.generate_normals()
+	var grass := MeshInstance3D.new(); grass.mesh=surface.commit()
+	var material := StandardMaterial3D.new(); material.vertex_color_use_as_albedo=true; material.cull_mode=BaseMaterial3D.CULL_DISABLED; material.roughness=.85
+	grass.material_override=material; add_child(grass)
 
 func flower(at: Vector3, height: float) -> void:
 	Clay.rod(self,at,at+Vector3(.1,height,0),.035,Color("5e8535"))
@@ -95,9 +130,10 @@ func reset(match_state: RefCounted) -> void:
 	obstacles.clear(); bomb_views.clear(); pickup_views.clear(); last_flames = ""
 	for c in match_state.cells:
 		var value: int = match_state.cells[c]
-		if value == 1: obstacles[c] = Clay.pebble(arena_root,world(Vector2(c)),rng.randf())
+		if value == 1 and c.x > 0 and c.x < 12 and c.y > 0 and c.y < 10:
+			obstacles[c] = Clay.pebble(arena_root,world(Vector2(c)),rng.randf())
 		elif value == 2:
-			obstacles[c] = Clay.seed(arena_root,world(Vector2(c)),(c.x+c.y*3)%3)
+			obstacles[c] = Clay.sand_mound(arena_root,world(Vector2(c)),c.x+c.y*13)
 			obstacles[c].rotation.y = rng.randf()*TAU
 
 func sync(match_state: RefCounted, dt: float) -> void:
@@ -134,7 +170,7 @@ func sync(match_state: RefCounted, dt: float) -> void:
 			Clay.ball(flame_root,at+Vector3(0,.34,0),Vector3(.64,.5,.62),Color("ffbc3e"),.15)
 			Clay.ball(flame_root,at+Vector3(.1,.65,0),Vector3(.28,.34,.29),Color("ffe38a"),.1)
 	for e in match_state.events:
-		if e.type in ["crack","out"]: burst(world(Vector2(e.cell)),Color("d2a169") if e.type == "crack" else Color("f2e9bb"))
+		if e.type in ["crack","out"]: burst(world(Vector2(e.cell)),Color("b99561") if e.type == "crack" else Color("f2e9bb"))
 	for n in burst_root.get_children():
 		var life: float = n.get_meta("life")-dt; n.set_meta("life",life)
 		if life <= 0: n.queue_free(); continue

@@ -10,7 +10,7 @@ const SETTINGS := [
 	{"key":"friendly_fire","label":"Friendly fire (next round)","kind":"toggle","default":false},
 	{"key":"fuse","label":"Fuse, tenths of a second (next round)","kind":"number","default":24,"min":15,"max":40},
 	{"key":"speed","label":"Speed, tenths of a tile/s (next round)","kind":"number","default":32,"min":20,"max":50},
-	{"key":"crates","label":"Seed cover % (next round)","kind":"number","default":55,"min":20,"max":75},
+	{"key":"crates","label":"Sand cover % (next round)","kind":"number","default":55,"min":20,"max":75},
 	{"key":"pickups","label":"Power-ups (next round)","kind":"toggle","default":true},
 	{"key":"sound","label":"Sound effects (live)","kind":"toggle","default":true},
 ]

@@ -5,8 +5,8 @@ A Godot 4.6 couch arena game inspired by Blast Party, with original procedural
 separate from the LÖVE game; adding this project does not replace a published
 Blast Party build or its catalog listing.
 
-Play a ladybug, ant, bee or beetle. Scuttle between mossy pebbles, blow open
-seeds and acorns, collect extra bomb capacity and range, and be the last bug
+Play a ladybug, ant, bee or beetle. Scuttle between mossy rocks, blow open
+sandy mounds, collect extra bomb capacity and range, and be the last bug
 (or team) standing. Bombs explode in cardinal crosses only. No diagonal or
 beam/line shape upgrades; no timer decides the winner. Results last six seconds
 or until a player presses A, then the next round starts.
@@ -54,7 +54,7 @@ standard host setting API; no game-specific LLM endpoint is necessary:
 | `friendly_fire` | Boolean | Next round |
 | `fuse` | 15–40 tenths of a second | Next round |
 | `speed` | 20–50 tenths of a tile/second | Next round |
-| `crates` | 20–75 percent seed cover | Next round |
+| `crates` | 20–75 percent sand cover | Next round |
 | `pickups` | Boolean | Next round |
 | `sound` | Boolean | Live |
 
