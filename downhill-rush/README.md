@@ -39,7 +39,8 @@ godot --path downhill-rush -- --demo  # six bots, no input needed
 ```
 
 Pads: point the left stick where you want to go on screen (mostly to the
-bottom right) and the bike turns towards it. **A** hops, **RT / X** pedals,
+bottom right) and the bike turns towards it, including uphill and back across
+the trail. Turning still depends on speed and tyre grip. **A** hops, **RT / X** pedals,
 **LT / B** brakes. In the air the bike keeps its world-space momentum even over
 bends in the course: pedalling turns the legs and rear wheel without adding
 thrust, free wheels keep spinning, drag slows horizontal motion,

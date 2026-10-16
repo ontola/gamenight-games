@@ -530,8 +530,10 @@ func _aim_steer(b: Bike, stick: Vector2) -> float:
 	if stick.length() < Controls.DEADZONE: return 0.0
 	var basis := camera.global_transform.basis
 	var screen_right := Vector3(basis.x.x, 0, basis.x.z).normalized()
-	var screen_up := Vector3(basis.y.x, 0, basis.y.z).normalized()
-	var want := screen_right * stick.x - screen_up * stick.y
+	var screen_up := Vector3(basis.y.x, 0, basis.y.z)
+	# Invert the camera's ground-plane projection. Normalizing both axes
+	# loses foreshortening and makes diagonal input aim away from the stick.
+	var want := screen_right * stick.x - screen_up * stick.y / maxf(screen_up.length_squared(), 0.01)
 	var facing := course.heading(b.s) - b.psi - b.yaw
 	var err := wrapf(atan2(want.x, want.z) - facing, -PI, PI)
 	# Positive steer is to the right, which turns the world heading down.

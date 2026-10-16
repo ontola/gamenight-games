@@ -46,13 +46,18 @@ var pinned := 0.0       ## How long we've been stuck against rocks or trees.
 var touching := false   ## Leaning on an obstacle this step.
 var steer_angle := 0.0  ## Handlebar angle, radians, right positive (for the bars).
 var pedaling := 0.0     ## How hard the rider is pedalling, for the legs.
-var _stuck_s := 0.0     ## Where we last made real progress downhill, and how long ago.
+var _stuck_s := 0.0     ## Last position with meaningful movement in any direction.
+var _stuck_d := 0.0
 var _stuck_t := 0.0
 
 func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
 	placement_id += 1
 	s = p_s
 	d = p_d
+	_stuck_s = s
+	_stuck_d = d
+	_stuck_t = 0.0
+	pinned = 0.0
 	v = p_v
 	vy = 0.0
 	psi = 0.0
@@ -167,7 +172,9 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	b.s += ds
 	b.d += b.v * sin(b.psi) * dt
 	b.psi += k * ds
-	b.psi = clampf(b.psi, -1.45, 1.45)
+	# The stick can point uphill too. Preserve a full heading, rather than
+	# silently stopping the bars at 83 degrees from the downhill direction.
+	b.psi = wrapf(b.psi, -PI, PI)
 	var limit := Course.CORRIDOR + 9.0
 	if absf(b.d) > limit:
 		b.d = signf(b.d) * limit
@@ -215,8 +222,9 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	var stalled := b.grounded and b.v < 0.8 and brake < 0.1
 	b.pinned = b.pinned + dt if (b.touching and b.v < 4.5) or stalled else maxf(0.0, b.pinned - dt * 2.0)
 	# Rocking back and forth in a thicket without getting anywhere counts too.
-	if b.s > b._stuck_s + 1.5 or b.s < b._stuck_s - 6.0 or (brake > 0.3 and b.v < 0.3):
+	if Vector2(b.s - b._stuck_s, b.d - b._stuck_d).length() > 1.5 or (brake > 0.3 and b.v < 0.3):
 		b._stuck_s = b.s
+		b._stuck_d = b.d
 		b._stuck_t = 0.0
 	else:
 		b._stuck_t += dt
@@ -266,7 +274,7 @@ static func _land(b: Bike, c: Course, ground: float) -> void:
 		return
 	# Project the incoming velocity onto the final contact direction. v is
 	# HORIZONTAL speed: storing tangent speed here adds energy on every slope.
-	var next_psi := clampf(b.psi + b.yaw * 0.3, -1.45, 1.45)
+	var next_psi := wrapf(b.psi + b.yaw * 0.3, -PI, PI)
 	var next_along := grad.x * cos(next_psi) + grad.y * sin(next_psi)
 	b.v = maxf(0.0, (b.v * cos(next_psi - b.psi) + b.vy * next_along) / (1.0 + next_along * next_along))
 	if b.severity > 0.6 * c.crash_limit:
