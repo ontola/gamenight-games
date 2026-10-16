@@ -1,8 +1,10 @@
 extends Node3D
+const PLAY_FONT = preload("res://assets/fonts/DynaPuff.ttf")
 const Match = preload("res://src/match.gd")
 const Garden = preload("res://src/garden.gd")
 const Bug = preload("res://src/bug.gd")
 const Clay = preload("res://src/clay.gd")
+const POWER_ICONS := {"capacity":preload("res://assets/power-bombs.svg"),"range":preload("res://assets/power-range.svg")}
 const SETTINGS := [
 	{"key":"ai_players","label":"AI bugs (next round)","kind":"number","default":3,"min":0,"max":3},
 	{"key":"teams","label":"Teams (next round)","kind":"choice","default":"Free-for-all","options":["Free-for-all","Teams"]},
@@ -46,6 +48,7 @@ var frame_count := 0
 var shot_path := ""
 var demo := false
 var rng := RandomNumberGenerator.new()
+var ui_clock := 0.0
 
 func _ready() -> void:
 	rng.randomize(); settings.sound = true
@@ -225,8 +228,13 @@ func _physics_process(dt: float) -> void:
 		countdown -= dt; banner.text = str(ceili(countdown)) if countdown > .4 else "SCUTTLE!"; return
 	if sim.ended:
 		result_time += dt
-		if confirm or result_time > 6:
+		if (confirm and result_time > .7) or result_time > 6:
 			_new_round()
+			return
+		for i in sim.bugs.size():
+			if sim.bugs[i].bot and sim.bugs[i].alive: inputs[i] = sim.bot(i,dt)
+		sim.step(dt,inputs)
+		garden.sync(sim,dt)
 		return
 	for i in sim.bugs.size():
 		if sim.bugs[i].bot and sim.bugs[i].alive: inputs[i] = sim.bot(i,dt)
@@ -234,7 +242,7 @@ func _physics_process(dt: float) -> void:
 	garden.sync(sim,dt)
 	for event in sim.events:
 		if event.type in clips: _play_sound(event.type)
-		if event.type == "out": _update_badges()
+		if event.type in ["out","pickup"]: _update_badges(int(event.get("who",-1)) if event.type == "pickup" else -1)
 	if sim.ended:
 		banner.text = "A garden-sized draw!" if sim.winner == -1 else _winner_name()+" wins!"
 		hint.text = "A / Space  ·  Another round     Start  ·  Options"
@@ -250,6 +258,11 @@ func _winner_name() -> String:
 
 func _process(dt: float) -> void:
 	if host_paused: return
+	ui_clock += dt
+	# A little hand-cut wobble on the celebration, never on names or stats.
+	banner.pivot_offset = banner.size*.5
+	banner.rotation = sin(ui_clock*2.6)*.012 if sim.ended else 0.0
+	banner.scale = Vector2.ONE*(1.0+sin(ui_clock*3)*.015) if sim.ended else Vector2.ONE
 	for i in mini(views.size(),sim.bugs.size()):
 		var p: Dictionary = sim.bugs[i]
 		var pos: Vector3 = garden.world(p.pos)
@@ -263,49 +276,64 @@ func _process(dt: float) -> void:
 
 func _panel(bg: Color, border: Color = Color.TRANSPARENT) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new(); s.bg_color = bg
-	s.set_corner_radius_all(18); s.set_content_margin_all(14); s.set_border_width_all(2); s.border_color = border
+	s.corner_radius_top_left = 22; s.corner_radius_top_right = 15; s.corner_radius_bottom_left = 17; s.corner_radius_bottom_right = 25
+	s.set_content_margin_all(14); s.set_border_width_all(3); s.border_color = border
+	s.shadow_color = Color("42351e45"); s.shadow_size = 3; s.shadow_offset = Vector2(1,4)
 	return s
 
-func _label(text: String, size: int, color: Color = Color("fff3ce")) -> Label:
+func _label(text: String, size: int, color: Color = Color("493b2b")) -> Label:
 	var l := Label.new(); l.text = text; l.add_theme_font_size_override("font_size",size); l.add_theme_color_override("font_color",color)
-	l.add_theme_color_override("font_shadow_color",Color(0.12,.16,.08,.65)); l.add_theme_constant_override("shadow_offset_y",2)
+	l.add_theme_font_override("font",PLAY_FONT)
 	return l
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new(); add_child(layer)
 	var root := Control.new(); root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); root.mouse_filter = Control.MOUSE_FILTER_IGNORE; layer.add_child(root)
-	var title := _label("BOMBING BUGS",36); root.add_child(title); title.position = Vector2(34,24)
-	var subtitle := _label("TINY BUGS. BIG TROUBLE.",14,Color("f3d69b")); root.add_child(subtitle); subtitle.position = Vector2(36,68)
-	badges = HBoxContainer.new(); root.add_child(badges); badges.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT); badges.position = Vector2(780,24); badges.add_theme_constant_override("separation",10)
-	banner = _label("",44); root.add_child(banner); banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP); banner.position = Vector2(300,112); banner.size = Vector2(1000,70); banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint = _label("A / Space  ·  Plant bomb     Start / Esc  ·  Options",18); root.add_child(hint); hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE); hint.offset_top = -45; hint.offset_bottom = -12; hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var title := RichTextLabel.new(); root.add_child(title); title.position = Vector2(32,22); title.size = Vector2(580,90)
+	title.bbcode_enabled = true; title.scroll_active = false; title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title.add_theme_font_override("normal_font",PLAY_FONT); title.add_theme_font_size_override("normal_font_size",42)
+	title.add_theme_color_override("font_outline_color",Color("433c22")); title.add_theme_constant_override("outline_size",7)
+	title.text = "[wave amp=3 freq=1.3][color=#ffd477]Bombing[/color] [color=#b9e579]Bugs![/color][/wave]"
+	badges = HBoxContainer.new(); root.add_child(badges); badges.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE); badges.offset_left = 650; badges.offset_right = -28; badges.offset_top = 24; badges.offset_bottom = 108; badges.add_theme_constant_override("separation",10)
+	banner = _label("",44); root.add_child(banner); banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP); banner.position = Vector2(300,112); banner.size = Vector2(1000,70); banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; banner.add_theme_color_override("font_color",Color("fff0bb")); banner.add_theme_color_override("font_outline_color",Color("4b4328")); banner.add_theme_constant_override("outline_size",8)
+	hint = _label("A / Space  ·  Plant bomb     Start / Esc  ·  Options",18); root.add_child(hint); hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE); hint.offset_top = -45; hint.offset_bottom = -12; hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; hint.add_theme_color_override("font_color",Color("fff3ce")); hint.add_theme_color_override("font_outline_color",Color("3d3928")); hint.add_theme_constant_override("outline_size",5)
 	if managed: hint.text = "A  ·  Plant bomb     Start  ·  Options     Back  ·  GameNight"
 	var center := CenterContainer.new(); root.add_child(center); center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	overlay = PanelContainer.new(); center.add_child(overlay); overlay.custom_minimum_size = Vector2(590,0); overlay.add_theme_stylebox_override("panel",_panel(Color("203c2ef5"),Color("9ab56b")))
+	overlay = PanelContainer.new(); center.add_child(overlay); overlay.custom_minimum_size = Vector2(590,0); overlay.add_theme_stylebox_override("panel",_panel(Color("fff0d9fa"),Color("886842")))
 	var box := VBoxContainer.new(); overlay.add_child(box); box.add_theme_constant_override("separation",5)
-	menu_title = _label("READY TO RUMBLE?",30); menu_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; box.add_child(menu_title)
+	menu_title = _label("Ready to rumble?",30); menu_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; box.add_child(menu_title)
 	var count_label := _label("1–4 players · controllers or WASD + Space",16); count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; box.add_child(count_label)
 	for i in SETTINGS.size()+2:
-		var b := Button.new(); box.add_child(b); b.custom_minimum_size = Vector2(550,44); b.add_theme_font_size_override("font_size",18); b.focus_mode = Control.FOCUS_NONE
-		b.add_theme_stylebox_override("normal",_panel(Color("2e4b37")))
-		b.add_theme_stylebox_override("hover",_panel(Color("5f7845")))
-		b.add_theme_stylebox_override("pressed",_panel(Color("829655")))
+		var b := Button.new(); box.add_child(b); b.custom_minimum_size = Vector2(550,44); b.add_theme_font_size_override("font_size",18); b.add_theme_font_override("font",PLAY_FONT); b.add_theme_color_override("font_color",Color("493b2b")); b.add_theme_color_override("font_hover_color",Color("493b2b")); b.add_theme_color_override("font_pressed_color",Color("493b2b")); b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_stylebox_override("normal",_panel(Color("eeddbb")))
+		b.add_theme_stylebox_override("hover",_panel(Color("d6e9a2")))
+		b.add_theme_stylebox_override("pressed",_panel(Color("c0d983")))
 		b.pressed.connect(func(): _menu_action(i,-1 if b.get_local_mouse_position().x < b.size.x*.5 else 1)); menu_rows.append(b)
 	var help := _label("↑↓ Select    ←→ Change    A Confirm    B Resume",15); help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; box.add_child(help)
 	overlay.hide()
 	sound = AudioStreamPlayer.new(); sound.volume_db = -16; add_child(sound)
 
-func _update_badges() -> void:
+func _update_badges(upgraded: int = -1) -> void:
 	if not badges: return
-	for n in badges.get_children(): n.queue_free()
+	for n in badges.get_children(): badges.remove_child(n); n.queue_free()
 	for i in sim.bugs.size():
 		var p: Dictionary = sim.bugs[i]
-		var panel := PanelContainer.new(); panel.custom_minimum_size = Vector2(175,64); badges.add_child(panel)
-		panel.add_theme_stylebox_override("panel",_panel(Color("2a402be8"),p.color if p.alive else Color("796e55")))
+		var panel := PanelContainer.new(); panel.custom_minimum_size = Vector2(0,82); panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL; badges.add_child(panel)
+		panel.add_theme_stylebox_override("panel",_panel(Color("fff0d9f0"),p.color if p.alive else Color("a99b82")))
 		var text: String = p.name
 		if sim.settings.teams == "Teams": text += " · T%d"%(p.team+1)
 		if not p.alive: text += " · out"
-		var label := _label(text,17); label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; panel.add_child(label)
+		var box := VBoxContainer.new(); panel.add_child(box)
+		var label := _label(text,17); label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; box.add_child(label)
+		var stats := HBoxContainer.new(); stats.add_theme_constant_override("separation",8); box.add_child(stats)
+		for kind in ["capacity","range"]:
+			var icon := TextureRect.new(); icon.texture = POWER_ICONS[kind]; icon.custom_minimum_size = Vector2(30,30); icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; stats.add_child(icon)
+			var value := _label(str(p[kind]),20,Color("295f52") if kind == "capacity" else Color("885321")); stats.add_child(value)
+			value.tooltip_text = "Bombs at once" if kind == "capacity" else "Blast range in tiles"
+		if not p.alive: box.modulate.a = .5
+		if i == upgraded:
+			panel.modulate = Color(1.5,1.5,1.2)
+			create_tween().tween_property(panel,"modulate",Color.WHITE,.35)
 
 func _open_menu(first: bool) -> void:
 	initial_menu = first; menu_open = true; menu_index = 0; overlay.show(); _refresh_menu(); banner.text = ""
@@ -315,9 +343,10 @@ func _close_menu() -> void:
 	if initial_menu:
 		_new_round(); active = true; initial_menu = false
 	menu_open = false; overlay.hide()
+	if sim.ended: banner.text = "A garden-sized draw!" if sim.winner == -1 else _winner_name()+" wins!"
 
 func _refresh_menu() -> void:
-	menu_title.text = "READY TO RUMBLE?" if initial_menu else "TAKE A BREATHER"
+	menu_title.text = "Ready to rumble?" if initial_menu else "Take a breather"
 	menu_rows[0].text = "Play" if initial_menu else "Resume"
 	for i in SETTINGS.size():
 		var spec: Dictionary = SETTINGS[i]
@@ -328,7 +357,7 @@ func _refresh_menu() -> void:
 		if spec.key == "speed": display = "%.1f"%(float(value)/10)
 		menu_rows[i+1].text = spec.label.replace(" (next round)","").replace(" (live)","").replace(", tenths of a second","").replace(", tenths of a tile/s","")+"   ‹  "+display+"  ›"
 	menu_rows[-1].text = "Start a new round · apply options"
-	for i in menu_rows.size(): menu_rows[i].add_theme_stylebox_override("normal",_panel(Color("6b8547") if i == menu_index else Color("2e4b37"),Color("c4d885") if i == menu_index else Color.TRANSPARENT))
+	for i in menu_rows.size(): menu_rows[i].add_theme_stylebox_override("normal",_panel(Color("cee79a") if i == menu_index else Color("f4e7cc"),Color("6b8745") if i == menu_index else Color("e0cba8")))
 
 func _menu_action(index: int, direction: int) -> void:
 	if index == 0: _close_menu(); return

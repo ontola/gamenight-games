@@ -159,10 +159,14 @@ func sync(match_state: RefCounted, dt: float) -> void:
 		if match_state.pickups[c].wait > 0: continue
 		if not pickup_views.has(c):
 			var n := Node3D.new(); arena_root.add_child(n); n.position = world(Vector2(c)); pickup_views[c] = n
-			var color := Color("f9bd43") if match_state.pickups[c].kind == "range" else Color("6dd2c4")
-			Clay.ball(n,Vector3.ZERO,Vector3(.38,.4,.38),color,0.3)
-			var label := Label3D.new(); label.text = "+" if match_state.pickups[c].kind == "capacity" else "↑"; label.font_size = 70; label.pixel_size = .006; label.position = Vector3(0,.08,.22); label.billboard = BaseMaterial3D.BILLBOARD_ENABLED; n.add_child(label)
-		pickup_views[c].position.y = .35+sin(clock*3)*.07
+			var face := Node3D.new(); n.add_child(face); face.rotation.x = deg_to_rad(-46)
+			var kind: String = match_state.pickups[c].kind
+			var color := Color("d1a34d") if kind == "range" else Color("438c78")
+			Clay.ball(face,Vector3.ZERO,Vector3(.78,.78,.19),color)
+			var icon := Sprite3D.new(); icon.texture = preload("res://assets/power-range.svg") if kind == "range" else preload("res://assets/power-bombs.svg")
+			icon.pixel_size = .0055; icon.position.z = .105; icon.shaded = true; face.add_child(icon)
+		pickup_views[c].position.y = .48+sin(clock*3+c.x)*.055
+		pickup_views[c].rotation.y = sin(clock*1.8+c.y)*.16
 	for c in pickup_views.keys():
 		if not match_state.pickups.has(c): pickup_views[c].queue_free(); pickup_views.erase(c)
 	var burning := {}

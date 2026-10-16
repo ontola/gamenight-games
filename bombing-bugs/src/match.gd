@@ -133,7 +133,6 @@ func explode(index: int) -> void:
 
 func step(dt: float, commands: Array) -> void:
 	events.clear()
-	if ended: return
 	age += dt
 	for i in bugs.size():
 		if not bugs[i].alive: continue
@@ -150,6 +149,8 @@ func step(dt: float, commands: Array) -> void:
 	for f in flames: f.time -= dt
 	flames = flames.filter(func(f: Dictionary) -> bool: return f.time > 0)
 	for c in pickups: pickups[c].wait -= dt
+	# Results are locked, but survivors and lingering effects keep moving.
+	if ended: return
 	for i in bugs.size():
 		var p: Dictionary = bugs[i]
 		if not p.alive: continue
@@ -164,7 +165,7 @@ func step(dt: float, commands: Array) -> void:
 			var kind: String = pickups[c].kind
 			p[kind] = mini(p[kind]+1, 5 if kind == "range" else 4)
 			pickups.erase(c)
-			events.append({"type":"pickup","cell":c})
+			events.append({"type":"pickup","cell":c,"who":i,"kind":kind})
 	var teams := {}
 	for p in bugs:
 		if p.alive: teams[p.team] = true

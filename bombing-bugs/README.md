@@ -9,7 +9,10 @@ Play a ladybug, ant, bee or beetle. Scuttle between mossy rocks, blow open
 sandy mounds, collect extra bomb capacity and range, and be the last bug
 (or team) standing. Bombs explode in cardinal crosses only. No diagonal or
 beam/line shape upgrades; no timer decides the winner. Results last six seconds
-or until a player presses A, then the next round starts.
+or until a player presses A, then the next round starts. Surviving bugs can keep
+moving during results; the winner is locked and leftover blasts cannot kill them.
+Mint double-bomb tokens add bomb capacity; amber four-arrow flame tokens add
+blast range. Matching icons and current totals appear on each player name card.
 
 ## Play
 
@@ -69,6 +72,7 @@ From this repository's root:
 ```sh
 godot --headless --path bombing-bugs --editor --import --quit
 godot --headless --path bombing-bugs --script tests/simulation.gd
+godot --headless --path bombing-bugs --script tests/results-ui.gd
 python3 bombing-bugs/tests/lifecycle.py /path/to/godot
 mkdir -p dist
 godot --headless --path bombing-bugs --export-release Windows "$PWD/dist/BombingBugs.exe"
@@ -90,8 +94,12 @@ Screenshots under `docs/` are actual engine renders, not the AI concept image.
 
 The Windows export was smoke-tested and passed the same managed lifecycle test
 on Godot 4.6.2, including two separate seats. The simulation suite passed on
-Windows 4.6.2 and Linux 4.5.2 (7,848 assertions and ten completed AI battles).
+Windows 4.6.2 and Linux 4.5.2 (7,857 assertions and ten completed AI battles).
 These automated checks do not certify physical controllers, Windows foreground
 handoff or a production catalog install. A physical controller playtest is still required.
 All meshes and sound effects are generated in code; no external art pack or
 runtime asset-generation service is required. License: repository MIT license.
+
+UI lettering uses DynaPuff by Toshi Omagari and Jennifer Daniel, bundled under
+the SIL Open Font License in `assets/fonts/DynaPuff-OFL.txt`. The title has a
+subtle wave and win messages gently wobble; names and counters remain still.

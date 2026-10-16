@@ -77,6 +77,26 @@ func _init() -> void:
 					if not seen.has(n) and m.cells.get(n,1) != 1: seen[n] = true; queue.append(n)
 			for c in m.cells:
 				if m.cells[c] != 1: check(seen.has(c),"Disconnected arena")
+	# A result locks the winner, not the winner's controls or the arena effects.
+	m = fresh(); clear_inside(m)
+	for i in [1,2,3]: m.bugs[i].alive = false
+	m.step(.01,[])
+	check(m.ended and m.winner == 0,"Survivor should win")
+	var before: Vector2 = m.bugs[0].pos
+	m.flames.append({"cell":Vector2i(1,1),"owner":0,"time":.4})
+	m.step(.1,[{"move":Vector2.RIGHT,"bomb":true}])
+	check(m.bugs[0].pos.x > before.x,"Winner must remain controllable during results")
+	check(m.bugs[0].alive and m.winner == 0,"Lingering hazards must not change the result")
+	check(m.bombs.is_empty(),"Results input must not plant new bombs")
+	m.step(1,[])
+	check(m.flames.is_empty() and not m.bugs[0].moving,"Effects should expire and released input should stop movement")
+	m = fresh(); clear_inside(m)
+	for kind in ["capacity","range"]:
+		m.pickups[Vector2i(1,1)] = {"kind":kind,"wait":0}
+		var original: int = m.bugs[0][kind]
+		m.step(.01,[])
+		check(m.bugs[0][kind] == original+1,"Pickup must increase the correct stat")
+		check(m.events.any(func(e): return e.type == "pickup" and e.who == 0 and e.kind == kind),"HUD needs the collector and pickup kind")
 	var completed := 0
 	for seed_value in 10:
 		m = fresh(); m.start([{},{},{},{}],{},seed_value)

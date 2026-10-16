@@ -25,6 +25,7 @@ jobs:
           GODOT=Godot_v4.6.2-stable_linux.x86_64
           "$GODOT" --headless --path bombing-bugs --editor --import --quit
           "$GODOT" --headless --path bombing-bugs --script tests/simulation.gd
+          "$GODOT" --headless --path bombing-bugs --script tests/results-ui.gd
           python3 bombing-bugs/tests/lifecycle.py "$GODOT"
       - name: Export Windows build
         run: |
