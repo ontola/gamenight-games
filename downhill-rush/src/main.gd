@@ -1,7 +1,7 @@
 extends Node3D
 ## Downhill Rush: everyone rides the same mountain on one screen. The camera
-## follows the leader; drop off the bottom of the screen and you are out.
-## Last rider standing, or first through the finish, takes the round.
+## follows the leader. Crashes and falling behind cost a life; riders rejoin
+## the pack until their lives run out. Last rider or first finisher wins.
 
 enum Phase { JOIN, COUNTDOWN, RACE, ROUND_OVER, MATCH_OVER, IDLE }
 
@@ -9,6 +9,7 @@ const PALETTE := ["#ff7547", "#4cb5f5", "#ffd23f", "#7bd389", "#c77dff", "#ff5d8
 const BOT_NAMES := ["Gnarly Gus", "Mudpie", "Turbo Tess", "Sir Skid", "Wobbles", "Dusty", "Bonk", "Pebble"]
 const LENGTHS := {"short": 600.0, "medium": 800.0, "long": 1200.0}
 const SETTINGS := [
+	{"key": "lives", "label": "Lives per rider (next round)", "kind": "number", "default": 3, "min": 1, "max": 5},
 	{"key": "rounds_to_win", "label": "Rounds to win", "kind": "number", "default": 3, "min": 1, "max": 9},
 	{"key": "mountain", "label": "Mountain length (next round)", "kind": "choice", "default": "medium", "options": ["short", "medium", "long"]},
 	{"key": "difficulty", "label": "Difficulty (next round)", "kind": "choice", "default": "normal", "options": ["easy", "normal", "hard", "extreme"]},
@@ -27,6 +28,8 @@ var sun: DirectionalLight3D
 var hud: Hud
 var round_number := 0
 var rounds_to_win := 3
+var lives_per_rider := 3
+const RESPAWN_DELAY := 1.4
 var mountain_length := "medium"
 var difficulty := "normal"
 var landscape := "random"
@@ -319,7 +322,8 @@ func _mountain_name(seed_value: int) -> String:
 
 func _add_player(p_name: String, controls: Controls, bot: Bot, color: Color, id: String = "") -> Dictionary:
 	var p := {"name": p_name, "controls": controls, "bot": bot, "color": color, "id": id,
-		"bike": Bike.new(), "view": null, "wins": 0, "out": false, "offscreen": 0.0, "finished": false, "out_rank": 0}
+		"bike": Bike.new(), "view": null, "wins": 0, "out": false, "offscreen": 0.0, "finished": false, "out_rank": 0,
+		"lives": lives_per_rider, "respawn_left": 0.0, "seen_crashes": 0}
 	players.append(p)
 	return p
 
@@ -342,6 +346,10 @@ func _spawn_riders() -> void:
 		p.out = false
 		p.finished = false
 		p.offscreen = 0.0
+		p.lives = lives_per_rider
+		p.respawn_left = 0.0
+		p.seen_crashes = 0
+		p.out_rank = 0
 		var view := RiderView.new()
 		_riders_root.add_child(view)
 		view.setup(p.color, p.name, i)
@@ -467,6 +475,11 @@ func _physics_process(_delta: float) -> void:
 	for p in players:
 		if p.out: continue
 		var b: Bike = p.bike
+		if racing and p.get("respawn_left", 0.0) > 0.0:
+			Bike.step(b, course, {}, PHYSICS_DT)
+			p.respawn_left -= PHYSICS_DT
+			if p.respawn_left <= 0.0: _respawn_rider(p)
+			continue
 		var input := {}
 		# Results stop scoring, not riding. Keep the surviving riders in control
 		# through the victory lap, including after crossing the finish line.
@@ -475,8 +488,40 @@ func _physics_process(_delta: float) -> void:
 			input = p.controls.bike_input()
 			if input.has("stick"): input.steer = _aim_steer(b, input.stick)
 		Bike.step(b, course, input, PHYSICS_DT)
+		if racing and b.crashes > int(p.get("seen_crashes", 0)):
+			p.seen_crashes = b.crashes
+			_lose_life(p)
 	_bump_riders()
 	if racing: _referee()
+
+## One loss per incident. Recovery stays in the race while everybody else rides.
+func _lose_life(p: Dictionary) -> void:
+	if p.out or p.get("respawn_left", 0.0) > 0.0: return
+	p.lives = maxi(0, int(p.lives) - 1)
+	p.offscreen = 0.0
+	if p.lives == 0:
+		p.out = true
+		_out_order += 1
+		p.out_rank = _out_order
+		if hud: hud.eliminated(p.name, p.color)
+		if p.view: p.view.visible = false
+	else:
+		p.respawn_left = RESPAWN_DELAY
+		if hud: hud.toast("%s: %d %s LEFT" % [p.name, p.lives, "LIFE" if p.lives == 1 else "LIVES"], p.color)
+
+func _respawn_rider(p: Dictionary) -> void:
+	# Rejoin behind the pack, on the trail, never across the finish line.
+	var at := clampf(focus_s - 2.0, Course.START_LINE, course.length - 35.0)
+	var spot := Bike.clear_spot(course, at, course.trail_d(at), true)
+	var bike := Bike.new()
+	bike.placement_id = p.bike.placement_id
+	bike.place(course, spot.x, spot.y, 5.0)
+	bike.invulnerable = Bike.INVULNERABLE * 1.5
+	p.bike = bike
+	p.respawn_left = 0.0
+	p.offscreen = 0.0
+	p.seen_crashes = 0
+	if p.bot: p.bot.start_at(spot.y)
 
 ## Pads steer by pointing: the stick is a direction on screen, and the bike
 ## turns towards it (in the air it only nudges it). Hold it to the bottom
@@ -498,10 +543,10 @@ func _aim_steer(b: Bike, stick: Vector2) -> float:
 func _bump_riders() -> void:
 	for i in players.size():
 		var a: Dictionary = players[i]
-		if a.out or a.bike.crashed: continue
+		if a.out or a.bike.crashed or a.get("respawn_left", 0.0) > 0.0: continue
 		for j in range(i + 1, players.size()):
 			var b: Dictionary = players[j]
-			if b.out or b.bike.crashed: continue
+			if b.out or b.bike.crashed or b.get("respawn_left", 0.0) > 0.0: continue
 			_collide(a.bike, b.bike)
 
 func _collide(ba: Bike, bb: Bike) -> void:
@@ -548,7 +593,10 @@ func _referee() -> void:
 		var p: Dictionary = players[i]
 		if p.out: continue
 		var b: Bike = p.bike
-		if b.s >= course.length and not p.finished:
+		if p.respawn_left > 0.0:
+			alive.append(i)
+			continue
+		if b.s >= course.length and not p.finished and not b.crashed:
 			p.finished = true
 			_end_round(i)
 			return
@@ -558,14 +606,10 @@ func _referee() -> void:
 		# Only falling behind counts: a leader can never ride off the front.
 		var gone := off and b.s < focus_s
 		p.offscreen = p.offscreen + PHYSICS_DT if gone else 0.0
-		if p.offscreen > 0.2:
-			p.out = true
-			_out_order += 1
-			p.out_rank = _out_order
-			hud.eliminated(p.name, p.color)
-			hud.poof(screen.clamp(Vector2(30, 30), view - Vector2(30, 60)), p.color)
-			if p.view: p.view.visible = false
-			continue
+		if p.offscreen > 0.2 and b.invulnerable <= 0.0:
+			_lose_life(p)
+			if hud: hud.poof(screen.clamp(Vector2(30, 30), view - Vector2(30, 60)), p.color)
+			if p.out: continue
 		alive.append(i)
 	if players.size() > 1 and alive.size() <= 1:
 		_end_round(alive[0] if alive.size() == 1 else _last_out())
@@ -814,6 +858,7 @@ func _on_roster(_seats: Array, party_players: Array, _presence: Array) -> void:
 
 func _on_setting(key: String, value: Variant) -> void:
 	if key == "rounds_to_win": rounds_to_win = clampi(int(value), 1, 9)
+	elif key == "lives": lives_per_rider = clampi(int(value), 1, 5)
 	elif key == "mountain" and LENGTHS.has(str(value)): mountain_length = str(value)
 	elif key == "difficulty" and str(value) in Course.DIFFICULTIES: difficulty = str(value)
 	elif key == "landscape": landscape = str(value)

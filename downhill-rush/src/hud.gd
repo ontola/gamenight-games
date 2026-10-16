@@ -296,7 +296,10 @@ func _refresh_scores(main: Node) -> void:
 		var pips := ""
 		for k in main.rounds_to_win: pips += "★" if k < p.wins else "·"
 		var place := "%d " % (i + 1) if main.phase == 2 and not p.out else ""
-		l.text = "%s%s %s" % [place, p.name.to_upper(), pips]
+		var life_count := int(p.get("lives", 0))
+		var life_text := "%d %s" % [life_count, "LIFE" if life_count == 1 else "LIVES"]
+		if p.get("respawn_left", 0.0) > 0.0: life_text += " · BACK IN %d" % maxi(1, ceili(p.respawn_left))
+		l.text = "%s%s %s\n%s" % [place, p.name.to_upper(), pips, "OUT" if p.out else life_text]
 		var style: StyleBoxFlat = card.get_theme_stylebox("panel")
 		style.bg_color = p.color if not p.out else Color(0.55, 0.55, 0.58)
 		card.rotation_degrees = 2.0 if i % 2 == 0 else -2.0

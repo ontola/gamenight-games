@@ -74,6 +74,7 @@ func open() -> void:
 		{"id": "landscape", "label": "Landscape", "values": ["random"] + Course.BIOMES},
 		{"id": "mountain", "label": "Mountain", "values": ["short", "medium", "long"]},
 		{"id": "rounds", "label": "Rounds to win", "values": ["1", "2", "3", "4", "5", "7", "9"]},
+		{"id": "lives", "label": "Lives per rider", "values": ["1", "2", "3", "4", "5"]},
 	]
 	if not main.managed:
 		_items.append({"id": "bots", "label": "Bots", "values": ["off", "on"]})
@@ -96,6 +97,7 @@ func _value(id: String) -> String:
 		"mountain": return main.mountain_length
 		"bots": return "on" if main.bots_enabled else "off"
 		"rounds": return str(main.rounds_to_win)
+		"lives": return str(main.lives_per_rider)
 	return ""
 
 func _set_value(id: String, value: String) -> void:
@@ -105,6 +107,7 @@ func _set_value(id: String, value: String) -> void:
 		"mountain": main.mountain_length = value
 		"bots": main.bots_enabled = value == "on"
 		"rounds": main.rounds_to_win = int(value)
+		"lives": main.lives_per_rider = int(value)
 
 func _draw() -> void:
 	var names := []

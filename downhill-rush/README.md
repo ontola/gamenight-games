@@ -5,8 +5,10 @@ procedurally generated mountain on one shared screen, seen from above. The
 mountain's main direction runs to the bottom right, but the valley swings hard
 to the side now and then before the camera follows it round. The camera looks ahead of the
 leader, so riders sit towards the top left with the slope below them (a lone
-rider furthest, a spread-out pack less), and it never waits. Fall behind, crash once too often or take the scenic route and
-you drop off the bottom of the screen: you're out. Last rider standing, or
+rider furthest, a spread-out pack less), and it never waits. Each rider starts
+with three lives. A crash or falling off screen costs one life. After a short
+tumble you rejoin the pack with temporary protection while everyone else keeps
+riding. Run out of lives and you're out. Last rider standing, or
 first through the finish gate, takes the round. First to three rounds wins.
 
 Godot 4.5, GL Compatibility renderer, 1 to 8 riders. Everything is built from
@@ -163,8 +165,8 @@ the body flies over the bars, hits the ground, slides with friction and
 bounces off trees and rocks. The bike is one tumbling body (`src/tumble.gd`)
 that skids and settles on its side. On a slope too steep for friction to hold
 you, you keep sliding. Hard impacts leave a little blood on the ground for
-the rest of the round. Once they've come to
-rest (at least 1.1 s, at most 2.8 s) you get back on where the bike lies.
+the rest of the round. With lives remaining, after 1.4 seconds you rejoin
+the pack on a clear stretch of trail with temporary crash protection.
 
 Building a mountain's meshes takes a few seconds, so the next one is built on
 a thread while you ride the current one; the next round starts straight away.
@@ -187,9 +189,10 @@ host the game:
 - starts the countdown on `start`, freezes on `pause`, reports every finished
   round with `notify_finished`, then keeps running its own next round and match;
 - picks up name changes from `party_updated` without resetting the match;
-- declares four settings: rounds to win (1 to 9), mountain length (short,
+- declares five settings: lives per rider (1 to 5, default 3), rounds to win (1 to 9), mountain length (short,
   medium, long), difficulty (easy, normal, hard, extreme) and landscape
-  (random or one biome). The last three apply from the next mountain.
+  (random or one biome). Lives and course settings apply from the next mountain;
+  current riders keep their remaining lives when the setting changes.
 
 `gamenight.json` is a draft catalog entry. It has no download yet.
 
@@ -204,6 +207,7 @@ godot --headless --path downhill-rush --script tests/air_speed.gd     # airborne
 godot --headless --path downhill-rush --script tests/rider_animation.gd # airborne pedals, legs and wheel inertia
 godot --headless --path downhill-rush --script tests/braking.gd       # rolling, wheel lock and grounded skid marks
 godot --headless --path downhill-rush --script tests/results_controls.gd # victory-lap controls, eliminated riders and fixed scores
+godot --headless --path downhill-rush --script tests/lives.gd         # crash recovery, lives, camera losses and finish rules
 godot --headless --path downhill-rush --script tests/ride_check.gd    # crashes and times per strategy
 python3 downhill-rush/tests/lifecycle.py --godot godot               # managed launch against a fake host
 tools/shot.sh out.png --demo --skip=30                               # screenshot via xvfb
