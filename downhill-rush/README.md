@@ -203,6 +203,7 @@ godot --headless --path downhill-rush --script tests/wheel_contact.gd # low rock
 godot --headless --path downhill-rush --script tests/air_speed.gd     # airborne momentum and landing energy
 godot --headless --path downhill-rush --script tests/rider_animation.gd # airborne pedals, legs and wheel inertia
 godot --headless --path downhill-rush --script tests/braking.gd       # rolling, wheel lock and grounded skid marks
+godot --headless --path downhill-rush --script tests/results_controls.gd # victory-lap controls, eliminated riders and fixed scores
 godot --headless --path downhill-rush --script tests/ride_check.gd    # crashes and times per strategy
 python3 downhill-rush/tests/lifecycle.py --godot godot               # managed launch against a fake host
 tools/shot.sh out.png --demo --skip=30                               # screenshot via xvfb

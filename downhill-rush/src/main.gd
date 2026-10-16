@@ -468,12 +468,12 @@ func _physics_process(_delta: float) -> void:
 		if p.out: continue
 		var b: Bike = p.bike
 		var input := {}
-		if p.finished: input = {"brake": 0.6}
-		elif p.bot: input = p.bot.think(b, course, PHYSICS_DT)
+		# Results stop scoring, not riding. Keep the surviving riders in control
+		# through the victory lap, including after crossing the finish line.
+		if p.bot: input = p.bot.think(b, course, PHYSICS_DT)
 		elif p.controls:
 			input = p.controls.bike_input()
 			if input.has("stick"): input.steer = _aim_steer(b, input.stick)
-		if not racing and not p.finished: input = {"brake": 0.5}
 		Bike.step(b, course, input, PHYSICS_DT)
 	_bump_riders()
 	if racing: _referee()
