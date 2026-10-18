@@ -388,7 +388,7 @@ func _menu_action(index: int, direction: int) -> void:
 		"choice": v = spec.options[posmod(spec.options.find(v)+direction,spec.options.size())]
 		"toggle": v = not v
 	_setting(spec.key,v)
-	if managed: GameNight._send({"type":"set_setting","game":GameNight.game_id,"key":spec.key,"value":v})
+	if managed: GameNight.set_setting(spec.key,v)
 	_refresh_menu()
 
 func _build_audio() -> void:
