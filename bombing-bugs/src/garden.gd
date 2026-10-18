@@ -12,12 +12,16 @@ var burst_root: Node3D
 var last_flames := ""
 var clock := 0.0
 var rng := RandomNumberGenerator.new()
+var scenery: Node3D
+var size := Vector2i.ZERO
+# Half the playable width and depth, in tiles: the garden is built around it.
+var hx := 5.5
+var hz := 4.5
 
 func world(c: Vector2) -> Vector3:
-	return Vector3(c.x-6,0,c.y-5)
+	return Vector3(c.x-(size.x-1)*.5,0,c.y-(size.y-1)*.5)
 
 func build() -> void:
-	rng.seed = 431
 	var env_node := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR; env.background_color = Color("769151")
@@ -26,41 +30,50 @@ func build() -> void:
 	env_node.environment = env; add_child(env_node)
 	var sun := DirectionalLight3D.new(); sun.rotation_degrees = Vector3(-52,-32,0); sun.light_color = Color("ffe7bd"); sun.light_energy = .74
 	sun.shadow_enabled = true; sun.shadow_blur = 2.0; sun.directional_shadow_max_distance = 40; add_child(sun)
-	build_terrain()
-	build_grass()
-	for i in 420:
-		var x := rng.randf_range(-5.4,5.4); var z := rng.randf_range(-4.4,4.4)
-		var size := rng.randf_range(.018,.055)
-		Clay.ball(self,Vector3(x,-.005,z),Vector3(size,size*.45,size),Color("8e7049").lerp(Color("d1ad78"),rng.randf()))
-	for i in 85:
-		var at := Vector3(rng.randf_range(-9,9),.49,rng.randf_range(-8,7))
-		if absf(at.x)<6.2 and absf(at.z)<5.2: continue
-		clover(at,rng.randf_range(.3,.75))
-		if i%5==0: flower(at,rng.randf_range(.4,.85))
-	Clay.rod(self,Vector3(-8,.25,-6.8),Vector3(7,.6,-7.6),.3,Color("74513b"))
-	for i in 4:
-		Clay.rod(self,Vector3(-6+i*3,.5,-7),Vector3(-5+i*3,.7,-8.2),.1,Color("74513b"))
-	# A snail spectator and mushrooms establish the tiny scale.
-	Clay.ball(self,Vector3(7.6,.22,3),Vector3(1.4,.4,.6),Color("cbac70"))
-	Clay.ball(self,Vector3(7.4,.65,3),Vector3(.9,.95,.8),Color("9c653e"))
-	for i in 3:
-		var ring := TorusMesh.new(); ring.inner_radius = .14+i*.08; ring.outer_radius = .17+i*.08
-		var mesh := MeshInstance3D.new(); mesh.mesh = ring; mesh.material_override = Clay.material(Color("d4a16b")); mesh.position = Vector3(7.4,.65,3.4); mesh.rotation.x = PI/2; add_child(mesh)
-	for side in [-1,1]:
-		Clay.rod(self,Vector3(8,.3,3+side*.16),Vector3(8.3,.75,3+side*.22),.035,Color("cbac70"))
-		Clay.ball(self,Vector3(8.3,.77,3+side*.22),Vector3(.12,.12,.12),Color("382d30"))
-	for x in [-8.2,-7.4]:
-		Clay.rod(self,Vector3(x,0,-3),Vector3(x,.8,-3),.11,Color("e5ce99"))
-		Clay.ball(self,Vector3(x,.8,-3),Vector3(.9,.35,.9),Color("dd7350"))
 	arena_root = Node3D.new(); add_child(arena_root)
 	flame_root = Node3D.new(); add_child(flame_root)
 	burst_root = Node3D.new(); add_child(burst_root)
+
+## Sand pit, bank, grass and onlookers sized to the round's garden; rebuilt only when the size changes.
+func build_scenery(garden_size: Vector2i) -> void:
+	if garden_size == size: return
+	size = garden_size; hx = (size.x-2)*.5; hz = (size.y-2)*.5
+	if scenery: scenery.free()
+	scenery = Node3D.new(); add_child(scenery)
+	rng.seed = 431+size.x*31+size.y
+	build_terrain()
+	build_grass()
+	for i in int(420*hx*hz/24.75):
+		var x := rng.randf_range(-hx+.1,hx-.1); var z := rng.randf_range(-hz+.1,hz-.1)
+		var speck := rng.randf_range(.018,.055)
+		Clay.ball(scenery,Vector3(x,-.005,z),Vector3(speck,speck*.45,speck),Color("8e7049").lerp(Color("d1ad78"),rng.randf()))
+	for i in 85:
+		var at := Vector3(rng.randf_range(-hx-3.5,hx+3.5),.49,rng.randf_range(-hz-3.5,hz+2.5))
+		if absf(at.x)<hx+.7 and absf(at.z)<hz+.7: continue
+		clover(at,rng.randf_range(.3,.75))
+		if i%5==0: flower(at,rng.randf_range(.4,.85))
+	Clay.rod(scenery,Vector3(-hx-2.5,.25,-hz-2.3),Vector3(hx+1.5,.6,-hz-3.1),.3,Color("74513b"))
+	for i in int((2*hx+2)/3)+1:
+		Clay.rod(scenery,Vector3(-hx-.5+i*3,.5,-hz-2.5),Vector3(-hx+.5+i*3,.7,-hz-3.7),.1,Color("74513b"))
+	# A snail spectator and mushrooms establish the tiny scale.
+	var snail := Vector3(hx+2.1,0,hz-1.5)
+	Clay.ball(scenery,snail+Vector3(0,.22,0),Vector3(1.4,.4,.6),Color("cbac70"))
+	Clay.ball(scenery,snail+Vector3(-.2,.65,0),Vector3(.9,.95,.8),Color("9c653e"))
+	for i in 3:
+		var ring := TorusMesh.new(); ring.inner_radius = .14+i*.08; ring.outer_radius = .17+i*.08
+		var mesh := MeshInstance3D.new(); mesh.mesh = ring; mesh.material_override = Clay.material(Color("d4a16b")); mesh.position = snail+Vector3(-.2,.65,.4); mesh.rotation.x = PI/2; scenery.add_child(mesh)
+	for side in [-1,1]:
+		Clay.rod(scenery,snail+Vector3(.4,.3,side*.16),snail+Vector3(.7,.75,side*.22),.035,Color("cbac70"))
+		Clay.ball(scenery,snail+Vector3(.7,.77,side*.22),Vector3(.12,.12,.12),Color("382d30"))
+	for x in [-hx-2.7,-hx-1.9]:
+		Clay.rod(scenery,Vector3(x,0,-hz+1.5),Vector3(x,.8,-hz+1.5),.11,Color("e5ce99"))
+		Clay.ball(scenery,Vector3(x,.8,-hz+1.5),Vector3(.9,.35,.9),Color("dd7350"))
 
 # The collision boundary remains the outer tile row. Only its presentation changes:
 # a continuous eroded bank rises outside the playable cells, rather than a rock fence.
 func build_terrain() -> void:
 	var rings: Array[PackedVector3Array] = []
-	var profiles := [Vector3(5.53,-.04,4.53),Vector3(5.72,.18,4.72),Vector3(6.18,.53,5.18),Vector3(6.65,.49,5.65),Vector3(12,.43,10)]
+	var profiles := [Vector3(hx+.03,-.04,hz+.03),Vector3(hx+.22,.18,hz+.22),Vector3(hx+.68,.53,hz+.68),Vector3(hx+1.15,.49,hz+1.15),Vector3(hx+6.5,.43,hz+5.5)]
 	var count := 192
 	for r in profiles.size():
 		var ring := PackedVector3Array(); var profile: Vector3 = profiles[r]
@@ -84,14 +97,14 @@ func build_terrain() -> void:
 				surface.set_color(inner_color if j in [0,3,5] else outer_color); surface.add_vertex(vertices[j])
 	surface.index(); surface.generate_normals()
 	var ground := MeshInstance3D.new(); ground.mesh=surface.commit()
-	ground.material_override=Clay.earth_material(Color.WHITE,.065); add_child(ground)
+	ground.material_override=Clay.earth_material(Color.WHITE,.065); scenery.add_child(ground)
 
 func build_grass() -> void:
 	# One mesh for thousands of tapered, bent blades keeps the lush border inexpensive.
 	var surface := SurfaceTool.new(); surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for i in 2400:
-		var at := Vector3(rng.randf_range(-10.5,10.5),.49,rng.randf_range(-8.5,7.7))
-		if absf(at.x)<6.12 and absf(at.z)<5.12: continue
+	for i in int(2400*(hx+5)*(hz+3.6)/(10.5*8.1)):
+		var at := Vector3(rng.randf_range(-hx-5,hx+5),.49,rng.randf_range(-hz-4,hz+3.2))
+		if absf(at.x)<hx+.62 and absf(at.z)<hz+.62: continue
 		var height := rng.randf_range(.45,1.8)
 		if at.z>4: height *= .50
 		var width := rng.randf_range(.065,.16)
@@ -110,23 +123,24 @@ func build_grass() -> void:
 	surface.generate_normals()
 	var grass := MeshInstance3D.new(); grass.mesh=surface.commit()
 	var material := StandardMaterial3D.new(); material.vertex_color_use_as_albedo=true; material.cull_mode=BaseMaterial3D.CULL_DISABLED; material.roughness=.85
-	grass.material_override=material; add_child(grass)
+	grass.material_override=material; scenery.add_child(grass)
 
 func flower(at: Vector3, height: float) -> void:
-	Clay.rod(self,at,at+Vector3(.1,height,0),.035,Color("5e8535"))
+	Clay.rod(scenery,at,at+Vector3(.1,height,0),.035,Color("5e8535"))
 	for i in 7:
 		var a := i*TAU/7
-		var petal := Clay.ball(self,at+Vector3(cos(a)*.22,height,sin(a)*.22),Vector3(.3,.12,.18),Color("fff0c8"))
+		var petal := Clay.ball(scenery,at+Vector3(cos(a)*.22,height,sin(a)*.22),Vector3(.3,.12,.18),Color("fff0c8"))
 		petal.rotation.y = -a
-	Clay.ball(self,at+Vector3(0,height+.07,0),Vector3(.27,.15,.27),Color("e6b73f"))
+	Clay.ball(scenery,at+Vector3(0,height+.07,0),Vector3(.27,.15,.27),Color("e6b73f"))
 
 func clover(at: Vector3, size: float) -> void:
 	for i in 3:
 		var a := i*TAU/3
-		var leaf := Clay.ball(self,at+Vector3(cos(a)*size*.2,.14,sin(a)*size*.2),Vector3(size*.5,.12,size*.4),Color("6c9b48"))
+		var leaf := Clay.ball(scenery,at+Vector3(cos(a)*size*.2,.14,sin(a)*size*.2),Vector3(size*.5,.12,size*.4),Color("6c9b48"))
 		leaf.rotation.y = -a
 
 func reset(match_state: RefCounted) -> void:
+	build_scenery(Vector2i(match_state.w,match_state.h))
 	for n in arena_root.get_children(): n.free()
 	for n in flame_root.get_children(): n.free()
 	for n in burst_root.get_children(): n.free()
@@ -135,7 +149,7 @@ func reset(match_state: RefCounted) -> void:
 	blast_lights.clear()
 	for c in match_state.cells:
 		var value: int = match_state.cells[c]
-		if value == 1 and c.x > 0 and c.x < 12 and c.y > 0 and c.y < 10:
+		if value == 1 and match_state.inside(c):
 			obstacles[c] = Clay.pebble(arena_root,world(Vector2(c)),rng.randf())
 		elif value == 2:
 			obstacles[c] = Clay.sand_mound(arena_root,world(Vector2(c)),c.x+c.y*13)

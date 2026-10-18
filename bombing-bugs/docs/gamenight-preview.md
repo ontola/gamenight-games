@@ -15,7 +15,7 @@ GODOT=godot bombing-bugs/tools/capture_preview.sh /tmp/takes          # needs xv
 python3 bombing-bugs/tools/encode_preview.py /tmp/takes bombing-bugs/assets/gamenight
 ```
 
-`--seed=N` makes round 1 use seed N+71 (the scan uses the same), `--skip=S`
+`--seed=N` makes round 1 use seed N+71 (the scan uses the same), `--size=` picks the garden size (the takes use Medium), `--skip=S`
 lets the bots play S seconds unseen first. Godot 4.6.2 with llvmpipe renders
 the window at 1440×810; the encoder scales to 960×540. Encoding is bit-exact:
 the same takes give the same file.

@@ -34,7 +34,7 @@ def main():
             assert hello["game"] == "bombing-bugs" and hello["token"] == "isolated-test"
             peer.send(type="welcome", party={})
             settings = peer.expect("declare_settings")["settings"]
-            assert {s["key"] for s in settings} == {"ai_players", "teams", "arena", "friendly_fire", "fuse", "speed", "crates", "pickups", "sound"}
+            assert {s["key"] for s in settings} == {"ai_players", "teams", "arena", "size", "friendly_fire", "fuse", "speed", "crates", "pickups", "sound"}
             peer.send(type="setting_changed", key="ai_players", value=0)
             session = "bugs-test-session"
             seats = [{"index":2,"controller":"pad-seven","occupant":{"kind":"local","player_id":"ada"}},

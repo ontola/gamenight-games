@@ -34,6 +34,13 @@ remaining slots up to the requested count, without replacing human players.
 One human with AI set to zero is a practice arena. Options use D-pad/stick,
 A/B, or mouse; settings take effect on **Start a new round** or the next round.
 
+Gardens vary every round. Auto size picks from sizes that suit the player
+count (two players: 11×9 or 13×9; three: 13×11 or 15×9; four: 13×11, 15×11 or
+15×13) and the camera frames each size the same way. Scattered stones and
+Boulder field are generated per round, mirrored so every corner spawn sees the
+same garden, and always fully connected once the sand is gone. The countdown
+names the garden; the game's name only shows on the start menu.
+
 Teams pair seats 1+3 against 2+4. Friendly fire is optional; your own bombs
 always hurt. Eliminated bugs remain as little toppled bodies until next round.
 
@@ -53,7 +60,8 @@ standard host setting API; no game-specific LLM endpoint is necessary:
 | --- | --- | --- |
 | `ai_players` | 0–3, capped at four total players | Next round |
 | `teams` | Free-for-all, Teams | Next round |
-| `arena` | Clover garden, Seed crossroads, Pebble islands | Next round |
+| `arena` | Surprise me (default, a different garden each round), Clover garden, Seed crossroads, Pebble islands, Scattered stones, Boulder field | Next round |
+| `size` | Auto (default), Small 11×9, Medium 13×11, Large 15×13 | Next round |
 | `friendly_fire` | Boolean | Next round |
 | `fuse` | 15–40 tenths of a second | Next round |
 | `speed` | 20–50 tenths of a tile/second | Next round |

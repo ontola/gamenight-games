@@ -1,12 +1,16 @@
 extends RefCounted
 ## Pure simulation: no rendering, input devices or host connection required.
-const W := 13
-const H := 11
 const RADIUS := 0.26
 const DIRS := [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
-const SPAWNS := [Vector2i(1,1), Vector2i(W-2,H-2), Vector2i(W-2,1), Vector2i(1,H-2)]
-const DEFAULTS := {"ai_players":3, "teams":"Free-for-all", "arena":"Clover garden", "friendly_fire":false, "fuse":24, "speed":32, "crates":55, "pickups":true}
+const LAYOUTS := ["Clover garden", "Seed crossroads", "Pebble islands", "Scattered stones", "Boulder field"]
+const SIZES := {"Small": Vector2i(11,9), "Medium": Vector2i(13,11), "Large": Vector2i(15,13)}
+# Odd sizes keep the outer wall and the classic pillar grid lined up.
+const AUTO_SIZES := {2: [Vector2i(11,9), Vector2i(13,9)], 3: [Vector2i(13,11), Vector2i(15,9)], 4: [Vector2i(13,11), Vector2i(15,11), Vector2i(15,13)]}
+const DEFAULTS := {"ai_players":3, "teams":"Free-for-all", "arena":"Surprise me", "size":"Auto", "friendly_fire":false, "fuse":24, "speed":32, "crates":55, "pickups":true}
 var settings: Dictionary = DEFAULTS.duplicate()
+var w := 13
+var h := 11
+var layout := "Clover garden"
 var cells: Dictionary = {}
 var bugs: Array[Dictionary] = []
 var bombs: Array[Dictionary] = []
@@ -19,30 +23,91 @@ var winner := -2
 var next_bomb := 0
 var age := 0.0
 
+func spawns() -> Array[Vector2i]:
+	return [Vector2i(1,1), Vector2i(w-2,h-2), Vector2i(w-2,1), Vector2i(1,h-2)]
+
+func inside(c: Vector2i) -> bool:
+	return c.x > 0 and c.y > 0 and c.x < w-1 and c.y < h-1
+
 func start(roster: Array, options: Dictionary, seed_value: int) -> void:
 	settings = DEFAULTS.duplicate()
 	settings.merge(options, true)
 	rng.seed = seed_value
 	cells.clear(); bugs.clear(); bombs.clear(); flames.clear(); pickups.clear(); events.clear()
 	ended = false; winner = -2; age = 0.0; next_bomb = 0
-	for y in H:
-		for x in W:
+	var size: Vector2i = SIZES.get(settings.size, Vector2i.ZERO)
+	if size == Vector2i.ZERO:
+		var options_for: Array = AUTO_SIZES[clampi(roster.size(),2,4)]
+		size = options_for[rng.randi() % options_for.size()]
+	w = size.x; h = size.y
+	layout = settings.arena if settings.arena in LAYOUTS else LAYOUTS[rng.randi() % LAYOUTS.size()]
+	var rocks := _rocks()
+	for y in h:
+		for x in w:
 			var c := Vector2i(x,y)
-			var wall := x == 0 or y == 0 or x == W-1 or y == H-1 or (x % 2 == 0 and y % 2 == 0)
-			# Each layout opens different loops without blocking corner exits.
-			if x > 0 and y > 0 and x < W-1 and y < H-1:
-				if settings.arena == "Seed crossroads" and (x == W/2 or y == H/2): wall = false
-				if settings.arena == "Pebble islands" and (x == 4 or x == 8): wall = false
-			cells[c] = 1 if wall else (2 if rng.randf() < float(settings.crates)/100.0 else 0)
-	for s in SPAWNS:
+			cells[c] = 1 if rocks.has(c) else (2 if rng.randf() < float(settings.crates)/100.0 else 0)
+	for s in spawns():
 		cells[s] = 0
 		for d in DIRS:
-			var c: Vector2i = s + d
-			if c.x > 0 and c.y > 0 and c.x < W-1 and c.y < H-1: cells[c] = 0
+			if inside(s + d) and cells[s + d] == 2: cells[s + d] = 0
+	var spots := spawns()
 	for i in mini(roster.size(), 4):
 		var p: Dictionary = roster[i].duplicate(true)
-		p.merge({"pos":Vector2(SPAWNS[i]), "alive":true, "range":2, "capacity":1, "team":i % 2 if settings.teams == "Teams" else i, "heading":0.0, "moving":false, "target":Vector2(SPAWNS[i]), "brain":0.0},true)
+		p.merge({"pos":Vector2(spots[i]), "alive":true, "range":2, "capacity":1, "team":i % 2 if settings.teams == "Teams" else i, "heading":0.0, "moving":false, "target":Vector2(spots[i]), "brain":0.0},true)
 		bugs.append(p)
+
+## Rock cells for this round: the border plus the layout's interior rocks.
+func _rocks() -> Dictionary:
+	for attempt in 12:
+		var rocks := {}
+		for y in h:
+			for x in w:
+				var c := Vector2i(x,y)
+				if not inside(c) or _rock(c): rocks[c] = true
+		# Random layouts mirror one quarter so every corner spawn sees the same garden.
+		if layout in ["Scattered stones", "Boulder field"]:
+			for c in rocks.keys():
+				for m in [Vector2i(w-1-c.x,c.y), Vector2i(c.x,h-1-c.y), Vector2i(w-1-c.x,h-1-c.y)]: rocks[m] = true
+		for s in spawns():
+			rocks.erase(s)
+			for d in DIRS:
+				if inside(s+d): rocks.erase(s+d)
+		if _connected(rocks): return rocks
+	layout = "Clover garden"
+	return _rocks()
+
+func _rock(c: Vector2i) -> bool:
+	var pillar := c.x % 2 == 0 and c.y % 2 == 0
+	match layout:
+		"Seed crossroads": return pillar and c.x != w/2 and c.y != h/2
+		"Pebble islands":
+			# Two open pillar columns; a small garden opens its middle row instead.
+			if w >= 13: return pillar and c.x != 4 and c.x != w-5
+			return pillar and c.y != h/2
+		"Scattered stones":
+			# Free-standing stones, never touching: open lanes in every direction.
+			if c.x > w/2 or c.y > h/2: return false
+			return (c.x+c.y) % 2 == 0 and rng.randf() < 0.32
+		"Boulder field":
+			# The pillar grid, with some pillars gone and others grown into long boulders.
+			if c.x > w/2 or c.y > h/2: return false
+			if pillar: return rng.randf() < 0.8
+			return (c.x % 2 == 0 or c.y % 2 == 0) and rng.randf() < 0.18
+	return pillar
+
+## Every open cell must be reachable from every spawn once the sand is gone.
+func _connected(rocks: Dictionary) -> bool:
+	var first: Vector2i = spawns()[0]
+	var seen := {first: true}; var queue := [first]
+	while not queue.is_empty():
+		var c: Vector2i = queue.pop_front()
+		for d in DIRS:
+			var n: Vector2i = c+d
+			if inside(n) and not seen.has(n) and not rocks.has(n): seen[n] = true; queue.append(n)
+	for y in range(1,h-1):
+		for x in range(1,w-1):
+			if not rocks.has(Vector2i(x,y)) and not seen.has(Vector2i(x,y)): return false
+	return true
 
 func tile(pos: Vector2) -> Vector2i:
 	return Vector2i(roundi(pos.x), roundi(pos.y))

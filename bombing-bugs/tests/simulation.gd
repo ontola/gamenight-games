@@ -14,7 +14,7 @@ func fresh(options: Dictionary = {}) -> RefCounted:
 
 func clear_inside(m: RefCounted) -> void:
 	for c in m.cells:
-		if c.x > 0 and c.y > 0 and c.x < Match.W-1 and c.y < Match.H-1: m.cells[c] = 0
+		if m.inside(c): m.cells[c] = 0
 
 func _init() -> void:
 	var m := fresh()
@@ -60,23 +60,38 @@ func _init() -> void:
 	m.step(.01,[]); check(m.ended and m.winner == -1,"Simultaneous elimination must draw")
 	m = fresh(); m.age = 5000; m.step(.1,[])
 	check(not m.ended,"There must be no time-based winner")
-	for layout in ["Clover garden","Seed crossroads","Pebble islands"]:
-		for seed_value in 30:
-			m = fresh({"arena":layout}); m.start([{}, {}, {}, {}],{"arena":layout},seed_value)
-			for spawn in Match.SPAWNS:
-				var exits := 0
-				for d in Match.DIRS:
-					if m.cells.get(spawn+d,1) == 0: exits += 1
-				check(exits >= 2,"Spawn must have two exits: %s"%layout)
-			# Destroying seeds must leave a connected permanent arena.
-			var seen := {Match.SPAWNS[0]:true}; var queue := [Match.SPAWNS[0]]
-			while not queue.is_empty():
-				var c: Vector2i = queue.pop_front()
-				for d in Match.DIRS:
-					var n: Vector2i = c+d
-					if not seen.has(n) and m.cells.get(n,1) != 1: seen[n] = true; queue.append(n)
-			for c in m.cells:
-				if m.cells[c] != 1: check(seen.has(c),"Disconnected arena")
+	var sizes_seen := {}
+	var layouts_seen := {}
+	for layout in ["Surprise me"]+Match.LAYOUTS:
+		for size in ["Auto"]+Match.SIZES.keys():
+			for players in [2,3,4]:
+				for seed_value in 12:
+					var roster := []
+					for i in players: roster.append({})
+					m = Match.new(); m.start(roster,{"arena":layout,"size":size},seed_value)
+					sizes_seen[Vector2i(m.w,m.h)] = true; layouts_seen[m.layout] = true
+					check(m.w % 2 == 1 and m.h % 2 == 1,"Garden sizes must be odd")
+					if size == "Auto": check(Vector2i(m.w,m.h) in Match.AUTO_SIZES[players],"Auto size must follow player count")
+					if layout != "Surprise me": check(m.layout == layout or m.layout == "Clover garden","Chosen layout ignored")
+					for spawn in m.spawns():
+						var exits := 0
+						for d in Match.DIRS:
+							if m.cells.get(spawn+d,1) == 0: exits += 1
+						check(exits >= 2,"Spawn must have two exits: %s %dx%d"%[m.layout,m.w,m.h])
+					for c in m.cells:
+						if not m.inside(c): check(m.cells[c] == 1,"Border must be solid")
+					# Destroying sand must leave a connected permanent arena.
+					var first: Vector2i = m.spawns()[0]
+					var seen := {first:true}; var queue := [first]
+					while not queue.is_empty():
+						var c: Vector2i = queue.pop_front()
+						for d in Match.DIRS:
+							var n: Vector2i = c+d
+							if not seen.has(n) and m.cells.get(n,1) != 1: seen[n] = true; queue.append(n)
+					for c in m.cells:
+						if m.cells[c] != 1: check(seen.has(c),"Disconnected arena: %s"%m.layout)
+	check(sizes_seen.size() >= 5,"Expected varied garden sizes")
+	check(layouts_seen.size() == Match.LAYOUTS.size(),"Every layout must be reachable: %s"%[layouts_seen.keys()])
 	# A result locks the winner, not the winner's controls or the arena effects.
 	m = fresh(); clear_inside(m)
 	for i in [1,2,3]: m.bugs[i].alive = false

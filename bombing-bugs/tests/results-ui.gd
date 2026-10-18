@@ -8,14 +8,14 @@ func run() -> void:
 	game.set_physics_process(false)
 	game.menu_open = false; game.overlay.hide(); game.active = true; game.countdown = 0
 	for cell in game.sim.cells:
-		if cell.x > 0 and cell.x < 12 and cell.y > 0 and cell.y < 10 and (cell.x%2 != 0 or cell.y%2 != 0): game.sim.cells[cell] = 0
+		if game.sim.inside(cell) and (cell.x%2 != 0 or cell.y%2 != 0): game.sim.cells[cell] = 0
 	for i in game.sim.bugs.size():
 		var p = game.sim.bugs[i]
 		p.name = ["Ladybug", "Nibbles", "Buzz", "Bean"][i]
 		p.capacity = i+1; p.range = i+2
 	game._update_badges()
 	for i in game.sim.bugs.size():
-		var stats = game.badges.get_child(i).get_child(0).get_child(1)
+		var stats = game.badges.get_child(i).get_child(1)
 		assert(stats.get_child(1).text == str(i+1))
 		assert(stats.get_child(3).text == str(i+2))
 	game.sim.pickups[Vector2i(5,7)] = {"kind":"capacity","wait":0}

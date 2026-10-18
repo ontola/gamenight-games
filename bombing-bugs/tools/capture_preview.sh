@@ -15,8 +15,8 @@ take() {
 		--audio-driver Dummy --fixed-fps 30 --write-movie "$out/$name/f.png" --quit-after 75 \
 		--path . -- --demo "$@" > "$out/$name/log.txt" 2>&1
 }
-take pickups --arena="Seed crossroads" --seed=431 --skip=3.8
-take knockout --arena="Clover garden" --seed=431 --skip=5.2
-take islands --arena="Pebble islands" --seed=600 --skip=4.5
-take powered --arena="Seed crossroads" --seed=700 --skip=15.5
-take teamwin --arena="Clover garden" --teams --seed=600 --skip=7.5
+take pickups --arena="Seed crossroads" --seed=431 --skip=3.8 --size=Medium
+take knockout --arena="Clover garden" --seed=431 --skip=5.2 --size=Medium
+take islands --arena="Pebble islands" --seed=600 --skip=4.5 --size=Medium
+take powered --arena="Seed crossroads" --seed=700 --skip=15.5 --size=Medium
+take teamwin --arena="Clover garden" --teams --seed=600 --skip=7.5 --size=Medium

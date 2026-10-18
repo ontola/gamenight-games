@@ -6,7 +6,7 @@ extends SceneTree
 const Match = preload("res://src/match.gd")
 
 func _init() -> void:
-	for arena in ["Clover garden","Seed crossroads","Pebble islands"]:
+	for arena in Match.LAYOUTS:
 		for teams in ["Free-for-all","Teams"]:
 			for seed_base in [431,500,600,700]:
 				var m := Match.new()
@@ -23,5 +23,5 @@ func _init() -> void:
 						if e.type == "boom": booms += 1
 						if e.type in ["out","pickup"]: log.append("%s%d@%.1f" % ["X" if e.type == "out" else "+", e.get("who",-1), m.age])
 					if m.ended: log.append("END@%.1f w%d" % [m.age,m.winner]); break
-				print("%s | %s | seed %d | booms %d | %s" % [arena,teams,seed_base,booms," ".join(log)])
+				print("%s | %dx%d | %s | seed %d | booms %d | %s" % [m.layout,m.w,m.h,teams,seed_base,booms," ".join(log)])
 	quit()
