@@ -50,6 +50,9 @@ func _process(_delta: float) -> void:
 		_socket = null
 		_retry_at = Time.get_ticks_msec() + 1500
 		connected = false
+		# A welcome reconnects the socket, but only a fresh lobby_focus grants
+		# screen ownership. Never carry the previous connection's grant over.
+		active = false
 		connection_changed.emit(false)
 
 func _handle(message: Dictionary) -> void:
@@ -79,7 +82,27 @@ func _command(message: Dictionary) -> void:
 	if not connected:
 		rejected.emit("Reconnecting to GameNight. Please try again when connected.")
 		return
+	# Godot parses every JSON number as float. The optimistic queue snapshot
+	# must echo the host's integer cursor, otherwise serde rejects e.g. 3.0.
+	# Copy only this command payload; never mutate the received party state or
+	# coerce unrelated numeric game settings.
+	if message.get("type") in ["remove_playlist_entry", "move_playlist_entry"]:
+		message = message.duplicate(true)
+		var expected: Dictionary = message.get("expected", {})
+		if expected.get("current") != null:
+			expected["current"] = int(expected["current"])
+	if message.get("type") in ["next", "play_next", "close_overlay"]: _allow_game_foreground()
 	_send(message)
+
+## Windows keeps a background process from taking focus unless the foreground
+## app hands it over. A warm game started before this press would stay behind
+## the lobby, so grant it first. GDScript cannot call user32; the host ships a
+## helper (GAMENIGHT_FOREGROUND_HELPER) that does, as a child of this process.
+func _allow_game_foreground() -> void:
+	if OS.get_name() != "Windows": return
+	var helper := OS.get_environment("GAMENIGHT_FOREGROUND_HELPER")
+	if helper.is_empty() or not FileAccess.file_exists(helper): return
+	OS.execute(helper, ["--allow-foreground"])
 
 func join_guest(name: String) -> void:
 	_command({"type": "join_party", "name": name})
