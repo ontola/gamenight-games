@@ -55,10 +55,8 @@ var ui_clock := 0.0
 func _ready() -> void:
 	rng.randomize(); settings.sound = true
 	managed = GameNight.launched_by_daemon
-	# Standalone previews must not attach to a real running party.
-	if not managed:
-		GameNight.auto_reconnect = false
-		if GameNight._socket: GameNight._socket.close()
+	# A hand-started preview stays offline: the SDK only connects when
+	# GameNight launched us (or GAMENIGHT_ADDR asks for a development host).
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--demo": demo = true
 		if arg.begins_with("--screenshot="): shot_path = arg.substr(13)
