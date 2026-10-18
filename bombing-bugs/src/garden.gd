@@ -51,10 +51,10 @@ const MOODS := [
 	{"soil":Color("7a6142"),"moss":Color("7f8648"),"base":Color("4d5c2a"),"tip":Color("cfb055"),"flowers":[Color("c9a0e8"),Color("fff0c8")]},
 ]
 const SUN_ANGLES := Vector2(-52,-32)
-## A playful three-quarter view: tilted down CAM_PITCH degrees and turned CAM_YAW
-## degrees off straight-on, so the garden reads as a little diorama.
+## Straight-on view tilted down CAM_PITCH degrees: not top-down, so the garden
+## reads as a little diorama. Joep found any CAM_YAW turn unnatural; keep it 0.
 const CAM_PITCH := 54.0
-const CAM_YAW := 13.0
+const CAM_YAW := 0.0
 const GRASS_SHADER := """shader_type spatial;
 render_mode cull_disabled;
 uniform float gust = 1.0;

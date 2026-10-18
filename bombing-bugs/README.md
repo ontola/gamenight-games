@@ -50,8 +50,8 @@ side props, and where the snail crawls. Grass grows in clumps of curved,
 tapered blades that sway in the wind, and flowers, clovers, mushrooms and the
 snail move with the same breeze. Blades don't cast shadow-map shadows (swaying
 blades flicker as pixel blobs); each clump instead lays one still, soft shadow
-on the soil, stretched away from the sun. The camera looks down at a tilted,
-slightly turned three-quarter angle (`Garden.CAM_PITCH`/`CAM_YAW`); grass,
+on the soil, stretched away from the sun. The camera looks straight on, tilted
+down well short of top-down (`Garden.CAM_PITCH`/`CAM_YAW`); grass,
 flowers and mushrooms between the camera and the pit are only as tall as they
 can be without hiding the sand. There are no control hints during play.
 

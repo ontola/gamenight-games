@@ -180,7 +180,7 @@ func _frame_camera(cols: int, rows: int) -> void:
 		w = maxf(w,absf(c.dot(right))); h = maxf(h,absf((c-target).dot(up)))
 	var view := get_viewport().get_visible_rect().size
 	var aspect := view.x/maxf(view.y,1.0)
-	camera.size = maxf(w*2.0,h*2.0*aspect)*1.06
+	camera.size = maxf(w*2.0,h*2.0*aspect)*1.12
 
 func _prepared(id: String, seats: Array, players: Array) -> void:
 	session = id; host_seats = seats; host_players = players; active = false; host_paused = false
