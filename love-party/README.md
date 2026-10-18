@@ -38,8 +38,27 @@ Managed games match opaque host controller IDs to seats and consume host input.
 They do not map SDL enumeration to seat order. Standalone mode uses local devices.
 Unplugging a device must preserve ownership of the others; verify this with
 physical controllers as well as synthetic input tests.
-Remote phone controls are not implemented. Games support local controllers
-and shared keyboard input; declared AI seats use bots.
+Games support local controllers and shared keyboard input; declared AI
+seats use bots.
+
+A game can give each player a screen on their phone. Put the page in a
+folder of the game and set `phone` on the mode:
+
+```lua
+M.phone = {
+	folder = "games/cards_phone",            -- copied to the save directory
+	message = function(state, player, data, send)
+		-- a tap from `player`; answer with send(view, player)
+	end,
+	presence = function(state, player, connected, send)
+		if connected then send(view_for(state, player), player) end
+	end,
+}
+```
+
+The runner declares the page (`shared/phone.lua` copies it out of the
+`.love` file and warns when it would not fit a hosted room) and routes
+messages. See the GameNight docs page "Phone screens".
 
 ## GameNight
 

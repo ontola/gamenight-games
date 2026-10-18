@@ -125,6 +125,15 @@ function love.load(args)
 				prepare = prepare,
                 settings = mode.settings,
                 setting = mode.setting,
+				companion = mode.phone and function()
+					return { root = require("shared.phone").folder(mode.phone.folder), entry = mode.phone.entry or "index.html", app = mode.phone.app }
+				end,
+				phonePresence = mode.phone and function(player, connected)
+					if state and mode.phone.presence then mode.phone.presence(state, player, connected, function(data, to) bridge:phone(data, to) end) end
+				end,
+				phone = mode.phone and function(player, data)
+					if state and mode.phone.message then mode.phone.message(state, player, data, function(reply, to) bridge:phone(reply, to) end) end
+				end,
 				instantJoin = mode.join ~= nil,
 				party = function(seats, players, presence)
 					if state then

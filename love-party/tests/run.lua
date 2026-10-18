@@ -186,6 +186,30 @@ function tests.participation_lifecycle()
 	lifecycle:activity("ordinal:1")
 	equal(#messages, 3)
 end
+function tests.phone_screens()
+	local sent, seen = {}, {}
+	local l = require("shared.lifecycle").new({ send = function(_, m) sent[#sent + 1] = m end }, {
+		hide = function() end, show = function() end, dispose = function() end, prepare = function() end,
+		companion = function() return { root = "/tmp/phone", entry = "index.html" } end,
+		phonePresence = function(player, connected) seen[#seen + 1] = player .. (connected and "+" or "-") end,
+		phone = function(player, data) seen[#seen + 1] = player .. ":" .. data.action end,
+	}, "test")
+	l:receive({ type = "welcome", protocol_version = 1 })
+	equal(sent[1].type, "declare_companion")
+	equal(sent[1].root, "/tmp/phone")
+	l:receive({ type = "companion_presence", player_id = "ada", connected = true })
+	l:receive({ type = "companion_message", player_id = "ada", data = { action = "roll" } })
+	equal(table.concat(seen, ","), "ada+,ada:roll")
+	l:phone({ hand = { "wood" } }, "ada")
+	equal(sent[2].type, "companion_message")
+	equal(sent[2].player_id, "ada")
+	love.filesystem.createDirectory("phone-test-src/img")
+	love.filesystem.write("phone-test-src/index.html", "<p>hi</p>")
+	love.filesystem.write("phone-test-src/img/a.png", "x")
+	local root = require("shared.phone").folder("phone-test-src", "phone-test-out")
+	equal(root, love.filesystem.getSaveDirectory() .. "/phone-test-out")
+	assert(love.filesystem.getInfo("phone-test-out/img/a.png"), "phone folder copied")
+end
 function tests.lifecycle()
 	local sent, events = {}, {}
 	local transport = {

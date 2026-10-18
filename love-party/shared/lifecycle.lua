@@ -15,6 +15,14 @@ function Lifecycle:receive(m)
     elseif m.type == "welcome" then
 		assert(m.protocol_version == 1, "Unsupported GameNight protocol")
         if self.hooks.settings then self.transport:send({type="declare_settings", settings=self.hooks.settings}) end
+        if self.hooks.companion then
+            local screen = self.hooks.companion()
+            if screen then self.transport:send({type="declare_companion", root=screen.root, entry=screen.entry, app=screen.app}) end
+        end
+    elseif m.type == "companion_presence" and self.hooks.phonePresence then
+        self.hooks.phonePresence(tostring(m.player_id or ""), m.connected == true)
+    elseif m.type == "companion_message" and self.hooks.phone then
+        self.hooks.phone(tostring(m.player_id or ""), m.data)
     elseif m.type == "setting_changed" and self.hooks.setting then
         self.hooks.setting(m.key, m.value)
 	elseif m.type == "prepare" and m.game == self.game and m.session ~= self.session then
@@ -62,6 +70,10 @@ function Lifecycle:finish()
 	if self.phase == "running" then
 		self.transport:send({ type = "finished", session = self.session })
 	end
+end
+--- Send JSON to one player's phone screen, or to every phone without `player_id`.
+function Lifecycle:phone(data, player_id)
+	self.transport:send({ type = "companion_message", data = data, player_id = player_id })
 end
 function Lifecycle:activity(controller)
 	if self.phase == "running" and self.session then
