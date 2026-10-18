@@ -34,7 +34,7 @@ func build() -> void:
 	# Only HDR fire blooms (as in Growing Guns); everything lit stays below the threshold.
 	env.glow_enabled = true; env.glow_hdr_threshold = 1.0; env.glow_intensity = .9; env.glow_bloom = 0.0; env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	env_node.environment = env; add_child(env_node)
-	var sun := DirectionalLight3D.new(); sun.rotation_degrees = Vector3(-52,-32,0); sun.light_color = Color("ffe7bd"); sun.light_energy = .74
+	var sun := DirectionalLight3D.new(); sun.rotation_degrees = Vector3(SUN_ANGLES.x,SUN_ANGLES.y,0); sun.light_color = Color("ffe7bd"); sun.light_energy = .74
 	sun.shadow_enabled = true; sun.shadow_blur = 2.0; sun.directional_shadow_max_distance = 40; add_child(sun)
 	arena_root = Node3D.new(); add_child(arena_root)
 	flame_root = Node3D.new(); add_child(flame_root)
@@ -48,6 +48,7 @@ const MOODS := [
 	{"soil":Color("5e4b35"),"moss":Color("557a40"),"base":Color("2c5530"),"tip":Color("9ccf66"),"flowers":[Color("f2b8d0"),Color("ffffff")]},
 	{"soil":Color("7a6142"),"moss":Color("7f8648"),"base":Color("4d5c2a"),"tip":Color("cfb055"),"flowers":[Color("c9a0e8"),Color("fff0c8")]},
 ]
+const SUN_ANGLES := Vector2(-52,-32)
 const GRASS_SHADER := """shader_type spatial;
 render_mode cull_disabled;
 uniform float gust = 1.0;
@@ -70,6 +71,20 @@ void fragment() {
  ALBEDO = COLOR.rgb*mix(.45,1.08,smoothstep(0.0,.75,tip));
  ROUGHNESS = .8;
  BACKLIGHT = COLOR.rgb*.35*tip;
+}
+"""
+const CLUMP_SHADOW_SHADER := """shader_type spatial;
+render_mode unshaded, depth_draw_never, cull_disabled, shadows_disabled;
+uniform vec2 arena;
+varying vec3 world;
+void vertex() { world = (MODEL_MATRIX*vec4(VERTEX,1.0)).xyz; }
+void fragment() {
+ // The quads float at meadow height, so they must never hang over the sunken pit.
+ if (abs(world.x) < arena.x && abs(world.z) < arena.y) discard;
+ float d = length(UV);
+ float core = mix(1.0,.55,smoothstep(-1.0,1.0,UV.x));
+ ALBEDO = vec3(.08,.1,.04);
+ ALPHA = (1.0-smoothstep(.25,1.0,d))*.32*core;
 }
 """
 const MEADOW_SHADER := """shader_type spatial;
@@ -230,6 +245,7 @@ func build_terrain() -> void:
 func build_grass() -> void:
 	var verts := PackedVector3Array(); var normals := PackedVector3Array(); var colors := PackedColorArray(); var uvs := PackedVector2Array(); var indices := PackedInt32Array()
 	var reach := Vector2(hx+6,hz+4.5)
+	var shadow_tool := SurfaceTool.new(); shadow_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var clumps := int(660*(reach.x*reach.y)/(11.5*9.0))
 	var base_color: Color = mood.base; var tip_color: Color = mood.tip
 	for c in clumps:
@@ -237,13 +253,14 @@ func build_grass() -> void:
 		if absf(center.x)<hx+.75 and absf(center.z)<hz+.75: continue
 		var radius := rng.randf_range(.25,.7)
 		var lush := rng.randf_range(.65,1.2)
+		var tallest := 0.0
 		for b in rng.randi_range(7,18):
 			var off := Vector2.from_angle(rng.randf()*TAU)*sqrt(rng.randf())*radius
 			var at := center+Vector3(off.x,0,off.y)
 			# Blades start past the bank's crest, where the meadow is level; on the slope they poke through as slivers.
 			if absf(at.x)<hx+1.1 and absf(at.z)<hz+1.1: continue
-			# Grass towers over a bug: blades stand two to three bugs tall.
-			var height := rng.randf_range(1.0,2.7)*lush
+			# Grass towers over a bug: blades stand three to four bugs tall.
+			var height := rng.randf_range(1.4,3.6)*lush
 			var width := rng.randf_range(.07,.15)*(.7+height*.2)
 			var a := rng.randf()*TAU
 			var side := Vector3(cos(a),0,sin(a))
@@ -260,6 +277,7 @@ func build_grass() -> void:
 				lean.z = sweep*height
 				height = minf(height,maxf(.12,front/(1.0-sweep)))
 				lean.z = sweep*height
+			tallest = maxf(tallest,height)
 			var shade := rng.randf()
 			var low_c := base_color.lerp(mood.soil,rng.randf()*.25)
 			var high_c := tip_color.lerp(base_color,shade*.35)
@@ -279,13 +297,36 @@ func build_grass() -> void:
 				var i0 := start+r*3
 				for k in 2:
 					indices.append_array([i0+k,i0+3+k,i0+k+1, i0+k+1,i0+3+k,i0+4+k])
+		if tallest > 0: _clump_shadow(shadow_tool,center,radius,tallest)
 	var arrays := []; arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts; arrays[Mesh.ARRAY_NORMAL] = normals; arrays[Mesh.ARRAY_COLOR] = colors; arrays[Mesh.ARRAY_TEX_UV] = uvs; arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new(); mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	var grass := MeshInstance3D.new(); grass.mesh = mesh
+	# Swaying blades in a shadow map read as flickering pixel blobs. Each clump
+	# instead lays one still, soft shadow on the soil, stretched away from the sun.
+	grass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var shade_mesh := MeshInstance3D.new(); shade_mesh.mesh = shadow_tool.commit()
+	shade_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var shade_shader := Shader.new(); shade_shader.code = CLUMP_SHADOW_SHADER
+	shade_mesh.material_override = ShaderMaterial.new(); shade_mesh.material_override.shader = shade_shader
+	shade_mesh.material_override.set_shader_parameter("arena",Vector2(hx+.9,hz+.9))
+	scenery.add_child(shade_mesh)
 	var shader := Shader.new(); shader.code = GRASS_SHADER
 	var material := ShaderMaterial.new(); material.shader = shader; material.set_shader_parameter("gust",rng.randf_range(.6,1.3))
 	grass.material_override = material; scenery.add_child(grass)
+
+## One soft ellipse per clump: a dark core under the tuft fading out along the sun.
+func _clump_shadow(tool: SurfaceTool, center: Vector3, radius: float, height: float) -> void:
+	var light := Basis.from_euler(Vector3(deg_to_rad(SUN_ANGLES.x),deg_to_rad(SUN_ANGLES.y),0))*Vector3(0,0,-1)
+	var reach := Vector3(light.x,0,light.z)/-light.y*height*.8
+	var along := reach.normalized(); var across := Vector3(-along.z,0,along.x)
+	var half_len := reach.length()*.5+radius*1.2; var half_w := radius*1.4+height*.08
+	var mid := Vector3(center.x,.5,center.z)+reach*.5
+	var corners := [mid-along*half_len-across*half_w,mid+along*half_len-across*half_w,mid+along*half_len+across*half_w,mid-along*half_len+across*half_w]
+	var uv := [Vector2(-1,-1),Vector2(1,-1),Vector2(1,1),Vector2(-1,1)]
+	for i in [0,1,2,0,2,3]:
+		# UV.x < 0 is the end under the tuft; it stays darker than the tail.
+		tool.set_uv(uv[i]); tool.set_normal(Vector3.UP); tool.add_vertex(corners[i])
 
 func flower(at: Vector3, height: float, petals: Color) -> void:
 	var stem := _sway_node(scenery,at,1.0)

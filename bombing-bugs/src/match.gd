@@ -203,7 +203,7 @@ func place_at(who: int, c: Vector2i) -> bool:
 	bombs.append({"id":next_bomb,"cell":c,"owner":who,"range":p.range,"time":float(settings.fuse)/10.0,"passers":passers,"slide":Vector2i.ZERO,"glide":0.0,
 		"remote":p.remote,"pierce":p.pierce,"square":p.square,"age":0.0})
 	next_bomb += 1
-	events.append({"type":"plant","cell":c})
+	events.append({"type":"plant","cell":c,"who":who})
 	return true
 
 ## Remote bombs wait for their owner's B press; all of them go off at once.

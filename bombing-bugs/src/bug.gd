@@ -20,6 +20,10 @@ const CHAR := Color("1c1612")
 ## Set by main.gd while a skull curse sits on this bug: little purple wisps circle its head.
 var cursed := false
 var hex: Node3D
+## Laying a bomb: a little squat with the eyes squeezed shut, like laying an egg.
+var lay_time := -1.0
+var eyes: Array[Node3D] = []
+const LAY_TIME := .42
 
 func build(index: int, player_color: Color) -> void:
 	kind = index % 4
@@ -51,9 +55,11 @@ func build(index: int, player_color: Color) -> void:
 	var head_color := dark if kind == 0 else color
 	Clay.ball(body,Vector3(0,.42,.29),Vector3(.45,.44,.41),head_color)
 	for side in [-1,1]:
-		Clay.ball(body,Vector3(side*.125,.50,.454),Vector3(.15,.18,.08),Color("fff5d9"))
-		Clay.ball(body,Vector3(side*.125,.51,.493),Vector3(.071,.09,.035),dark)
-		Clay.ball(body,Vector3(side*.125-.013,.54,.513),Vector3(.025,.025,.012),Color.WHITE)
+		# Each eye sits in its own pivot so it can squint shut.
+		var eye := Node3D.new(); body.add_child(eye); eye.position = Vector3(side*.125,.505,.47); eyes.append(eye)
+		Clay.ball(eye,Vector3(0,-.005,-.016),Vector3(.15,.18,.08),Color("fff5d9"))
+		Clay.ball(eye,Vector3(0,.005,.023),Vector3(.071,.09,.035),dark)
+		Clay.ball(eye,Vector3(-.013,.035,.043),Vector3(.025,.025,.012),Color.WHITE)
 		Clay.rod(body,Vector3(side*.12,.59,.27),Vector3(side*.22,.82,.3),.023,dark)
 		Clay.ball(body,Vector3(side*.22,.83,.3),Vector3(.07,.07,.07),dark)
 		for j in 3:
@@ -80,6 +86,26 @@ func animate(dt: float, moving: bool, heading: float, alive: bool) -> void:
 	body.rotation.z = sin(phase*.5)*(.055 if moving else .015)
 	for i in legs.size(): legs[i].rotation.y = sin(phase+(i%2)*PI)*(.5 if moving else .04)
 	for i in wings.size(): wings[i].rotation.z = (1 if i == 0 else -1)*(.15+sin(phase*2)*.12)
+	_lay(dt)
+
+func lay() -> void:
+	if dead_time < 0: lay_time = 0.0
+
+func _lay(dt: float) -> void:
+	if lay_time < 0: return
+	lay_time += dt
+	# Down into the knees, a brief squeeze, back up: a bell curve over LAY_TIME.
+	var k := clampf(lay_time/LAY_TIME,0,1)
+	var squat := sin(k*PI)*sin(k*PI)
+	body.position.y -= .06*squat
+	body.scale = Vector3(1.0+.05*squat,1.0-.08*squat,1.0+.05*squat)
+	body.rotation.x = -.12*squat
+	for i in legs.size(): legs[i].rotation.z = (-1 if i < 3 else 1)*.35*squat
+	for eye in eyes: eye.scale.y = 1.0-.82*clampf(squat*1.6,0,1)
+	if k >= 1.0:
+		lay_time = -1.0; body.scale = Vector3.ONE; body.rotation.x = 0
+		for leg in legs: leg.rotation.z = 0
+		for eye in eyes: eye.scale.y = 1.0
 
 func _die(dt: float) -> void:
 	if dead_time < 0: _start_dying()
@@ -89,7 +115,10 @@ func _die(dt: float) -> void:
 	var flip := smoothstep(0.0,.5,t)
 	var angle := PI*flip
 	body.rotation.z = angle
-	body.position = Vector3(.37*sin(angle),.37-.37*cos(angle)-.14*flip+sin(clampf(t/.5,0,1)*PI)*.55,0)
+	# Once the fire dies down the husk sags flat.
+	var slump := smoothstep(2.3,3.6,t)
+	body.position = Vector3(.37*sin(angle),.37-.37*cos(angle)-.14*flip+sin(clampf(t/.5,0,1)*PI)*.55-.1*slump,0)
+	body.scale = Vector3(1.0+.1*slump,1.0-.22*slump,1.0+.1*slump)
 	# Scorched black within a blink; the embers in the char glow out.
 	var burn := clampf(t/.2,0,1)
 	var glow := maxf(0.0,1.0-t/1.6)*(.75+.25*sin(t*31.0))
@@ -115,12 +144,12 @@ func _die(dt: float) -> void:
 		w.visible = strength > 0
 		w.position = Vector3(sin(life*5.0+i)*.1+life*.25,.8+life*1.2,cos(life*4.0+i)*.08)
 		w.scale = Vector3.ONE*(.22+life*.4)*strength*(1.0-life*.4)
-	if t >= 1.7 and pieces.is_empty(): _fall_apart()
+	if t >= 2.4 and pieces.is_empty(): _fall_apart()
 	for p in pieces:
 		var node: Node3D = p[0]
 		var v: Vector3 = p[1]
 		if v == Vector3.ZERO: continue
-		v.y -= 9.0*dt
+		v.y -= 5.0*dt
 		node.global_position += v*dt
 		node.rotate(p[2].normalized(),p[2].length()*dt)
 		if node.global_position.y < p[3]:
@@ -131,6 +160,9 @@ func _die(dt: float) -> void:
 func _start_dying() -> void:
 	dead_time = 0.0
 	marker.visible = false
+	lay_time = -1.0; body.scale = Vector3.ONE; body.rotation.x = 0
+	for leg in legs: leg.rotation.z = 0
+	for eye in eyes: eye.scale.y = 1.0
 	var stack: Array[Node] = [body]
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
@@ -154,12 +186,12 @@ func _start_dying() -> void:
 		var w := Clay.ball(self,Vector3(0,.8,0),Vector3.ONE*.01,Color.WHITE); w.material_override = smoke_material
 		w.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; w.visible = false; wisps.append(w)
 
-## The burnt husk comes apart: legs, wings and head tumble off and stay where they land.
+## The burnt husk crumbles: legs, wings and head drop off gently and stay where they land.
 func _fall_apart() -> void:
 	var random := RandomNumberGenerator.new(); random.seed = kind*977+int(global_position.x*31.0+global_position.z*17.0)
 	var head := Node3D.new(); body.add_child(head); head.position = Vector3(0,.44,.33)
 	for n in body.get_children():
-		if n is MeshInstance3D and n.position.z > .2 and n.position.y > .3:
+		if (n is MeshInstance3D or n in eyes) and n.position.z > .2 and n.position.y > .3:
 			n.reparent(head)
 	var loose: Array[Node3D] = [head]
 	loose.append_array(legs); loose.append_array(wings)
@@ -168,7 +200,5 @@ func _fall_apart() -> void:
 		n.top_level = true; n.global_transform = at
 		var out := n.global_position-global_position; out.y = 0
 		out = (out.normalized() if out.length() > .01 else Vector3.RIGHT.rotated(Vector3.UP,random.randf()*TAU))
-		var speed := random.randf_range(.8,1.8)*(.6 if n == head else 1.0)
-		pieces.append([n,out*speed+Vector3(0,random.randf_range(1.5,2.6),0),Vector3(random.randf_range(-6,6),random.randf_range(-6,6),random.randf_range(-6,6)),.2 if n == head else .08])
-	# What is left of the shell slumps flat.
-	body.scale = Vector3(1.08,.82,1.08)
+		var speed := random.randf_range(.12,.35)*(.6 if n == head else 1.0)
+		pieces.append([n,out*speed+Vector3(0,random.randf_range(.1,.4),0),Vector3(random.randf_range(-1.5,1.5),random.randf_range(-1,1),random.randf_range(-1.5,1.5)),.2 if n == head else .08])

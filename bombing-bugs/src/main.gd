@@ -285,6 +285,7 @@ func _physics_process(dt: float) -> void:
 	var blasted := 0
 	for event in sim.events:
 		if event.type == "boom": blasted += event.cells.size(); continue
+		if event.type == "plant" and event.who < views.size(): views[event.who].lay()
 		if event.type == "pickup": _play_sound("pickup:"+str(event.kind))
 		elif event.type in clips: _play_sound(event.type)
 		if event.type in ["out","pickup","cursed","cured"]: _update_badges(int(event.get("who",-1)) if event.type == "pickup" else -1)
@@ -498,7 +499,7 @@ func _menu_action(index: int, direction: int) -> void:
 func _build_audio() -> void:
 	# Soft procedural percussion: no music, no harsh looping engine/noise layer.
 	var noise := RandomNumberGenerator.new(); noise.seed = 19
-	for kind in ["plant","boom","pickup","out","kick"]:
+	for kind in ["boom","pickup","out","kick"]:
 		var samples := PackedByteArray()
 		var seconds := .45 if kind == "boom" else .13
 		var count := int(22050*seconds)
@@ -514,8 +515,9 @@ func _build_audio() -> void:
 			samples.encode_s16(i*2,int(clampf(value*envelope,-1,1)*22000))
 		var wav := AudioStreamWAV.new(); wav.format = AudioStreamWAV.FORMAT_16_BITS; wav.mix_rate = 22050; wav.data = samples; clips[kind] = wav
 	var jingles := PickupSound.build_all()
-	for kind in jingles: clips[("" if kind in ["detonate","cursed"] else "pickup:")+kind] = jingles[kind]
-	clips.line = clips.plant
+	for kind in jingles: clips[("" if kind in ["detonate","cursed","lay"] else "pickup:")+kind] = jingles[kind]
+	clips.plant = clips.lay
+	clips.line = clips.lay
 	sound.max_polyphony = 4
 	boom_player = AudioStreamPlayer.new(); boom_player.max_polyphony = 6; add_child(boom_player)
 	boom_task = WorkerThreadPool.add_task(func(): boom_clips = BoomSound.build_all(),false,"Explosion sounds")

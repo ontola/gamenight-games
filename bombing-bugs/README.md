@@ -48,15 +48,18 @@ Each round's seed also picks the garden's look: a colour mood (fresh spring,
 lush, dry late summer, autumn), soil patches showing through the moss, the
 side props, and where the snail crawls. Grass grows in clumps of curved,
 tapered blades that sway in the wind, and flowers, clovers, mushrooms and the
-snail move with the same breeze.
+snail move with the same breeze. Blades don't cast shadow-map shadows (swaying
+blades flicker as pixel blobs); each clump instead lays one still, soft shadow
+on the soil, stretched away from the sun.
 
 Explosions use Growing Guns' layered blast: lumpy fire clouds along every
 burning cell, flame tongues, embers, dusty smoke, a flash and a fireball light,
 a short camera jolt and a scorch mark. The sound is Growing Guns' synthesised
 bang and rumble (`src/boom_sound.gd`); bombs that go off in the same tick play
 as one blast, louder and deeper the more cells burn. A bug caught in a blast
-flips onto its back, chars black with a small fire on its belly, then falls
-apart.
+flips onto its back, chars black with a small fire on its belly, then slowly
+sags and crumbles: legs, wings and head drop off where it lies. Planting a bomb
+plays a soft plop while the bug squats and squeezes its eyes shut.
 
 Power-ups drop from sand:
 

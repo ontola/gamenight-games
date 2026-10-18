@@ -1,6 +1,6 @@
 extends RefCounted
 ## A short jingle per power-up, so every pickup is recognisable by ear.
-## Each jingle is a list of notes: [start Hz, end Hz, seconds, wave, vibrato depth].
+## Each jingle is a list of notes: [start Hz, end Hz, seconds, wave, vibrato depth, optional gain].
 const RATE := 22050
 const JINGLES := {
 	"capacity": [[523.0,523.0,.07,"tri",0.0],[784.0,784.0,.11,"tri",0.0]],
@@ -14,6 +14,8 @@ const JINGLES := {
 	"square": [[440.0,440.0,.045,"square",0.0],[554.0,554.0,.045,"square",0.0],[659.0,659.0,.045,"square",0.0],[880.0,880.0,.1,"square",0.0]],
 	"line": [[700.0,700.0,.05,"tri",0.0],[0.0,0.0,.025,"sine",0.0],[700.0,700.0,.05,"tri",0.0],[0.0,0.0,.025,"sine",0.0],[940.0,940.0,.09,"tri",0.0]],
 	"skull": [[392.0,392.0,.11,"saw",.02],[370.0,370.0,.11,"saw",.02],[349.0,349.0,.11,"saw",.02],[311.0,280.0,.32,"saw",.03]],
+	# Laying a bomb: a soft, low little plop.
+	"lay": [[300.0,150.0,.09,"sine",0.0,.32],[0.0,0.0,.02,"sine",0.0],[210.0,120.0,.07,"sine",0.0,.2]],
 	"detonate": [[1500.0,1500.0,.03,"square",0.0],[220.0,120.0,.05,"sine",0.0]],
 	"cursed": [[330.0,330.0,.08,"saw",.02],[294.0,260.0,.18,"saw",.03]],
 }
@@ -42,6 +44,6 @@ static func clip(notes: Array) -> AudioStreamWAV:
 				"saw": v = (phase*2.0-1.0)*.6
 			# Quick attack, gentle tail per note: chirpy, never clicky.
 			var env := minf(t*400.0,1.0)*pow(1.0-k,1.6)
-			data.encode_s16(start+i*2,int(clampf(v*env*(0.0 if note[0] == 0.0 else .8),-1,1)*24000))
+			data.encode_s16(start+i*2,int(clampf(v*env*(0.0 if note[0] == 0.0 else (note[5] if note.size() > 5 else .8)),-1,1)*24000))
 	var wav := AudioStreamWAV.new(); wav.format = AudioStreamWAV.FORMAT_16_BITS; wav.mix_rate = RATE; wav.data = data
 	return wav
