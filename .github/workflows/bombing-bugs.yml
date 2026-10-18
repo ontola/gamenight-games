@@ -5,9 +5,18 @@ on:
   pull_request:
     paths: ['bombing-bugs/**', '.github/workflows/bombing-bugs.yml', 'downhill-rush/tests/lifecycle.py']
   workflow_dispatch:
+    inputs:
+      release:
+        description: Publish a release with this tag (for example bombing-bugs-v0.1.0); empty for a plain build
+        required: false
+        default: ''
 permissions:
   contents: read
 jobs:
+  gamenight-sdk:
+    uses: ontola/gamenight/.github/workflows/godot-sdk-check.yml@main
+    with:
+      path: bombing-bugs
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -37,9 +46,33 @@ jobs:
           cp bombing-bugs/gamenight.json dist/
           cp LICENSE dist/
           printf '{"revision":"%s","engine":"4.6.2","game":"bombing-bugs"}\n' "$GITHUB_SHA" > dist/BUILD.json
-          (cd dist && zip -q BombingBugs-windows.zip BombingBugs.exe gamenight.json LICENSE BUILD.json)
+          (cd dist && zip -q BombingBugs-windows.zip BombingBugs.exe gamenight.json LICENSE BUILD.json && sha256sum BombingBugs-windows.zip > release-sha256.txt && cat release-sha256.txt)
       - uses: actions/upload-artifact@v4
         with:
           name: bombing-bugs-windows
-          path: dist/BombingBugs-windows.zip
+          path: |
+            dist/BombingBugs-windows.zip
+            dist/release-sha256.txt
           if-no-files-found: error
+  release:
+    needs: [gamenight-sdk, build]
+    # A manual run that names the tag to create; this repo holds several games.
+    if: github.event_name == 'workflow_dispatch' && startsWith(inputs.release, 'bombing-bugs-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bombing-bugs-windows
+          path: release
+      - name: Publish the tested build and the store media
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release }}
+        run: |
+          cd release
+          sha256sum --check release-sha256.txt
+          media=../bombing-bugs/assets/gamenight
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" BombingBugs-windows.zip release-sha256.txt $media/preview.mp4 $media/preview.jpg $media/cover.png $media/icon.png $media/gameplay.png --repo "$GITHUB_REPOSITORY" --title "Bombing Bugs ${RELEASE_TAG#bombing-bugs-}" --notes-file ../bombing-bugs/docs/release-notes.md

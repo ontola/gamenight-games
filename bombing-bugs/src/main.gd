@@ -47,6 +47,8 @@ var clips := {}
 var frame_count := 0
 var shot_path := ""
 var demo := false
+var seed_base := 431
+var skip := 0.0
 var rng := RandomNumberGenerator.new()
 var ui_clock := 0.0
 
@@ -60,6 +62,11 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--demo": demo = true
 		if arg.begins_with("--screenshot="): shot_path = arg.substr(13)
+		# Store clip takes (tools/capture_preview.sh): a fixed round, set up and fast-forwarded.
+		if arg.begins_with("--seed="): seed_base = int(arg.substr(7))
+		if arg.begins_with("--arena="): settings.arena = arg.substr(8)
+		if arg == "--teams": settings.teams = "Teams"
+		if arg.begins_with("--skip="): skip = float(arg.substr(7))
 	GameNight.game_id = "bombing-bugs"
 	GameNight.prepared.connect(_prepared)
 	GameNight.started.connect(func(_id: String): active = true; host_paused = false; countdown = 2.0)
@@ -81,7 +88,18 @@ func _ready() -> void:
 		if demo:
 			for p in sim.bugs: p.bot = true
 			active = true; countdown = 0
+			_fast_forward(skip)
 		else: _open_menu(true)
+
+func _fast_forward(seconds: float) -> void:
+	# Bots play on unseen at the physics rate, so the take opens mid-round.
+	for _i in int(seconds*60):
+		if sim.ended: break
+		var inputs: Array = []
+		for i in sim.bugs.size(): inputs.append(sim.bot(i,1.0/60) if sim.bugs[i].alive else {})
+		sim.step(1.0/60,inputs)
+		garden.sync(sim,1.0/60)
+	_update_badges()
 
 func _local_roster() -> Array:
 	var out: Array = []
@@ -114,7 +132,7 @@ func _new_round() -> void:
 	if roster.is_empty():
 		banner.text = "Connect a controller to join"; active = false; return
 	round_index += 1
-	sim.start(roster,settings,431+round_index*71)
+	sim.start(roster,settings,seed_base+round_index*71)
 	garden.reset(sim)
 	for view in views: view.queue_free()
 	views.clear()
