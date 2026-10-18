@@ -59,8 +59,12 @@ jobs:
     # A manual run that names the tag to create; this repo holds several games.
     if: github.event_name == 'workflow_dispatch' && startsWith(inputs.release, 'bombing-bugs-v')
     runs-on: ubuntu-latest
+    environment: gamenight-bombing-bugs
     permissions:
       contents: write
+    env:
+      # A GameNight publish key for bombing-bugs; without it the GameNight steps are skipped.
+      GAMENIGHT_API_TOKEN: ${{ secrets.GAMENIGHT_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -76,3 +80,20 @@ jobs:
           sha256sum --check release-sha256.txt
           media=../bombing-bugs/assets/gamenight
           gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" BombingBugs-windows.zip release-sha256.txt $media/preview.mp4 $media/preview.jpg $media/cover.png $media/icon.png $media/gameplay.png --repo "$GITHUB_REPOSITORY" --title "Bombing Bugs ${RELEASE_TAG#bombing-bugs-}" --notes-file ../bombing-bugs/docs/release-notes.md
+      - uses: actions/checkout@v4
+        if: env.GAMENIGHT_API_TOKEN != ''
+        with:
+          repository: ontola/gamenight
+          ref: 5703cf0c0adee10db4ac9adfb06d0edaf28b2010
+          path: .gamenight
+          sparse-checkout: scripts/gamenight-publish.py
+          sparse-checkout-cone-mode: false
+      # Store page first: a stable release needs the five-second clip.
+      - name: Update the GameNight store page and publish the build to players
+        if: env.GAMENIGHT_API_TOKEN != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+        working-directory: bombing-bugs
+        run: |
+          python3 ../.gamenight/scripts/gamenight-publish.py store
+          python3 ../.gamenight/scripts/gamenight-publish.py push --game bombing-bugs --file ../release/BombingBugs-windows.zip --platform windows --entrypoint BombingBugs.exe --version "${RELEASE_TAG#bombing-bugs-}" --channel stable --changelog-file docs/release-notes.md
