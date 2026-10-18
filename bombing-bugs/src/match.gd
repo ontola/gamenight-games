@@ -8,7 +8,11 @@ const SIZES := {"Small": Vector2i(11,9), "Medium": Vector2i(13,11), "Large": Vec
 const AUTO_SIZES := {2: [Vector2i(11,9), Vector2i(13,9)], 3: [Vector2i(13,11), Vector2i(15,9)], 4: [Vector2i(13,11), Vector2i(15,11), Vector2i(15,13)]}
 # Power-up odds when a sand mound hides one: the classic pair stays common,
 # the wild ones are rare enough to feel like a find.
-const POWER_ODDS := [["capacity",.30],["range",.30],["speed",.15],["kick",.10],["ghost",.08],["mega",.07]]
+const POWER_ODDS := [["capacity",.20],["range",.20],["speed",.11],["kick",.09],["remote",.07],["pierce",.07],["line",.06],["ghost",.06],["square",.05],["mega",.05],["skull",.04]]
+const MAX_CAPACITY := 5
+## A skull pickup curses its bug for a while; touching another bug passes it on.
+const CURSES := ["slow","reverse","drop"]
+const CURSE_TIME := 10.0
 const MAX_RANGE := 12
 const KICK_SPEED := 7.0
 const DEFAULTS := {"ai_players":3, "teams":"Free-for-all", "arena":"Surprise me", "size":"Auto", "friendly_fire":false, "fuse":24, "speed":32, "crates":55, "pickups":true}
@@ -60,7 +64,7 @@ func start(roster: Array, options: Dictionary, seed_value: int) -> void:
 	var spots := spawns()
 	for i in mini(roster.size(), 4):
 		var p: Dictionary = roster[i].duplicate(true)
-		p.merge({"pos":Vector2(spots[i]), "alive":true, "range":2, "capacity":1, "speed":0, "kick":false, "ghost":false, "team":i % 2 if settings.teams == "Teams" else i, "heading":0.0, "moving":false, "target":Vector2(spots[i]), "brain":0.0},true)
+		p.merge({"pos":Vector2(spots[i]), "alive":true, "range":2, "capacity":1, "speed":0, "kick":false, "ghost":false, "remote":false, "pierce":false, "square":false, "line":false, "curse":"", "curse_time":0.0, "team":i % 2 if settings.teams == "Teams" else i, "heading":0.0, "moving":false, "target":Vector2(spots[i]), "brain":0.0},true)
 		bugs.append(p)
 
 ## Rock cells for this round: the border plus the layout's interior rocks.
@@ -141,6 +145,7 @@ func fits(pos: Vector2, who: int) -> bool:
 func move_bug(who: int, direction: Vector2, dt: float) -> void:
 	var p: Dictionary = bugs[who]
 	var v: Vector2 = direction.limit_length() * float(settings.speed)/10.0 * (1.0+0.18*p.speed) * dt
+	if p.curse == "slow": v *= .45
 	var steps := maxi(1, ceili(v.length()/0.07))
 	v /= steps
 	var old: Vector2 = p.pos
@@ -168,32 +173,75 @@ func place(who: int) -> bool:
 	if ended or not bugs[who].alive: return false
 	var p: Dictionary = bugs[who]
 	var c := tile(p.pos)
+	if place_at(who,c): return true
+	# Line bomb: pressing again on your own bomb lays the rest of your bombs in a row ahead.
+	var here := bomb_at(c)
+	if not p.line or here < 0 or bombs[here].owner != who: return false
+	var d := heading_dir(p.heading)
+	var laid := 0
+	var at := c+d
+	while bug_in(at) == false and place_at(who,at): laid += 1; at += d
+	if laid > 0: events.append({"type":"line","cell":c,"who":who})
+	return laid > 0
+
+func heading_dir(heading: float) -> Vector2i:
+	var v := Vector2(sin(heading),cos(heading))
+	return Vector2i(signi(roundi(v.x)),0) if absf(v.x) > absf(v.y) else Vector2i(0,signi(roundi(v.y)))
+
+func own_bombs(who: int) -> int:
 	var count := 0
 	for b in bombs:
 		if b.owner == who: count += 1
-	if count >= p.capacity or bomb_at(c) >= 0 or cells[c] != 0: return false
+	return count
+
+func place_at(who: int, c: Vector2i) -> bool:
+	var p: Dictionary = bugs[who]
+	if own_bombs(who) >= p.capacity or bomb_at(c) >= 0 or cells.get(c,1) != 0: return false
 	var passers := []
 	for i in bugs.size():
 		if absf(bugs[i].pos.x-c.x) < 0.5+RADIUS and absf(bugs[i].pos.y-c.y) < 0.5+RADIUS: passers.append(i)
-	bombs.append({"id":next_bomb,"cell":c,"owner":who,"range":p.range,"time":float(settings.fuse)/10.0,"passers":passers,"slide":Vector2i.ZERO,"glide":0.0})
+	bombs.append({"id":next_bomb,"cell":c,"owner":who,"range":p.range,"time":float(settings.fuse)/10.0,"passers":passers,"slide":Vector2i.ZERO,"glide":0.0,
+		"remote":p.remote,"pierce":p.pierce,"square":p.square,"age":0.0})
 	next_bomb += 1
 	events.append({"type":"plant","cell":c})
 	return true
 
-func rays(c: Vector2i, reach: int) -> Array[Vector2i]:
+## Remote bombs wait for their owner's B press; all of them go off at once.
+func detonate(who: int) -> bool:
+	var any := false
+	for b in bombs:
+		if b.owner == who and b.get("remote",false): b.remote = false; b.time = 0.0; any = true
+	if any: events.append({"type":"detonate","cell":tile(bugs[who].pos),"who":who})
+	return any
+
+func rays(c: Vector2i, reach: int, pierce: bool = false) -> Array[Vector2i]:
 	var out: Array[Vector2i] = [c]
 	for d in DIRS:
 		for n in range(1,reach+1):
 			var t: Vector2i = c+d*n
 			if cells.get(t,1) == 1: break
 			out.append(t)
-			if cells.get(t) == 2 or bomb_at(t) >= 0: break
+			# A pierce blast bores through every mound in its way; only rock and bombs stop it.
+			if (cells.get(t) == 2 and not pierce) or bomb_at(t) >= 0: break
 	return out
+
+## Every cell a blast burns: the cross, plus the full 3x3 around a square bomb.
+func blast(c: Vector2i, reach: int, pierce: bool, square: bool) -> Array[Vector2i]:
+	var out := rays(c,reach,pierce)
+	if square:
+		for dy in [-1,0,1]:
+			for dx in [-1,0,1]:
+				var t := c+Vector2i(dx,dy)
+				if cells.get(t,1) != 1 and not out.has(t): out.append(t)
+	return out
+
+func bomb_blast(b: Dictionary) -> Array[Vector2i]:
+	return blast(b.cell,b.range,b.get("pierce",false),b.get("square",false))
 
 func explode(index: int) -> void:
 	var b: Dictionary = bombs[index]
 	bombs.remove_at(index)
-	var hit := rays(b.cell,b.range)
+	var hit := bomb_blast(b)
 	events.append({"type":"boom","cell":b.cell,"cells":hit})
 	for c in hit:
 		flames.append({"cell":c,"owner":b.owner,"time":0.65})
@@ -216,12 +264,17 @@ func _power_kind() -> String:
 
 func collect(p: Dictionary, kind: String) -> void:
 	match kind:
-		"capacity": p.capacity = mini(p.capacity+1,4)
+		"capacity": p.capacity = mini(p.capacity+1,MAX_CAPACITY)
 		"range": p.range = mini(p.range+1,5) if p.range < 5 else p.range
 		"speed": p.speed = mini(p.speed+1,3)
 		"kick": p.kick = true
 		"ghost": p.ghost = true
 		"mega": p.range = MAX_RANGE
+		"remote": p.remote = true
+		"pierce": p.pierce = true
+		"square": p.square = true
+		"line": p.line = true
+		"skull": p.curse = CURSES[rng.randi() % CURSES.size()]; p.curse_time = CURSE_TIME
 
 func bug_in(c: Vector2i) -> bool:
 	for b in bugs:
@@ -256,11 +309,21 @@ func step(dt: float, commands: Array) -> void:
 	for i in bugs.size():
 		if not bugs[i].alive: continue
 		var cmd: Dictionary = commands[i] if i < commands.size() else {}
-		move_bug(i,cmd.get("move",Vector2.ZERO),dt)
-		if cmd.get("bomb",false): place(i)
-		kick(i,cmd.get("move",Vector2.ZERO))
+		var p: Dictionary = bugs[i]
+		var move: Vector2 = cmd.get("move",Vector2.ZERO)
+		if p.curse == "reverse": move = -move
+		move_bug(i,move,dt)
+		if cmd.get("bomb",false) or p.curse == "drop": place(i)
+		if cmd.get("detonate",false): detonate(i)
+		kick(i,move)
+		if p.curse != "":
+			p.curse_time -= dt
+			if p.curse_time <= 0: p.curse = ""; events.append({"type":"cured","cell":tile(p.pos),"who":i})
+			else: _spread_curse(i)
 	slide_bombs(dt)
-	for b in bombs: b.time -= dt
+	for b in bombs:
+		b.age = b.get("age",0.0)+dt
+		if not b.get("remote",false): b.time -= dt
 	var more := true
 	while more:
 		more = false
@@ -294,14 +357,24 @@ func step(dt: float, commands: Array) -> void:
 		ended = true
 		winner = int(teams.keys()[0]) if teams.size() == 1 else -1
 
-func danger(extra: Vector2i = Vector2i(-99,-99), reach: int = 2) -> Dictionary:
+func danger(extra: Vector2i = Vector2i(-99,-99), reach: int = 2, who: int = -1) -> Dictionary:
 	var out := {}
 	for b in bombs:
-		for c in rays(b.cell,b.range): out[c] = true
+		for c in bomb_blast(b): out[c] = true
 	for f in flames: out[f.cell] = true
 	if extra.x != -99:
-		for c in rays(extra,reach): out[c] = true
+		var p: Dictionary = bugs[who] if who >= 0 else {}
+		for c in blast(extra,reach,p.get("pierce",false),p.get("square",false)): out[c] = true
 	return out
+
+func _spread_curse(who: int) -> void:
+	var p: Dictionary = bugs[who]
+	for i in bugs.size():
+		var o: Dictionary = bugs[i]
+		if i == who or not o.alive or o.curse != "": continue
+		if o.pos.distance_to(p.pos) < RADIUS*2.2:
+			o.curse = p.curse; o.curse_time = p.curse_time
+			events.append({"type":"cursed","cell":tile(o.pos),"who":i})
 
 func path_to_safe(who: int, hazards: Dictionary, seek_target: bool) -> Array:
 	var start_cell := tile(bugs[who].pos)
@@ -341,7 +414,7 @@ func bot(who: int, dt: float) -> Dictionary:
 	if centered:
 		p.pos = Vector2(c)
 		if not hazards.has(c) and worthwhile(c,who):
-			var escape := path_to_safe(who,danger(c,p.range),false)
+			var escape := path_to_safe(who,danger(c,p.range,who),false)
 			if not escape.is_empty() and escape.size()/ (float(settings.speed)/10.0) + 0.6 < float(settings.fuse)/10.0:
 				plant = place(who)
 				hazards = danger()
@@ -350,4 +423,17 @@ func bot(who: int, dt: float) -> Dictionary:
 	var delta: Vector2 = p.target-p.pos
 	# Slow the final step to land exactly on a corridor centre.
 	var magnitude := minf(1.0,delta.length()/maxf(0.001, float(settings.speed)/10.0*(1.0+0.18*p.speed)*dt))
-	return {"move":delta.normalized()*magnitude, "bomb":false, "planted":plant}
+	# Remote bombs: set them off once this bug stands clear of every one of its own blasts.
+	var fire := false
+	if p.remote:
+		var mine := {}
+		var waiting := false
+		for b in bombs:
+			if b.owner == who and b.get("remote",false):
+				waiting = true
+				for t in bomb_blast(b): mine[t] = true
+		fire = waiting and not mine.has(c) and not mine.has(tile(p.pos))
+	var move := delta.normalized()*magnitude
+	# A cursed bot still knows where it wants to go: it steers against the reversal.
+	if p.curse == "reverse": move = -move
+	return {"move":move, "bomb":false, "planted":plant, "detonate":fire}

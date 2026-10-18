@@ -1,8 +1,8 @@
 extends Node3D
 const Clay = preload("res://src/clay.gd")
 const Explosion = preload("res://src/explosion.gd")
-const POWER_ICONS := {"capacity":preload("res://assets/power-bombs.svg"),"range":preload("res://assets/power-range.svg"),"speed":preload("res://assets/power-speed.svg"),"kick":preload("res://assets/power-kick.svg"),"ghost":preload("res://assets/power-ghost.svg"),"mega":preload("res://assets/power-mega.svg")}
-const POWER_COLORS := {"capacity":Color("438c78"),"range":Color("d1a34d"),"speed":Color("5d9db8"),"kick":Color("c4704c"),"ghost":Color("9a86c9"),"mega":Color("c8382c")}
+const POWER_ICONS := {"capacity":preload("res://assets/power-bombs.svg"),"range":preload("res://assets/power-range.svg"),"speed":preload("res://assets/power-speed.svg"),"kick":preload("res://assets/power-kick.svg"),"ghost":preload("res://assets/power-ghost.svg"),"mega":preload("res://assets/power-mega.svg"),"remote":preload("res://assets/power-remote.svg"),"pierce":preload("res://assets/power-pierce.svg"),"square":preload("res://assets/power-square.svg"),"line":preload("res://assets/power-line.svg"),"skull":preload("res://assets/power-skull.svg")}
+const POWER_COLORS := {"capacity":Color("438c78"),"range":Color("d1a34d"),"speed":Color("5d9db8"),"kick":Color("c4704c"),"ghost":Color("9a86c9"),"mega":Color("c8382c"),"remote":Color("c95454"),"pierce":Color("a46aae"),"square":Color("d19a3e"),"line":Color("5f9e62"),"skull":Color("4f4066")}
 var blast_views: Dictionary = {}
 var next_blast := 0
 ## Camera shake the last blasts left behind; main.gd reads and decays it.
@@ -332,9 +332,13 @@ func sync(match_state: RefCounted, dt: float) -> void:
 		ids[b.id] = true
 		if not bomb_views.has(b.id):
 			bomb_views[b.id] = Clay.bomb(arena_root)
+			_mark_bomb(bomb_views[b.id],b)
 		# Kicked bombs glide between cells instead of hopping.
 		bomb_views[b.id].position = world(Vector2(b.cell)+Vector2(b.get("slide",Vector2i.ZERO))*b.get("glide",0.0))
-		var pulse := 1.0+sin(clock*(16 if b.time < 1 else 7))*.07
+		# Remote bombs sit still with a blinking light; fused ones pulse faster as they run out.
+		var pulse := 1.0+sin(clock*(16 if b.time < 1 and not b.get("remote",false) else 7))*.07
+		var blink: Node3D = bomb_views[b.id].get_node_or_null("Blink")
+		if blink: blink.visible = b.get("remote",false) and fmod(clock,.6) < .3
 		bomb_views[b.id].scale = Vector3(pulse,2-pulse,pulse)
 	for id in bomb_views.keys():
 		if not ids.has(id): bomb_views[id].queue_free(); bomb_views.erase(id)
@@ -364,6 +368,20 @@ func sync(match_state: RefCounted, dt: float) -> void:
 		var life: float = n.get_meta("life")-dt; n.set_meta("life",life)
 		if life <= 0: n.queue_free(); continue
 		var velocity: Vector3 = n.get_meta("v"); velocity.y -= dt*7; n.set_meta("v",velocity); n.position += velocity*dt; n.scale *= pow(.12,dt)
+
+## Bomb kinds read at a glance: an antenna for remote, purple spikes for pierce, amber corners for square.
+func _mark_bomb(view: Node3D, b: Dictionary) -> void:
+	if b.get("remote",false):
+		Clay.rod(view,Vector3(-.12,.45,0),Vector3(-.2,.82,0),.022,Color("3b3b3b"))
+		var tip := Clay.ball(view,Vector3(-.2,.84,0),Vector3.ONE*.1,Color("ff3a2a"),3); tip.name = "Blink"
+	if b.get("pierce",false):
+		for i in 4:
+			var a := i*TAU/4+PI/4
+			Clay.rod(view,Vector3(cos(a)*.22,.25,sin(a)*.22),Vector3(cos(a)*.4,.25,sin(a)*.4),.045,Color("b06ad0"))
+	if b.get("square",false):
+		for i in 4:
+			var a := i*TAU/4+PI/4
+			Clay.ball(view,Vector3(cos(a)*.42,.06,sin(a)*.42),Vector3(.16,.08,.16),Color("ffb347"),1.2)
 
 func burst(at: Vector3, color: Color) -> void:
 	for i in 8:

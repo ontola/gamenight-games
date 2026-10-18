@@ -17,6 +17,9 @@ var flame_material: StandardMaterial3D
 var flame_core: StandardMaterial3D
 var smoke_material: StandardMaterial3D
 const CHAR := Color("1c1612")
+## Set by main.gd while a skull curse sits on this bug: little purple wisps circle its head.
+var cursed := false
+var hex: Node3D
 
 func build(index: int, player_color: Color) -> void:
 	kind = index % 4
@@ -63,8 +66,15 @@ func build(index: int, player_color: Color) -> void:
 func animate(dt: float, moving: bool, heading: float, alive: bool) -> void:
 	phase += dt*(18.0 if moving else 2.4)
 	if not alive:
+		if hex: hex.visible = false
 		_die(dt)
 		return
+	if cursed and hex == null:
+		hex = Node3D.new(); add_child(hex); hex.position.y = .95
+		for i in 3: Clay.ball(hex,Vector3(cos(i*TAU/3)*.3,0,sin(i*TAU/3)*.3),Vector3.ONE*.11,Color("8a5cc4"),1.5)
+	if hex:
+		hex.visible = cursed
+		hex.rotation.y += dt*4.0; hex.position.y = .95+sin(phase*.3)*.04
 	rotation.y = lerp_angle(rotation.y,heading,1.0-exp(-dt*14))
 	body.position.y = sin(phase)*(.035 if moving else .012)
 	body.rotation.z = sin(phase*.5)*(.055 if moving else .015)

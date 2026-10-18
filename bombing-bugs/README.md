@@ -24,6 +24,7 @@ godot --path bombing-bugs
 
 - Left stick / D-pad: smooth movement, with gentle corner assistance.
 - A: plant a bomb. You can walk off a newly planted bomb but cannot re-enter it.
+- B: set off your remote bombs (with the Remote power-up).
 - Start: pause and change options. B: close the options.
 - Back/Select: GameNight lobby when managed by the host.
 - Keyboard fallback: WASD or arrows, Space/Enter to plant, Esc/P to pause.
@@ -67,6 +68,15 @@ Power-ups drop from sand:
 | Kick | Walk into a bomb to send it sliding until it hits something |
 | Ghost | Walk through sand and bombs; rock still stops you |
 | Mega | Blasts reach as far as the garden allows |
+| Remote | Your bombs wait until you press B (keyboard E or Shift), then all go off |
+| Pierce | Blasts bore through every sand mound in range; only rock and bombs stop them |
+| Square | Blasts also fill the 3×3 around the bomb |
+| Line | Plant again while standing on your bomb to lay the rest of your bombs in a row ahead |
+| Skull | A curse for ten seconds (slow, reversed controls or leaky bombs) that passes on by touch |
+
+Every pickup has its own little jingle. The game's name shows big over the
+garden during the first countdown, also when GameNight starts the game without
+the menu.
 
 Teams pair seats 1+3 against 2+4. Friendly fire is optional; your own bombs
 always hurt. Eliminated bugs remain as little toppled bodies until next round.

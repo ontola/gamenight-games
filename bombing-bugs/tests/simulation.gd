@@ -128,6 +128,52 @@ func _init() -> void:
 	check(m.bugs[0].pos.x > slow.bugs[0].pos.x+.1,"Speed must make a bug faster")
 	m.collect(m.bugs[0],"mega"); check(m.bugs[0].range == Match.MAX_RANGE,"Mega fire maxes the range")
 	m.collect(m.bugs[0],"range"); check(m.bugs[0].range == Match.MAX_RANGE,"A range pickup must not shrink mega fire")
+	# Remote bombs wait for B, then all go off together.
+	m = fresh(); clear_inside(m); m.bugs[0].pos = Vector2(1,3); m.collect(m.bugs[0],"remote"); m.collect(m.bugs[0],"capacity")
+	m.step(.01,[{"bomb":true}]); m.bugs[0].pos = Vector2(3,3); m.step(.01,[{"bomb":true}])
+	for tick in 600: m.step(1.0/60,[{}])
+	check(m.bombs.size() == 2,"Remote bombs must not go off on their own")
+	m.bugs[0].pos = Vector2(5,5); m.step(.01,[{"detonate":true}])
+	check(m.bombs.is_empty() and m.events.any(func(e): return e.type == "detonate"),"B must set off every remote bomb")
+	# Pierce blasts bore through a row of mounds; normal ones stop at the first.
+	m = fresh(); clear_inside(m)
+	for x in [3,4,5]: m.cells[Vector2i(x,3)] = 2
+	check(Vector2i(4,3) not in m.blast(Vector2i(2,3),4,false,false),"A normal blast stops at the first mound")
+	check(Vector2i(5,3) in m.blast(Vector2i(2,3),4,true,false),"A pierce blast bores through every mound in range")
+	# Square bombs burn the full 3x3, but never rock.
+	m = fresh(); clear_inside(m); m.cells[Vector2i(3,4)] = 1
+	var sq: Array = m.blast(Vector2i(4,3),1,false,true)
+	check(Vector2i(5,4) in sq and Vector2i(3,2) in sq and Vector2i(3,4) not in sq,"A square blast fills the 3x3 except rock")
+	# Line bomb: planting again on your own bomb lays the rest in a row ahead.
+	m = fresh(); clear_inside(m); m.bugs[0].pos = Vector2(1,3); m.bugs[0].heading = PI/2
+	m.collect(m.bugs[0],"line"); m.bugs[0].capacity = 4
+	m.step(.01,[{"bomb":true}]); m.step(.01,[{"bomb":true}])
+	var cells_with_bombs: Array = m.bombs.map(func(b): return b.cell)
+	check(m.bombs.size() == 4 and Vector2i(4,3) in cells_with_bombs,"A line bomb lays a row of bombs ahead: %s"%[cells_with_bombs])
+	# Skull: a curse that wears off, and spreads by touch.
+	m = fresh(); clear_inside(m); m.bugs[0].pos = Vector2(3,3); m.bugs[1].pos = Vector2(3.3,3)
+	m.collect(m.bugs[0],"skull"); check(m.bugs[0].curse in Match.CURSES,"A skull curses the bug")
+	m.bugs[0].curse = "slow"; m.step(.01,[{},{}])
+	check(m.bugs[1].curse == "slow","A curse passes on by touch")
+	m.bugs[1].pos = Vector2(7,7)
+	for tick in int(Match.CURSE_TIME*60)+10: m.step(1.0/60,[{},{}])
+	check(m.bugs[0].curse == "","A curse wears off")
+	m = fresh(); clear_inside(m); var plain := fresh(); clear_inside(plain)
+	m.bugs[0].pos = Vector2(1,3); plain.bugs[0].pos = Vector2(1,3); m.bugs[0].curse = "slow"; m.bugs[0].curse_time = 5
+	m.step(.3,[{"move":Vector2.RIGHT}]); plain.step(.3,[{"move":Vector2.RIGHT}])
+	check(m.bugs[0].pos.x < plain.bugs[0].pos.x-.2,"The slow curse slows a bug")
+	# Bots armed with every bomb kind still finish their battles.
+	var armed := 0
+	for seed_value in 6:
+		m = fresh(); m.start([{},{},{},{}],{},seed_value+40)
+		for p in m.bugs:
+			for kind in ["remote","pierce","square","line"]: m.collect(p,kind)
+		for tick in 7200:
+			var commands := []
+			for i in m.bugs.size(): commands.append(m.bot(i,1.0/60) if m.bugs[i].alive else {})
+			m.step(1.0/60,commands)
+			if m.ended: armed += 1; break
+	check(armed >= 4,"Bots with remote, pierce, square and line bombs should finish rounds; %d/6"%armed)
 	var kinds := {}
 	for i in 2000: kinds[m._power_kind()] = true
 	check(kinds.size() == Match.POWER_ODDS.size(),"Every power-up must be able to drop")

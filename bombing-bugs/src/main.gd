@@ -3,6 +3,7 @@ const PLAY_FONT = preload("res://assets/fonts/DynaPuff.ttf")
 const Match = preload("res://src/match.gd")
 const Garden = preload("res://src/garden.gd")
 const BoomSound = preload("res://src/boom_sound.gd")
+const PickupSound = preload("res://src/pickup_sound.gd")
 const Bug = preload("res://src/bug.gd")
 const Clay = preload("res://src/clay.gd")
 const SETTINGS := [
@@ -51,6 +52,10 @@ var banner: Label
 var hint: Label
 var badges: HBoxContainer
 var title: RichTextLabel
+## The big name over the garden while the first round counts down (the only
+## start screen a GameNight launch has, since the host skips the menu).
+var title_card: RichTextLabel
+var intro := true
 var sound: AudioStreamPlayer
 var clips := {}
 var boom_player: AudioStreamPlayer
@@ -156,8 +161,8 @@ func _new_round() -> void:
 		var v := Bug.new(); add_child(v); v.build(i,sim.bugs[i].color); views.append(v)
 		v.position = garden.world(sim.bugs[i].pos)
 	_update_badges()
-	result_time = 0; countdown = 2.0
-	hint.text = "A  ·  Plant bomb     Start  ·  Options     Back  ·  GameNight" if managed else "A / Space  ·  Plant bomb     Start / Esc  ·  Options"
+	result_time = 0; countdown = 3.0 if intro else 2.0
+	hint.text = "A  ·  Plant bomb     B  ·  Detonate     Start  ·  Options     Back  ·  GameNight" if managed else "A / Space  ·  Plant bomb     B / E  ·  Detonate     Start / Esc  ·  Options"
 	if demo:
 		for p in sim.bugs: p.bot = true
 
@@ -220,7 +225,7 @@ func _raw(p: Dictionary) -> Dictionary:
 		dir = Vector2(float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))-float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)), float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))-float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)))
 		a = Input.is_physical_key_pressed(KEY_SPACE) or Input.is_physical_key_pressed(KEY_ENTER)
 		start = Input.is_physical_key_pressed(KEY_ESCAPE) or Input.is_physical_key_pressed(KEY_P)
-		b = Input.is_physical_key_pressed(KEY_BACKSPACE)
+		b = Input.is_physical_key_pressed(KEY_BACKSPACE) or Input.is_physical_key_pressed(KEY_E) or Input.is_physical_key_pressed(KEY_SHIFT)
 	if dir.length() < .2: dir = Vector2.ZERO
 	return {"move":dir.limit_length(),"a":a,"start":start,"b":b,"back":back}
 
@@ -242,7 +247,8 @@ func _physics_process(dt: float) -> void:
 		if _edge("back%d"%i,r.back) and managed: GameNight.request_overlay(); return
 		confirm = confirm or pressed
 		if r.move.length() > nav.length(): nav = r.move
-		inputs.append({"move":r.move,"bomb":pressed})
+		# B sets off remote bombs (the same press also closes menus, which pause play).
+		inputs.append({"move":r.move,"bomb":pressed,"detonate":_edge("det%d"%i,r.b)})
 	if pause_press:
 		if menu_open: _close_menu()
 		else: _open_menu(false)
@@ -279,8 +285,9 @@ func _physics_process(dt: float) -> void:
 	var blasted := 0
 	for event in sim.events:
 		if event.type == "boom": blasted += event.cells.size(); continue
-		if event.type in clips: _play_sound(event.type)
-		if event.type in ["out","pickup"]: _update_badges(int(event.get("who",-1)) if event.type == "pickup" else -1)
+		if event.type == "pickup": _play_sound("pickup:"+str(event.kind))
+		elif event.type in clips: _play_sound(event.type)
+		if event.type in ["out","pickup","cursed","cured"]: _update_badges(int(event.get("who",-1)) if event.type == "pickup" else -1)
 	# Chained bombs in one tick are one bigger bang: louder and deeper with every burning cell.
 	if blasted > 0: _play_boom(blasted)
 	if sim.ended:
@@ -299,6 +306,10 @@ func _winner_name() -> String:
 func _process(dt: float) -> void:
 	if host_paused: return
 	ui_clock += dt
+	if title_card:
+		if active and countdown <= 0: intro = false
+		title_card.visible = intro and not menu_open and (managed or active)
+		title_card.modulate.a = clampf(countdown/.5,0,1) if active else 1.0
 	# A little hand-cut wobble on the celebration, never on names or stats.
 	banner.pivot_offset = banner.size*.5
 	banner.rotation = sin(ui_clock*2.6)*.012 if sim.ended else 0.0
@@ -307,6 +318,7 @@ func _process(dt: float) -> void:
 		var p: Dictionary = sim.bugs[i]
 		var pos: Vector3 = garden.world(p.pos)
 		views[i].position.x = pos.x; views[i].position.z = pos.z
+		views[i].cursed = p.curse != ""
 		views[i].animate(dt,p.moving and not menu_open,p.heading,p.alive)
 	# Blasts jolt the camera, harder for bigger ones; clock-driven so takes stay reproducible.
 	garden.shake = maxf(garden.shake-dt*1.4,0.0)
@@ -336,7 +348,7 @@ func _build_ui() -> void:
 	badges = HBoxContainer.new(); root.add_child(badges); badges.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE); badges.offset_left = 40; badges.offset_right = -40; badges.offset_top = 18; badges.offset_bottom = 90; badges.add_theme_constant_override("separation",24); badges.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	banner = _label("",44); root.add_child(banner); banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP); banner.position = Vector2(300,112); banner.size = Vector2(1000,70); banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; banner.add_theme_color_override("font_color",Color("fff0bb")); banner.add_theme_color_override("font_outline_color",Color("4b4328")); banner.add_theme_constant_override("outline_size",8)
 	hint = _label("A / Space  ·  Plant bomb     Start / Esc  ·  Options",18); root.add_child(hint); hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE); hint.offset_top = -45; hint.offset_bottom = -12; hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; hint.add_theme_color_override("font_color",Color("fff3ce")); hint.add_theme_color_override("font_outline_color",Color("3d3928")); hint.add_theme_constant_override("outline_size",5)
-	if managed: hint.text = "A  ·  Plant bomb     Start  ·  Options     Back  ·  GameNight"
+	if managed: hint.text = "A  ·  Plant bomb     B  ·  Detonate     Start  ·  Options     Back  ·  GameNight"
 	var center := CenterContainer.new(); root.add_child(center); center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay = PanelContainer.new(); center.add_child(overlay); overlay.custom_minimum_size = Vector2(560,0)
 	var card := _panel(Color("fff3e0f5"),Color("886842")); card.set_content_margin_all(26); overlay.add_theme_stylebox_override("panel",card)
@@ -351,7 +363,17 @@ func _build_ui() -> void:
 	menu_list = VBoxContainer.new(); box.add_child(menu_list); menu_list.add_theme_constant_override("separation",6)
 	menu_help = _label("",15); menu_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; menu_help.add_theme_color_override("font_color",Color("8a7558")); box.add_child(menu_help)
 	overlay.hide()
+	title_card = RichTextLabel.new(); root.add_child(title_card); title_card.position = Vector2(200,250); title_card.size = Vector2(1200,140)
+	title_card.bbcode_enabled = true; title_card.scroll_active = false; title_card.mouse_filter = Control.MOUSE_FILTER_IGNORE; title_card.visible = false
+	title_card.add_theme_font_override("normal_font",PLAY_FONT); title_card.add_theme_font_size_override("normal_font_size",104)
+	title_card.add_theme_color_override("font_outline_color",Color("433c22")); title_card.add_theme_constant_override("outline_size",14)
+	title_card.text = "[center][wave amp=6 freq=1.2][color=#ffd477]Bombing[/color] [color=#b9e579]Bugs![/color][/wave][/center]"
 	sound = AudioStreamPlayer.new(); sound.volume_db = -16; add_child(sound)
+
+const FLAGS := ["kick","ghost","remote","pierce","square","line"]
+const TIPS := {"capacity":"Bombs at once","range":"Blast range in tiles","speed":"Extra speed","kick":"Kicks bombs","ghost":"Walks through sand and bombs",
+	"remote":"Remote bombs: B sets them off","pierce":"Blasts bore through sand","square":"Blasts fill the 3x3 around the bomb","line":"Plant again on your bomb to lay a row","skull":"Cursed"}
+const CURSE_NAMES := {"slow":"Slow","reverse":"Reversed","drop":"Leaky"}
 
 func _update_badges(upgraded: int = -1) -> void:
 	if not badges: return
@@ -364,13 +386,18 @@ func _update_badges(upgraded: int = -1) -> void:
 		if sim.settings.teams == "Teams": text += " · T%d"%(p.team+1)
 		var label := _label(text,20,p.color.lightened(.25)); label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; box.add_child(label)
 		label.add_theme_color_override("font_outline_color",Color("2f2a1c")); label.add_theme_constant_override("outline_size",7)
-		var stats := HBoxContainer.new(); stats.add_theme_constant_override("separation",6); box.add_child(stats)
-		for kind in ["capacity","range","speed","kick","ghost"]:
-			if (kind == "speed" and p.speed == 0) or (kind in ["kick","ghost"] and not p[kind]): continue
+		# Wraps onto a second row once a bug has collected a whole garden of power-ups.
+		var stats := HFlowContainer.new(); stats.add_theme_constant_override("h_separation",5); stats.add_theme_constant_override("v_separation",2); box.add_child(stats)
+		for kind in ["capacity","range","speed"]+FLAGS+["skull"]:
+			if (kind == "speed" and p.speed == 0) or (kind in FLAGS and not p[kind]) or (kind == "skull" and p.curse == ""): continue
 			var shown: String = "mega" if kind == "range" and p.range >= Match.MAX_RANGE else kind
 			var icon := TextureRect.new(); icon.texture = garden.POWER_ICONS[shown]; icon.custom_minimum_size = Vector2(26,26); icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; stats.add_child(icon)
-			icon.tooltip_text = {"capacity":"Bombs at once","range":"Blast range in tiles","speed":"Extra speed","kick":"Kicks bombs","ghost":"Walks through sand and bombs"}[kind]
-			if kind in ["kick","ghost"]: continue
+			icon.tooltip_text = TIPS[kind]
+			if kind in FLAGS: continue
+			if kind == "skull":
+				var curse := _label(CURSE_NAMES[p.curse],16,Color("e6dcff")); stats.add_child(curse)
+				curse.add_theme_color_override("font_outline_color",Color("2f2a1c")); curse.add_theme_constant_override("outline_size",6)
+				continue
 			var value := _label("MAX" if shown == "mega" else str(p[kind]),20,Color("fff3ce")); stats.add_child(value)
 			value.add_theme_color_override("font_outline_color",Color("2f2a1c")); value.add_theme_constant_override("outline_size",6)
 		if not p.alive: box.modulate.a = .35
@@ -486,6 +513,10 @@ func _build_audio() -> void:
 			if kind == "boom": value = smoothed*.6+sin(TAU*70*t)*.4
 			samples.encode_s16(i*2,int(clampf(value*envelope,-1,1)*22000))
 		var wav := AudioStreamWAV.new(); wav.format = AudioStreamWAV.FORMAT_16_BITS; wav.mix_rate = 22050; wav.data = samples; clips[kind] = wav
+	var jingles := PickupSound.build_all()
+	for kind in jingles: clips[("" if kind in ["detonate","cursed"] else "pickup:")+kind] = jingles[kind]
+	clips.line = clips.plant
+	sound.max_polyphony = 4
 	boom_player = AudioStreamPlayer.new(); boom_player.max_polyphony = 6; add_child(boom_player)
 	boom_task = WorkerThreadPool.add_task(func(): boom_clips = BoomSound.build_all(),false,"Explosion sounds")
 
