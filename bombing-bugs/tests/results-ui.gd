@@ -34,9 +34,10 @@ func run() -> void:
 	game.sim.step(.016,[])
 	assert(game.sim.ended)
 	game.banner.text = "Ladybug wins!"; game._update_badges()
-	game.sim.flames.append({"cell":Vector2i(5,5),"owner":0,"time":.5})
+	var c: Vector2i = game.sim.spawns()[0]
+	game.sim.bombs.append({"id":999,"cell":c,"owner":0,"range":2,"time":.05,"passers":[],"slide":Vector2i.ZERO,"glide":0.0})
 	game._physics_process(.1)
-	assert(game.sim.flames[0].time < .5, "Main results branch must keep stepping the simulation")
+	assert(game.sim.flames.size() > 0 and game.sim.flames[0].time < .65, "Main results branch must keep stepping the simulation")
 	assert(game.garden.blast_views.size() > 0, "Main results branch must keep rendering effects")
 	if render:
 		for i in 20: await process_frame

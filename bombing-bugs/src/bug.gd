@@ -7,6 +7,16 @@ var wings: Array[Node3D] = []
 var marker: MeshInstance3D
 var kind := 0
 var phase := 0.0
+# Death: flipped on its back, charred, a little fire on the belly, then it falls apart.
+var dead_time := -1.0
+var charred: Array = []   # [material, original colour]
+var flames: Array[MeshInstance3D] = []
+var wisps: Array[MeshInstance3D] = []
+var pieces: Array = []    # [node, velocity, spin]
+static var flame_material: StandardMaterial3D
+static var flame_core: StandardMaterial3D
+static var smoke_material: StandardMaterial3D
+const CHAR := Color("1c1612")
 
 func build(index: int, player_color: Color) -> void:
 	kind = index % 4
@@ -53,12 +63,102 @@ func build(index: int, player_color: Color) -> void:
 func animate(dt: float, moving: bool, heading: float, alive: bool) -> void:
 	phase += dt*(18.0 if moving else 2.4)
 	if not alive:
-		rotation.z = lerp_angle(rotation.z,PI*.5,dt*9)
-		position.y = move_toward(position.y,-.16,dt)
-		marker.visible = false
+		_die(dt)
 		return
 	rotation.y = lerp_angle(rotation.y,heading,1.0-exp(-dt*14))
 	body.position.y = sin(phase)*(.035 if moving else .012)
 	body.rotation.z = sin(phase*.5)*(.055 if moving else .015)
 	for i in legs.size(): legs[i].rotation.y = sin(phase+(i%2)*PI)*(.5 if moving else .04)
 	for i in wings.size(): wings[i].rotation.z = (1 if i == 0 else -1)*(.15+sin(phase*2)*.12)
+
+func _die(dt: float) -> void:
+	if dead_time < 0: _start_dying()
+	dead_time += dt
+	var t := dead_time
+	# Blown up and over: a hop with a half somersault, landing on its back.
+	var flip := smoothstep(0.0,.5,t)
+	var angle := PI*flip
+	body.rotation.z = angle
+	body.position = Vector3(.37*sin(angle),.37-.37*cos(angle)-.14*flip+sin(clampf(t/.5,0,1)*PI)*.55,0)
+	# Scorched black within a blink; the embers in the char glow out.
+	var burn := clampf(t/.2,0,1)
+	var glow := maxf(0.0,1.0-t/1.6)*(.75+.25*sin(t*31.0))
+	for entry in charred:
+		var m: StandardMaterial3D = entry[0]
+		m.albedo_color = (entry[1] as Color).lerp(CHAR,burn)
+		m.emission_energy_multiplier = glow*.3*burn
+	for i in legs.size():
+		if legs[i].top_level: continue
+		legs[i].rotation.x = sin(t*28.0+i*1.7)*.7*clampf(t-.45,0,1)*exp(-t*1.3)
+	# A small fire licks the upturned belly, then gutters out.
+	var fire_left := clampf((2.6-t)/.8,0,1)*smoothstep(.35,.6,t)
+	for i in flames.size():
+		var f := flames[i]
+		var flicker := .75+.25*sin(t*(23.0+i*7.0)+i)*sin(t*(13.0+i*3.0))
+		f.visible = fire_left > 0
+		f.scale = Vector3(.26,.6*flicker,.26)*[1.0,.8,.5][i]*fire_left
+		f.position = Vector3(sin(t*9.0+i*2.0)*.04+[-.06,.07,0.0][i],.58+f.scale.y*.4,cos(t*7.0+i)*.04)
+	for i in wisps.size():
+		var w := wisps[i]
+		var life := fmod(t*.6+i/6.0,1.0)
+		var strength := clampf((3.6-t)/1.2,0,1)*smoothstep(.4,.8,t)
+		w.visible = strength > 0
+		w.position = Vector3(sin(life*5.0+i)*.1+life*.25,.8+life*1.2,cos(life*4.0+i)*.08)
+		w.scale = Vector3.ONE*(.22+life*.4)*strength*(1.0-life*.4)
+	if t >= 1.7 and pieces.is_empty(): _fall_apart()
+	for p in pieces:
+		var node: Node3D = p[0]
+		var v: Vector3 = p[1]
+		if v == Vector3.ZERO: continue
+		v.y -= 9.0*dt
+		node.global_position += v*dt
+		node.rotate(p[2].normalized(),p[2].length()*dt)
+		if node.global_position.y < p[3]:
+			node.global_position.y = p[3]
+			v = Vector3.ZERO if absf(v.y) < 1.2 else Vector3(v.x*.4,-v.y*.3,v.z*.4)
+		p[1] = v
+
+func _start_dying() -> void:
+	dead_time = 0.0
+	marker.visible = false
+	var stack: Array[Node] = [body]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if n is MeshInstance3D:
+			var source: StandardMaterial3D = n.material_override
+			var m := source.duplicate() as StandardMaterial3D
+			m.emission_enabled = true; m.emission = Color("ff5a1a"); m.emission_energy_multiplier = 0.0
+			n.material_override = m
+			charred.append([m,source.albedo_color])
+	if flame_material == null:
+		flame_material = StandardMaterial3D.new(); flame_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		flame_material.albedo_color = Color("e2561a"); flame_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		flame_core = flame_material.duplicate(); flame_core.albedo_color = Color("ffc24a")
+		smoke_material = StandardMaterial3D.new(); smoke_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		smoke_material.albedo_color = Color(.36,.33,.3,.32); smoke_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	for i in 3:
+		var f := Clay.ball(self,Vector3(0,.7,0),Vector3.ONE*.01,Color.WHITE); f.material_override = flame_core if i == 2 else flame_material
+		f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; f.visible = false; flames.append(f)
+	for i in 6:
+		var w := Clay.ball(self,Vector3(0,.8,0),Vector3.ONE*.01,Color.WHITE); w.material_override = smoke_material
+		w.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; w.visible = false; wisps.append(w)
+
+## The burnt husk comes apart: legs, wings and head tumble off and stay where they land.
+func _fall_apart() -> void:
+	var random := RandomNumberGenerator.new(); random.seed = kind*977+int(global_position.x*31.0+global_position.z*17.0)
+	var head := Node3D.new(); body.add_child(head); head.position = Vector3(0,.44,.33)
+	for n in body.get_children():
+		if n is MeshInstance3D and n.position.z > .2 and n.position.y > .3:
+			n.reparent(head)
+	var loose: Array[Node3D] = [head]
+	loose.append_array(legs); loose.append_array(wings)
+	for n in loose:
+		var at := n.global_transform
+		n.top_level = true; n.global_transform = at
+		var out := n.global_position-global_position; out.y = 0
+		out = (out.normalized() if out.length() > .01 else Vector3.RIGHT.rotated(Vector3.UP,random.randf()*TAU))
+		var speed := random.randf_range(.8,1.8)*(.6 if n == head else 1.0)
+		pieces.append([n,out*speed+Vector3(0,random.randf_range(1.5,2.6),0),Vector3(random.randf_range(-6,6),random.randf_range(-6,6),random.randf_range(-6,6)),.2 if n == head else .08])
+	# What is left of the shell slumps flat.
+	body.scale = Vector3(1.08,.82,1.08)

@@ -49,6 +49,14 @@ side props, and where the snail crawls. Grass grows in clumps of curved,
 tapered blades that sway in the wind, and flowers, clovers, mushrooms and the
 snail move with the same breeze.
 
+Explosions use Growing Guns' layered blast: lumpy fire clouds along every
+burning cell, flame tongues, embers, dusty smoke, a flash and a fireball light,
+a short camera jolt and a scorch mark. The sound is Growing Guns' synthesised
+bang and rumble (`src/boom_sound.gd`); bombs that go off in the same tick play
+as one blast, louder and deeper the more cells burn. A bug caught in a blast
+flips onto its back, chars black with a small fire on its belly, then falls
+apart.
+
 Power-ups drop from sand:
 
 | Power-up | Effect |

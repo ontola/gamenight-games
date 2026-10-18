@@ -2,6 +2,7 @@ extends Node3D
 const PLAY_FONT = preload("res://assets/fonts/DynaPuff.ttf")
 const Match = preload("res://src/match.gd")
 const Garden = preload("res://src/garden.gd")
+const BoomSound = preload("res://src/boom_sound.gd")
 const Bug = preload("res://src/bug.gd")
 const Clay = preload("res://src/clay.gd")
 const SETTINGS := [
@@ -52,6 +53,10 @@ var badges: HBoxContainer
 var title: RichTextLabel
 var sound: AudioStreamPlayer
 var clips := {}
+var boom_player: AudioStreamPlayer
+## Growing Guns explosion clips per size bucket, synthesised off the main thread.
+var boom_clips: Array = []
+var boom_task := -1
 var frame_count := 0
 var shot_path := ""
 var demo := false
@@ -270,9 +275,13 @@ func _physics_process(dt: float) -> void:
 		if sim.bugs[i].bot and sim.bugs[i].alive: inputs[i] = sim.bot(i,dt)
 	sim.step(dt,inputs)
 	garden.sync(sim,dt)
+	var blasted := 0
 	for event in sim.events:
+		if event.type == "boom": blasted += event.cells.size(); continue
 		if event.type in clips: _play_sound(event.type)
 		if event.type in ["out","pickup"]: _update_badges(int(event.get("who",-1)) if event.type == "pickup" else -1)
+	# Chained bombs in one tick are one bigger bang: louder and deeper with every burning cell.
+	if blasted > 0: _play_boom(blasted)
 	if sim.ended:
 		banner.text = "A garden-sized draw!" if sim.winner == -1 else _winner_name()+" wins!"
 		hint.text = "A / Space  ·  Another round     Start  ·  Options"
@@ -298,6 +307,10 @@ func _process(dt: float) -> void:
 		var pos: Vector3 = garden.world(p.pos)
 		views[i].position.x = pos.x; views[i].position.z = pos.z
 		views[i].animate(dt,p.moving and not menu_open,p.heading,p.alive)
+	# Blasts jolt the camera, harder for bigger ones; clock-driven so takes stay reproducible.
+	garden.shake = maxf(garden.shake-dt*1.4,0.0)
+	var jolt: float = garden.shake*garden.shake*camera.size*.04
+	camera.h_offset = sin(ui_clock*71.0)*jolt; camera.v_offset = cos(ui_clock*57.0)*jolt
 	frame_count += 1
 	if not shot_path.is_empty() and frame_count == 60:
 		await RenderingServer.frame_post_draw
@@ -472,7 +485,24 @@ func _build_audio() -> void:
 			if kind == "boom": value = smoothed*.6+sin(TAU*70*t)*.4
 			samples.encode_s16(i*2,int(clampf(value*envelope,-1,1)*22000))
 		var wav := AudioStreamWAV.new(); wav.format = AudioStreamWAV.FORMAT_16_BITS; wav.mix_rate = 22050; wav.data = samples; clips[kind] = wav
+	boom_player = AudioStreamPlayer.new(); boom_player.max_polyphony = 6; add_child(boom_player)
+	boom_task = WorkerThreadPool.add_task(func(): boom_clips = BoomSound.build_all(),false,"Explosion sounds")
+
+func _play_boom(cells: int) -> void:
+	if not settings.sound: return
+	if boom_clips.is_empty() and boom_task >= 0 and WorkerThreadPool.is_task_completed(boom_task):
+		WorkerThreadPool.wait_for_task_completion(boom_task); boom_task = -1
+	if boom_clips.is_empty():
+		_play_sound("boom"); return
+	var row: Array = boom_clips[BoomSound.bucket(cells)]
+	boom_player.stream = row[rng.randi() % row.size()]
+	boom_player.volume_db = -7.0+BoomSound.volume_db(cells)
+	boom_player.pitch_scale = rng.randf_range(.96,1.04)
+	boom_player.play()
 
 func _play_sound(kind: String) -> void:
 	if not settings.sound: return
 	sound.stream = clips[kind]; sound.pitch_scale = rng.randf_range(.95,1.05); sound.play()
+
+func _exit_tree() -> void:
+	if boom_task >= 0: WorkerThreadPool.wait_for_task_completion(boom_task)

@@ -193,8 +193,9 @@ func rays(c: Vector2i, reach: int) -> Array[Vector2i]:
 func explode(index: int) -> void:
 	var b: Dictionary = bombs[index]
 	bombs.remove_at(index)
-	events.append({"type":"boom","cell":b.cell})
-	for c in rays(b.cell,b.range):
+	var hit := rays(b.cell,b.range)
+	events.append({"type":"boom","cell":b.cell,"cells":hit})
+	for c in hit:
 		flames.append({"cell":c,"owner":b.owner,"time":0.65})
 		pickups.erase(c)
 		if cells[c] == 2:

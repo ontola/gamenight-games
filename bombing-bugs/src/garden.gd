@@ -1,10 +1,12 @@
 extends Node3D
 const Clay = preload("res://src/clay.gd")
-const Blast = preload("res://src/blast.gd")
+const Explosion = preload("res://src/explosion.gd")
 const POWER_ICONS := {"capacity":preload("res://assets/power-bombs.svg"),"range":preload("res://assets/power-range.svg"),"speed":preload("res://assets/power-speed.svg"),"kick":preload("res://assets/power-kick.svg"),"ghost":preload("res://assets/power-ghost.svg"),"mega":preload("res://assets/power-mega.svg")}
 const POWER_COLORS := {"capacity":Color("438c78"),"range":Color("d1a34d"),"speed":Color("5d9db8"),"kick":Color("c4704c"),"ghost":Color("9a86c9"),"mega":Color("c8382c")}
 var blast_views: Dictionary = {}
-var blast_lights: Array[OmniLight3D] = []
+var next_blast := 0
+## Camera shake the last blasts left behind; main.gd reads and decays it.
+var shake := 0.0
 var obstacles: Dictionary = {}
 var bomb_views: Dictionary = {}
 var pickup_views: Dictionary = {}
@@ -29,6 +31,8 @@ func build() -> void:
 	env.background_mode = Environment.BG_COLOR; env.background_color = Color("769151")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR; env.ambient_light_color = Color("d0d9db"); env.ambient_light_energy = .26
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	# Only HDR fire blooms (as in Growing Guns); everything lit stays below the threshold.
+	env.glow_enabled = true; env.glow_hdr_threshold = 1.0; env.glow_intensity = .9; env.glow_bloom = 0.0; env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	env_node.environment = env; add_child(env_node)
 	var sun := DirectionalLight3D.new(); sun.rotation_degrees = Vector3(-52,-32,0); sun.light_color = Color("ffe7bd"); sun.light_energy = .74
 	sun.shadow_enabled = true; sun.shadow_blur = 2.0; sun.directional_shadow_max_distance = 40; add_child(sun)
@@ -55,14 +59,15 @@ void vertex() {
  // Two slow waves plus a travelling gust: blades lean together, not in lockstep.
  float wave = sin(t*1.7+world.x*.55+world.z*.35)*.6+sin(t*2.9+world.x*1.3-world.z*.9)*.25;
  float g = pow(max(sin(t*.45-world.x*.18+world.z*.07),0.0),3.0)*gust;
- float bend = UV.y*UV.y;
+ float bend = UV.y*UV.y*clamp(UV.x,.3,2.5)*.6;
  VERTEX.x += (wave*.11+g*.32)*bend;
  VERTEX.z += (wave*.05+g*.12)*bend;
  // Soft, up-facing normals: lit like a lawn, not like folded paper.
  NORMAL = normalize(mix(NORMAL,vec3(0.0,1.0,0.0),.65));
 }
 void fragment() {
- ALBEDO = COLOR.rgb*mix(.7,1.08,smoothstep(0.0,.7,tip));
+ // Roots sit in the shade of the clump; tips catch the sun.
+ ALBEDO = COLOR.rgb*mix(.45,1.08,smoothstep(0.0,.75,tip));
  ROUGHNESS = .8;
  BACKLIGHT = COLOR.rgb*.35*tip;
 }
@@ -117,9 +122,15 @@ func build_scenery(garden_size: Vector2i, seed_value: int) -> void:
 	var flower_colors: Array = mood.flowers
 	for i in 110:
 		var at := Vector3(rng.randf_range(-hx-4,hx+4),.45,rng.randf_range(-hz-3.5,hz+2.8))
-		if absf(at.x)<hx+.75 and absf(at.z)<hz+.75: continue
-		clover(at,rng.randf_range(.3,.75))
-		if rng.randf() < .3: flower(at+Vector3(rng.randf_range(-.3,.3),0,rng.randf_range(-.3,.3)),rng.randf_range(.4,.9),flower_colors[rng.randi() % flower_colors.size()])
+		if absf(at.x)<hx+1.3 and absf(at.z)<hz+1.3: continue
+		clover(at,rng.randf_range(.5,1.1))
+		if rng.randf() < .3:
+			var stem_at := at+Vector3(rng.randf_range(-.3,.3),0,rng.randf_range(-.3,.3))
+			# Daisies stand taller than the bugs, except along the front edge where they'd hide the sand.
+			var height := rng.randf_range(1.1,2.3)
+			var front := stem_at.z-(hz+.62)
+			if front > -.62 and absf(stem_at.x) < hx+2.5: height = minf(height,(front-.5)*.9)
+			if height > .5: flower(stem_at,height,flower_colors[rng.randi() % flower_colors.size()])
 	# One back-edge prop: a fallen twig, a row of pebbles or nothing at all.
 	match rng.randi() % 3:
 		0:
@@ -147,10 +158,10 @@ func build_scenery(garden_size: Vector2i, seed_value: int) -> void:
 	var cap := Color("dd7350") if rng.randf() < .6 else Color("c8a46a")
 	var mx := -side*(hx+rng.randf_range(1.8,2.6)); var mz := rng.randf_range(-hz+.5,hz-.5)
 	for i in rng.randi_range(1,3):
-		var m := _sway_node(scenery,Vector3(mx+i*.75,0,mz+rng.randf_range(-.3,.3)),.6)
-		var height := rng.randf_range(.55,.95)
+		var m := _sway_node(scenery,Vector3(mx-side*i*.8,0,mz+rng.randf_range(-.3,.3)),.6)
+		var height := rng.randf_range(.9,1.6)
 		Clay.rod(m,Vector3.ZERO,Vector3(0,height,0),.11,Color("e5ce99"))
-		Clay.ball(m,Vector3(0,height,0),Vector3(.9,.35,.9)*rng.randf_range(.75,1.1),cap)
+		Clay.ball(m,Vector3(0,height,0),Vector3(1.2,.45,1.2)*rng.randf_range(.8,1.15),cap)
 
 ## A pivot that _process rocks gently; children lean with the meadow's wind.
 func _sway_node(parent: Node3D, at: Vector3, strength: float) -> Node3D:
@@ -183,12 +194,14 @@ func build_terrain() -> void:
 	var count := 192
 	for r in profiles.size():
 		var ring := PackedVector3Array(); var profile: Vector3 = profiles[r]
-		for i in count+1:
+		for i in count:
 			var a := i*TAU/count
 			var rough := sin(a*19)*.025+sin(a*31+.8)*.018
 			var x := signf(cos(a))*pow(absf(cos(a)),.20)*(profile.x+rough)
 			var z := signf(sin(a))*pow(absf(sin(a)),.20)*(profile.z+rough)
 			ring.append(Vector3(x,profile.y+(rough if r>0 else 0),z))
+		# Close the loop on the very same vertex, or the seam at angle 0 cracks open as a bright line.
+		ring.append(ring[0])
 		rings.append(ring)
 	var surface := SurfaceTool.new(); surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var sand := Color("c09a68"); sand.a = 0
@@ -217,29 +230,41 @@ func build_terrain() -> void:
 func build_grass() -> void:
 	var verts := PackedVector3Array(); var normals := PackedVector3Array(); var colors := PackedColorArray(); var uvs := PackedVector2Array(); var indices := PackedInt32Array()
 	var reach := Vector2(hx+6,hz+4.5)
-	var clumps := int(820*(reach.x*reach.y)/(11.5*9.0))
+	var clumps := int(660*(reach.x*reach.y)/(11.5*9.0))
 	var base_color: Color = mood.base; var tip_color: Color = mood.tip
 	for c in clumps:
 		var center := Vector3(rng.randf_range(-reach.x,reach.x),.47,rng.randf_range(-reach.y,reach.y-1.2))
 		if absf(center.x)<hx+.75 and absf(center.z)<hz+.75: continue
-		var radius := rng.randf_range(.2,.6)
-		var lush := rng.randf_range(.6,1.25)
-		for b in rng.randi_range(10,26):
+		var radius := rng.randf_range(.25,.7)
+		var lush := rng.randf_range(.65,1.2)
+		for b in rng.randi_range(7,18):
 			var off := Vector2.from_angle(rng.randf()*TAU)*sqrt(rng.randf())*radius
 			var at := center+Vector3(off.x,0,off.y)
-			if absf(at.x)<hx+.62 and absf(at.z)<hz+.62: continue
-			var height := rng.randf_range(.35,1.25)*lush
-			if at.z>hz+1.2: height *= .55 # keep the front edge low so it never hides the arena
-			var width := rng.randf_range(.05,.1)
+			# Blades start past the bank's crest, where the meadow is level; on the slope they poke through as slivers.
+			if absf(at.x)<hx+1.1 and absf(at.z)<hz+1.1: continue
+			# Grass towers over a bug: blades stand two to three bugs tall.
+			var height := rng.randf_range(1.0,2.7)*lush
+			var width := rng.randf_range(.07,.15)*(.7+height*.2)
 			var a := rng.randf()*TAU
 			var side := Vector3(cos(a),0,sin(a))
 			var facing := Vector3(-sin(a),0,cos(a))
-			var lean := facing*rng.randf_range(.1,.45)*height+Vector3(off.x,0,off.y)*.4
+			var lean := facing*rng.randf_range(.1,.4)*height+Vector3(off.x,0,off.y)*.4
+			# Blades beside the arena lean away from it, never over it.
+			if absf(at.x) > hx+.62 and absf(at.z) < hz+1.5: lean.x = absf(lean.x)*signf(at.x)
+			var front := at.z-(hz+.62)
+			if front > -.62 and absf(at.x) < hx+2.5:
+				# The camera looks over the front edge, so the grass there is swept
+				# aside: leaning outward and only as tall as it can be without its
+				# tips reaching over the sand (ortho camera at ~46 degrees).
+				var sweep := rng.randf_range(.3,.5)
+				lean.z = sweep*height
+				height = minf(height,maxf(.12,front/(1.0-sweep)))
+				lean.z = sweep*height
 			var shade := rng.randf()
 			var low_c := base_color.lerp(mood.soil,rng.randf()*.25)
 			var high_c := tip_color.lerp(base_color,shade*.35)
 			var start := verts.size()
-			var rows := 4
+			var rows := 5
 			for r in rows:
 				var t := float(r)/(rows-1)
 				# Wide at the root, curving to a fine point; the centre rib sits forward.
@@ -249,7 +274,7 @@ func build_grass() -> void:
 				for k in [-1,0,1]:
 					verts.append(p+side*w*k+facing*(w*.45 if k == 0 else 0.0))
 					normals.append((facing+Vector3(0,.4,0)).normalized())
-					colors.append(color); uvs.append(Vector2((k+1)*.5,t))
+					colors.append(color); uvs.append(Vector2(height,t))
 			for r in rows-1:
 				var i0 := start+r*3
 				for k in 2:
@@ -258,19 +283,22 @@ func build_grass() -> void:
 	arrays[Mesh.ARRAY_VERTEX] = verts; arrays[Mesh.ARRAY_NORMAL] = normals; arrays[Mesh.ARRAY_COLOR] = colors; arrays[Mesh.ARRAY_TEX_UV] = uvs; arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new(); mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	var grass := MeshInstance3D.new(); grass.mesh = mesh
-	grass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var shader := Shader.new(); shader.code = GRASS_SHADER
 	var material := ShaderMaterial.new(); material.shader = shader; material.set_shader_parameter("gust",rng.randf_range(.6,1.3))
 	grass.material_override = material; scenery.add_child(grass)
 
 func flower(at: Vector3, height: float, petals: Color) -> void:
 	var stem := _sway_node(scenery,at,1.0)
-	Clay.rod(stem,Vector3.ZERO,Vector3(.1,height,0),.035,Color("5e8535"))
-	for i in 7:
-		var a := i*TAU/7
-		var petal := Clay.ball(stem,Vector3(cos(a)*.22+.1,height,sin(a)*.22),Vector3(.3,.12,.18),petals)
+	var lean := Vector3(rng.randf_range(-.15,.15),0,rng.randf_range(-.1,.1))*height
+	Clay.rod(stem,Vector3.ZERO,Vector3(0,height,0)+lean,.045,Color("5e8535"))
+	var leaf := Clay.ball(stem,Vector3(.12,height*.35,0),Vector3(.32,.07,.14),Color("6c9b48")); leaf.rotation.z = .5
+	var head := Node3D.new(); head.position = Vector3(0,height,0)+lean; head.rotation = Vector3(rng.randf_range(.15,.4),rng.randf()*TAU,0); stem.add_child(head)
+	var span := rng.randf_range(.38,.5)
+	for i in 9:
+		var a := i*TAU/9
+		var petal := Clay.ball(head,Vector3(cos(a)*span,0,sin(a)*span),Vector3(span*1.25,.1,span*.55),petals)
 		petal.rotation.y = -a
-	Clay.ball(stem,Vector3(.1,height+.07,0),Vector3(.27,.15,.27),Color("e6b73f") if petals != Color("f7d34f") else Color("c9862f"))
+	Clay.ball(head,Vector3(0,.06,0),Vector3(span*1.0,.22,span*1.0),Color("e6b73f") if petals != Color("f7d34f") else Color("c9862f"))
 
 func clover(at: Vector3, leaf_size: float) -> void:
 	var tuft := _sway_node(scenery,at,.5)
@@ -285,9 +313,7 @@ func reset(match_state: RefCounted) -> void:
 	for n in arena_root.get_children(): n.free()
 	for n in flame_root.get_children(): n.free()
 	for n in burst_root.get_children(): n.free()
-	obstacles.clear(); bomb_views.clear(); pickup_views.clear(); blast_views.clear(); last_flames = ""
-	for light in blast_lights: light.free()
-	blast_lights.clear()
+	obstacles.clear(); bomb_views.clear(); pickup_views.clear(); blast_views.clear(); last_flames = ""; shake = 0.0
 	for c in match_state.cells:
 		var value: int = match_state.cells[c]
 		if value == 1 and match_state.inside(c):
@@ -325,30 +351,15 @@ func sync(match_state: RefCounted, dt: float) -> void:
 		pickup_views[c].rotation.y = sin(clock*1.8+c.y)*.16
 	for c in pickup_views.keys():
 		if not match_state.pickups.has(c): pickup_views[c].queue_free(); pickup_views.erase(c)
-	var burning := {}
-	for f in match_state.flames:
-		burning[f.cell]=maxf(burning.get(f.cell,0),f.time)
-	for c in burning:
-		if not blast_views.has(c):
-			var blast:=Blast.new(); flame_root.add_child(blast); blast.position=world(Vector2(c));
-			var connections: Array[Vector2i]=[]
-			for direction in [Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
-				if burning.has(c+direction): connections.append(direction)
-			blast.setup(c.x+c.y*71,connections)
-			blast_views[c]=blast
-		blast_views[c].animate(burning[c])
-	for c in blast_views.keys():
-		if not burning.has(c): blast_views[c].queue_free(); blast_views.erase(c)
-	for light in blast_lights.duplicate():
-		var age: float=light.get_meta("age")+dt; light.set_meta("age",age)
-		if age>=.65: light.queue_free(); blast_lights.erase(light); continue
-		light.light_energy=(1.6 if age<.06 else .75)*pow(1.0-age/.65,1.2)
-		light.light_color=Color("ffe6a4").lerp(Color("ff8025"),age/.65)
+	for id in blast_views.keys():
+		if not blast_views[id].update(dt): blast_views[id].queue_free(); blast_views.erase(id)
 	for e in match_state.events:
 		if e.type == "boom":
-			if blast_lights.size()>=4: blast_lights.pop_front().queue_free()
-			var light:=OmniLight3D.new(); light.position=world(Vector2(e.cell))+Vector3(0,.8,0); light.omni_range=3.4; light.omni_attenuation=1.2; light.shadow_enabled=false; light.set_meta("age",0.0); add_child(light); blast_lights.append(light)
-		if e.type in ["crack","out"]: burst(world(Vector2(e.cell)),Color("b99561") if e.type == "crack" else Color("f2e9bb"))
+			var blast := Explosion.new(); flame_root.add_child(blast)
+			blast.setup(e.cells,world,e.cell.x*71+e.cell.y*13+next_blast)
+			blast_views[next_blast] = blast; next_blast += 1
+			shake = minf(shake+.05+e.cells.size()*.012,.5)
+		if e.type in ["crack","out"]: burst(world(Vector2(e.cell)),Color("b99561") if e.type == "crack" else Color("3a302a"))
 	for n in burst_root.get_children():
 		var life: float = n.get_meta("life")-dt; n.set_meta("life",life)
 		if life <= 0: n.queue_free(); continue
