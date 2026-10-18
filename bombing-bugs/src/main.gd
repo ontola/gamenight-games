@@ -93,6 +93,7 @@ func _ready() -> void:
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL; camera.keep_aspect = Camera3D.KEEP_WIDTH; camera.size = 18.0
 	camera.position = Vector3(0,16,15); camera.look_at(Vector3(0,0,-.2)); camera.current = true
 	_build_ui(); _build_audio()
+	_warm_up_shaders()
 	if managed:
 		banner.text = "Getting the garden ready…"
 	else:
@@ -506,3 +507,20 @@ func _play_sound(kind: String) -> void:
 
 func _exit_tree() -> void:
 	if boom_task >= 0: WorkerThreadPool.wait_for_task_completion(boom_task)
+
+## Compile every blast and death shader before play (the Growing Guns ShaderWarmup
+## pattern): draw a whole explosion, a charred burning husk and an extra omni light
+## once at sub-pixel scale, so the first real bomb doesn't stall on pipeline compiles.
+func _warm_up_shaders() -> void:
+	var rig := Node3D.new(); rig.position = Vector3(0,1,0); rig.scale = Vector3.ONE*.001; add_child(rig)
+	var blast: Node3D = Garden.Explosion.new(); rig.add_child(blast)
+	blast.setup([Vector2i(0,0),Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,2)],func(c: Vector2) -> Vector3: return Vector3(c.x,0,c.y),1)
+	blast.update(.1)
+	var husk := Bug.new(); rig.add_child(husk); husk.build(0,Color.WHITE)
+	# 1.6 s in: charred, glowing embers, belly fire and smoke all showing, not yet apart.
+	husk.animate(.8,false,0,false); husk.animate(.8,false,0,false)
+	# Lit materials (sand, rock, grass, clay) need their omni-light variants too.
+	var light := OmniLight3D.new(); light.omni_range = 60; light.light_energy = .001; light.shadow_enabled = false; add_child(light)
+	if DisplayServer.get_name() != "headless": RenderingServer.force_draw(true)
+	var done := get_tree().create_timer(.15)
+	done.timeout.connect(rig.queue_free); done.timeout.connect(light.queue_free)

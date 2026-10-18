@@ -13,9 +13,9 @@ var charred: Array = []   # [material, original colour]
 var flames: Array[MeshInstance3D] = []
 var wisps: Array[MeshInstance3D] = []
 var pieces: Array = []    # [node, velocity, spin]
-static var flame_material: StandardMaterial3D
-static var flame_core: StandardMaterial3D
-static var smoke_material: StandardMaterial3D
+var flame_material: StandardMaterial3D
+var flame_core: StandardMaterial3D
+var smoke_material: StandardMaterial3D
 const CHAR := Color("1c1612")
 
 func build(index: int, player_color: Color) -> void:
