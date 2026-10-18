@@ -815,7 +815,7 @@ func _on_prepared(session_id: String, seats: Array, party_players: Array) -> voi
 	_spawn_riders()
 	hud.set_players(players)
 	_enter(Phase.IDLE)
-	GameNight._send({"type": "participation", "session": session_id, "instant_join": false})
+	GameNight.notify_participation(session_id, false)
 	# Let one frame render before telling the host we're ready.
 	await get_tree().process_frame
 	await get_tree().process_frame
