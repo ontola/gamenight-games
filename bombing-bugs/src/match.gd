@@ -6,6 +6,11 @@ const LAYOUTS := ["Clover garden", "Seed crossroads", "Pebble islands", "Scatter
 const SIZES := {"Small": Vector2i(11,9), "Medium": Vector2i(13,11), "Large": Vector2i(15,13)}
 # Odd sizes keep the outer wall and the classic pillar grid lined up.
 const AUTO_SIZES := {2: [Vector2i(11,9), Vector2i(13,9)], 3: [Vector2i(13,11), Vector2i(15,9)], 4: [Vector2i(13,11), Vector2i(15,11), Vector2i(15,13)]}
+# Power-up odds when a sand mound hides one: the classic pair stays common,
+# the wild ones are rare enough to feel like a find.
+const POWER_ODDS := [["capacity",.30],["range",.30],["speed",.15],["kick",.10],["ghost",.08],["mega",.07]]
+const MAX_RANGE := 12
+const KICK_SPEED := 7.0
 const DEFAULTS := {"ai_players":3, "teams":"Free-for-all", "arena":"Surprise me", "size":"Auto", "friendly_fire":false, "fuse":24, "speed":32, "crates":55, "pickups":true}
 var settings: Dictionary = DEFAULTS.duplicate()
 var w := 13
@@ -22,6 +27,7 @@ var ended := false
 var winner := -2
 var next_bomb := 0
 var age := 0.0
+var seed_value := 0
 
 func spawns() -> Array[Vector2i]:
 	return [Vector2i(1,1), Vector2i(w-2,h-2), Vector2i(w-2,1), Vector2i(1,h-2)]
@@ -33,6 +39,7 @@ func start(roster: Array, options: Dictionary, seed_value: int) -> void:
 	settings = DEFAULTS.duplicate()
 	settings.merge(options, true)
 	rng.seed = seed_value
+	self.seed_value = seed_value
 	cells.clear(); bugs.clear(); bombs.clear(); flames.clear(); pickups.clear(); events.clear()
 	ended = false; winner = -2; age = 0.0; next_bomb = 0
 	var size: Vector2i = SIZES.get(settings.size, Vector2i.ZERO)
@@ -53,7 +60,7 @@ func start(roster: Array, options: Dictionary, seed_value: int) -> void:
 	var spots := spawns()
 	for i in mini(roster.size(), 4):
 		var p: Dictionary = roster[i].duplicate(true)
-		p.merge({"pos":Vector2(spots[i]), "alive":true, "range":2, "capacity":1, "team":i % 2 if settings.teams == "Teams" else i, "heading":0.0, "moving":false, "target":Vector2(spots[i]), "brain":0.0},true)
+		p.merge({"pos":Vector2(spots[i]), "alive":true, "range":2, "capacity":1, "speed":0, "kick":false, "ghost":false, "team":i % 2 if settings.teams == "Teams" else i, "heading":0.0, "moving":false, "target":Vector2(spots[i]), "brain":0.0},true)
 		bugs.append(p)
 
 ## Rock cells for this round: the border plus the layout's interior rocks.
@@ -118,9 +125,12 @@ func bomb_at(c: Vector2i) -> int:
 	return -1
 
 func solid(c: Vector2i, who: int) -> bool:
-	if cells.get(c,1) != 0: return true
+	var value: int = cells.get(c,1)
+	# A ghost bug wanders through sand and bombs; only rock stops it.
+	var ghost: bool = who >= 0 and who < bugs.size() and bugs[who].ghost
+	if value == 1 or (value == 2 and not ghost): return true
 	var bi := bomb_at(c)
-	return bi >= 0 and not bombs[bi].passers.has(who)
+	return bi >= 0 and not ghost and not bombs[bi].passers.has(who)
 
 func fits(pos: Vector2, who: int) -> bool:
 	for y in range(floori(pos.y-RADIUS+0.5), floori(pos.y+RADIUS+0.5)+1):
@@ -130,7 +140,7 @@ func fits(pos: Vector2, who: int) -> bool:
 
 func move_bug(who: int, direction: Vector2, dt: float) -> void:
 	var p: Dictionary = bugs[who]
-	var v := direction.limit_length() * float(settings.speed)/10.0 * dt
+	var v: Vector2 = direction.limit_length() * float(settings.speed)/10.0 * (1.0+0.18*p.speed) * dt
 	var steps := maxi(1, ceili(v.length()/0.07))
 	v /= steps
 	var old: Vector2 = p.pos
@@ -165,7 +175,7 @@ func place(who: int) -> bool:
 	var passers := []
 	for i in bugs.size():
 		if absf(bugs[i].pos.x-c.x) < 0.5+RADIUS and absf(bugs[i].pos.y-c.y) < 0.5+RADIUS: passers.append(i)
-	bombs.append({"id":next_bomb,"cell":c,"owner":who,"range":p.range,"time":float(settings.fuse)/10.0,"passers":passers})
+	bombs.append({"id":next_bomb,"cell":c,"owner":who,"range":p.range,"time":float(settings.fuse)/10.0,"passers":passers,"slide":Vector2i.ZERO,"glide":0.0})
 	next_bomb += 1
 	events.append({"type":"plant","cell":c})
 	return true
@@ -192,9 +202,52 @@ func explode(index: int) -> void:
 			events.append({"type":"crack","cell":c})
 			if settings.pickups and rng.randf() < 0.4:
 				# Only reveal after this blast has ended.
-				pickups[c] = {"kind": "range" if rng.randf() < 0.5 else "capacity", "wait":0.7}
+				pickups[c] = {"kind": _power_kind(), "wait":0.7}
 		var chain := bomb_at(c)
 		if chain >= 0: bombs[chain].time = 0.0
+
+func _power_kind() -> String:
+	var roll := rng.randf()
+	for entry in POWER_ODDS:
+		roll -= entry[1]
+		if roll < 0: return entry[0]
+	return "capacity"
+
+func collect(p: Dictionary, kind: String) -> void:
+	match kind:
+		"capacity": p.capacity = mini(p.capacity+1,4)
+		"range": p.range = mini(p.range+1,5) if p.range < 5 else p.range
+		"speed": p.speed = mini(p.speed+1,3)
+		"kick": p.kick = true
+		"ghost": p.ghost = true
+		"mega": p.range = MAX_RANGE
+
+func bug_in(c: Vector2i) -> bool:
+	for b in bugs:
+		if b.alive and tile(b.pos) == c: return true
+	return false
+
+## A kicker walking into a bomb sends it sliding until something stops it.
+func kick(who: int, move: Vector2) -> void:
+	var p: Dictionary = bugs[who]
+	if not p.kick or move.length() < .5: return
+	var dir := Vector2i(1 if move.x > 0 else -1,0) if absf(move.x) > absf(move.y) else Vector2i(0,1 if move.y > 0 else -1)
+	var ahead: Vector2i = tile(p.pos)+dir
+	var bi := bomb_at(ahead)
+	if bi < 0 or bombs[bi].passers.has(who) or bombs[bi].slide != Vector2i.ZERO: return
+	if Vector2(ahead).distance_to(p.pos) > 0.5+RADIUS+0.08: return
+	bombs[bi].slide = dir; bombs[bi].glide = 0.0
+	events.append({"type":"kick","cell":ahead,"who":who})
+
+func slide_bombs(dt: float) -> void:
+	for b in bombs:
+		if b.slide == Vector2i.ZERO: continue
+		var next: Vector2i = b.cell+b.slide
+		if cells.get(next,1) != 0 or bomb_at(next) >= 0 or bug_in(next):
+			b.slide = Vector2i.ZERO; b.glide = 0.0; continue
+		b.glide += dt*KICK_SPEED
+		if b.glide >= 1.0:
+			b.cell = next; b.glide -= 1.0; b.passers.clear()
 
 func step(dt: float, commands: Array) -> void:
 	events.clear()
@@ -204,6 +257,8 @@ func step(dt: float, commands: Array) -> void:
 		var cmd: Dictionary = commands[i] if i < commands.size() else {}
 		move_bug(i,cmd.get("move",Vector2.ZERO),dt)
 		if cmd.get("bomb",false): place(i)
+		kick(i,cmd.get("move",Vector2.ZERO))
+	slide_bombs(dt)
 	for b in bombs: b.time -= dt
 	var more := true
 	while more:
@@ -228,7 +283,7 @@ func step(dt: float, commands: Array) -> void:
 			break
 		if p.alive and pickups.has(c) and pickups[c].wait <= 0:
 			var kind: String = pickups[c].kind
-			p[kind] = mini(p[kind]+1, 5 if kind == "range" else 4)
+			collect(p,kind)
 			pickups.erase(c)
 			events.append({"type":"pickup","cell":c,"who":i,"kind":kind})
 	var teams := {}
@@ -293,5 +348,5 @@ func bot(who: int, dt: float) -> Dictionary:
 		p.target = Vector2(path[0]) if not path.is_empty() else Vector2(c)
 	var delta: Vector2 = p.target-p.pos
 	# Slow the final step to land exactly on a corridor centre.
-	var magnitude := minf(1.0,delta.length()/maxf(0.001, float(settings.speed)/10.0*dt))
+	var magnitude := minf(1.0,delta.length()/maxf(0.001, float(settings.speed)/10.0*(1.0+0.18*p.speed)*dt))
 	return {"move":delta.normalized()*magnitude, "bomb":false, "planted":plant}

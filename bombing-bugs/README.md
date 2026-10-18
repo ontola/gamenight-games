@@ -32,7 +32,9 @@ Standalone play uses up to four connected controllers, or one keyboard player
 if no pads are connected. Controllers are assigned at round start. AI fills the
 remaining slots up to the requested count, without replacing human players.
 One human with AI set to zero is a practice arena. Options use D-pad/stick,
-A/B, or mouse; settings take effect on **Start a new round** or the next round.
+A/B, or mouse; settings take effect on **New round · apply options** or the next
+round. The menu shows only the basics (AI players, teams, garden, size); fuse,
+speed, friendly fire, sand, pickups and sound live under **More options**.
 
 Gardens vary every round. Auto size picks from sizes that suit the player
 count (two players: 11×9 or 13×9; three: 13×11 or 15×9; four: 13×11, 15×11 or
@@ -40,6 +42,23 @@ count (two players: 11×9 or 13×9; three: 13×11 or 15×9; four: 13×11, 15×11
 Boulder field are generated per round, mirrored so every corner spawn sees the
 same garden, and always fully connected once the sand is gone. The countdown
 names the garden; the game's name only shows on the start menu.
+
+Each round's seed also picks the garden's look: a colour mood (fresh spring,
+lush, dry late summer, autumn), soil patches showing through the moss, the
+side props, and where the snail crawls. Grass grows in clumps of curved,
+tapered blades that sway in the wind, and flowers, clovers, mushrooms and the
+snail move with the same breeze.
+
+Power-ups drop from sand:
+
+| Power-up | Effect |
+| --- | --- |
+| Extra bomb | One more bomb at a time (max 4) |
+| Range | Longer blasts (max 5) |
+| Speed | Walk faster (stacks to 3) |
+| Kick | Walk into a bomb to send it sliding until it hits something |
+| Ghost | Walk through sand and bombs; rock still stops you |
+| Mega | Blasts reach as far as the garden allows |
 
 Teams pair seats 1+3 against 2+4. Friendly fire is optional; your own bombs
 always hurt. Eliminated bugs remain as little toppled bodies until next round.

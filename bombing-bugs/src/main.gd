@@ -4,7 +4,6 @@ const Match = preload("res://src/match.gd")
 const Garden = preload("res://src/garden.gd")
 const Bug = preload("res://src/bug.gd")
 const Clay = preload("res://src/clay.gd")
-const POWER_ICONS := {"capacity":preload("res://assets/power-bombs.svg"),"range":preload("res://assets/power-range.svg")}
 const SETTINGS := [
 	{"key":"ai_players","label":"AI bugs (next round)","kind":"number","default":3,"min":0,"max":3},
 	{"key":"teams","label":"Teams (next round)","kind":"choice","default":"Free-for-all","options":["Free-for-all","Teams"]},
@@ -17,6 +16,9 @@ const SETTINGS := [
 	{"key":"pickups","label":"Power-ups (next round)","kind":"toggle","default":true},
 	{"key":"sound","label":"Sound effects (live)","kind":"toggle","default":true},
 ]
+# The menu shows the everyday choices; the fiddly ones sit one level down.
+const BASIC_SETTINGS := ["ai_players","teams","arena","size"]
+const ADVANCED_SETTINGS := ["friendly_fire","fuse","speed","crates","pickups","sound"]
 const PALETTE := [Color("ef7056"),Color("6fc4d1"),Color("f7cd52"),Color("b6a1e6")]
 var sim := Match.new()
 var garden: Node3D
@@ -38,6 +40,10 @@ var round_index := 0
 var held := {}
 var menu_index := 0
 var menu_rows: Array[Button] = []
+var menu_items: Array = []
+var menu_page := "main"
+var menu_list: VBoxContainer
+var menu_help: Label
 var overlay: PanelContainer
 var menu_title: Label
 var banner: Label
@@ -241,9 +247,11 @@ func _physics_process(dt: float) -> void:
 	var right := _edge("right",nav.x > .5)
 	if menu_open:
 		if up or down: menu_index = posmod(menu_index+(1 if down else -1),menu_rows.size()); _refresh_menu()
-		if left or right: _menu_action(menu_index,1 if right else -1)
+		if (left or right) and menu_items[menu_index].has("key"): _menu_action(menu_index,1 if right else -1)
 		if confirm: _menu_action(menu_index,1)
-		if close: _close_menu()
+		if close:
+			if menu_page == "advanced": _show_page("main")
+			else: _close_menu()
 		return
 	if not active: return
 	if countdown > 0:
@@ -316,8 +324,9 @@ func _build_ui() -> void:
 	hint = _label("A / Space  ·  Plant bomb     Start / Esc  ·  Options",18); root.add_child(hint); hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE); hint.offset_top = -45; hint.offset_bottom = -12; hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; hint.add_theme_color_override("font_color",Color("fff3ce")); hint.add_theme_color_override("font_outline_color",Color("3d3928")); hint.add_theme_constant_override("outline_size",5)
 	if managed: hint.text = "A  ·  Plant bomb     Start  ·  Options     Back  ·  GameNight"
 	var center := CenterContainer.new(); root.add_child(center); center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	overlay = PanelContainer.new(); center.add_child(overlay); overlay.custom_minimum_size = Vector2(590,0); overlay.add_theme_stylebox_override("panel",_panel(Color("fff0d9fa"),Color("886842")))
-	var box := VBoxContainer.new(); overlay.add_child(box); box.add_theme_constant_override("separation",5)
+	overlay = PanelContainer.new(); center.add_child(overlay); overlay.custom_minimum_size = Vector2(560,0)
+	var card := _panel(Color("fff3e0f5"),Color("886842")); card.set_content_margin_all(26); overlay.add_theme_stylebox_override("panel",card)
+	var box := VBoxContainer.new(); overlay.add_child(box); box.add_theme_constant_override("separation",10)
 	# The game's name only appears on the start menu.
 	title = RichTextLabel.new(); box.add_child(title); title.custom_minimum_size = Vector2(550,70); title.fit_content = true
 	title.bbcode_enabled = true; title.scroll_active = false; title.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -325,14 +334,8 @@ func _build_ui() -> void:
 	title.add_theme_color_override("font_outline_color",Color("433c22")); title.add_theme_constant_override("outline_size",8)
 	title.text = "[center][wave amp=3 freq=1.3][color=#ffd477]Bombing[/color] [color=#b9e579]Bugs![/color][/wave][/center]"
 	menu_title = _label("Ready to rumble?",30); menu_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; box.add_child(menu_title)
-	var count_label := _label("1–4 players · controllers or WASD + Space",16); count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; box.add_child(count_label)
-	for i in SETTINGS.size()+2:
-		var b := Button.new(); box.add_child(b); b.custom_minimum_size = Vector2(550,44); b.add_theme_font_size_override("font_size",18); b.add_theme_font_override("font",PLAY_FONT); b.add_theme_color_override("font_color",Color("493b2b")); b.add_theme_color_override("font_hover_color",Color("493b2b")); b.add_theme_color_override("font_pressed_color",Color("493b2b")); b.focus_mode = Control.FOCUS_NONE
-		b.add_theme_stylebox_override("normal",_panel(Color("eeddbb")))
-		b.add_theme_stylebox_override("hover",_panel(Color("d6e9a2")))
-		b.add_theme_stylebox_override("pressed",_panel(Color("c0d983")))
-		b.pressed.connect(func(): _menu_action(i,-1 if b.get_local_mouse_position().x < b.size.x*.5 else 1)); menu_rows.append(b)
-	var help := _label("↑↓ Select    ←→ Change    A Confirm    B Resume",15); help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; box.add_child(help)
+	menu_list = VBoxContainer.new(); box.add_child(menu_list); menu_list.add_theme_constant_override("separation",6)
+	menu_help = _label("",15); menu_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; menu_help.add_theme_color_override("font_color",Color("8a7558")); box.add_child(menu_help)
 	overlay.hide()
 	sound = AudioStreamPlayer.new(); sound.volume_db = -16; add_child(sound)
 
@@ -348,18 +351,22 @@ func _update_badges(upgraded: int = -1) -> void:
 		var label := _label(text,20,p.color.lightened(.25)); label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; box.add_child(label)
 		label.add_theme_color_override("font_outline_color",Color("2f2a1c")); label.add_theme_constant_override("outline_size",7)
 		var stats := HBoxContainer.new(); stats.add_theme_constant_override("separation",6); box.add_child(stats)
-		for kind in ["capacity","range"]:
-			var icon := TextureRect.new(); icon.texture = POWER_ICONS[kind]; icon.custom_minimum_size = Vector2(26,26); icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; stats.add_child(icon)
-			var value := _label(str(p[kind]),20,Color("fff3ce")); stats.add_child(value)
+		for kind in ["capacity","range","speed","kick","ghost"]:
+			if (kind == "speed" and p.speed == 0) or (kind in ["kick","ghost"] and not p[kind]): continue
+			var shown: String = "mega" if kind == "range" and p.range >= Match.MAX_RANGE else kind
+			var icon := TextureRect.new(); icon.texture = garden.POWER_ICONS[shown]; icon.custom_minimum_size = Vector2(26,26); icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; stats.add_child(icon)
+			icon.tooltip_text = {"capacity":"Bombs at once","range":"Blast range in tiles","speed":"Extra speed","kick":"Kicks bombs","ghost":"Walks through sand and bombs"}[kind]
+			if kind in ["kick","ghost"]: continue
+			var value := _label("MAX" if shown == "mega" else str(p[kind]),20,Color("fff3ce")); stats.add_child(value)
 			value.add_theme_color_override("font_outline_color",Color("2f2a1c")); value.add_theme_constant_override("outline_size",6)
-			value.tooltip_text = "Bombs at once" if kind == "capacity" else "Blast range in tiles"
 		if not p.alive: box.modulate.a = .35
 		if i == upgraded:
 			box.modulate = Color(1.6,1.6,1.3)
 			create_tween().tween_property(box,"modulate",Color.WHITE,.35)
 
 func _open_menu(first: bool) -> void:
-	initial_menu = first; menu_open = true; menu_index = 0; overlay.show(); _refresh_menu(); banner.text = ""
+	initial_menu = first; menu_open = true; overlay.show(); banner.text = ""
+	_show_page("main")
 	_trace("menu")
 
 func _close_menu() -> void:
@@ -368,26 +375,76 @@ func _close_menu() -> void:
 	menu_open = false; overlay.hide()
 	if sim.ended: banner.text = "A garden-sized draw!" if sim.winner == -1 else _winner_name()+" wins!"
 
+func _show_page(page: String) -> void:
+	menu_page = page; menu_index = 0
+	menu_items = []
+	if page == "main":
+		menu_items.append({"action":"play"})
+		for key in BASIC_SETTINGS: menu_items.append({"key":key})
+		menu_items.append({"action":"more"})
+		if not initial_menu: menu_items.append({"action":"restart"})
+	else:
+		for key in ADVANCED_SETTINGS: menu_items.append({"key":key})
+		menu_items.append({"action":"back"})
+	for n in menu_list.get_children(): menu_list.remove_child(n); n.queue_free()
+	menu_rows.clear()
+	for i in menu_items.size():
+		var b := Button.new(); menu_list.add_child(b); b.custom_minimum_size = Vector2(500,52 if menu_items[i].get("action") == "play" else 44); b.focus_mode = Control.FOCUS_NONE
+		for state in ["normal","hover","pressed"]: b.add_theme_stylebox_override(state,StyleBoxEmpty.new())
+		var row := HBoxContainer.new(); b.add_child(row); row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); row.offset_left = 18; row.offset_right = -18; row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var caption := _label("",22 if menu_items[i].get("action") == "play" else 19); caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL; caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER; row.add_child(caption)
+		var value := _label("",19,Color("6b5636")); value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER; row.add_child(value)
+		if menu_items[i].has("action"): caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b.mouse_entered.connect(func(): menu_index = i; _refresh_menu())
+		b.pressed.connect(func(): _menu_action(i,-1 if b.get_local_mouse_position().x < b.size.x*.5 and menu_items[i].has("key") else 1))
+		menu_rows.append(b)
+	_refresh_menu()
+
+func _display(key: String) -> String:
+	var value: Variant = settings.get(key)
+	match key:
+		"ai_players": return "None" if int(value) == 0 else str(value)
+		"fuse": return "%.1f s"%(float(value)/10)
+		"speed": return "%.1f"%(float(value)/10)
+		"crates": return "%d%%"%int(value)
+	if value is bool: return "On" if value else "Off"
+	return str(value)
+
 func _refresh_menu() -> void:
-	menu_title.text = "Ready to rumble?" if initial_menu else "Take a breather"
-	title.visible = initial_menu
-	menu_rows[0].text = "Play" if initial_menu else "Resume"
-	for i in SETTINGS.size():
-		var spec: Dictionary = SETTINGS[i]
-		var value: Variant = settings.get(spec.key,spec.default)
-		var display := str(value)
-		if spec.kind == "toggle": display = "On" if value else "Off"
-		if spec.key == "fuse": display = "%.1f s"%(float(value)/10)
-		if spec.key == "speed": display = "%.1f"%(float(value)/10)
-		menu_rows[i+1].text = spec.label.replace(" (next round)","").replace(" (live)","").replace(", tenths of a second","").replace(", tenths of a tile/s","")+"   ‹  "+display+"  ›"
-	menu_rows[-1].text = "Start a new round · apply options"
-	for i in menu_rows.size(): menu_rows[i].add_theme_stylebox_override("normal",_panel(Color("cee79a") if i == menu_index else Color("f4e7cc"),Color("6b8745") if i == menu_index else Color("e0cba8")))
+	menu_title.text = ("Ready to rumble?" if initial_menu else "Take a breather") if menu_page == "main" else "More options"
+	title.visible = initial_menu and menu_page == "main"
+	menu_help.text = "↑↓ Choose   ←→ Change   A Select   " + ("B Back" if menu_page == "advanced" else ("B Play" if initial_menu else "B Resume"))
+	for i in menu_items.size():
+		var item: Dictionary = menu_items[i]
+		var row := menu_rows[i].get_child(0)
+		var caption: Label = row.get_child(0); var value: Label = row.get_child(1)
+		var selected := i == menu_index
+		if item.has("key"):
+			var spec: Dictionary = {}
+			for candidate in SETTINGS:
+				if candidate.key == item.key: spec = candidate
+			caption.text = spec.label.get_slice(" (",0).get_slice(",",0)
+			value.text = ("‹  %s  ›" if selected else "%s") % _display(item.key)
+		else:
+			caption.text = {"play":"Play" if initial_menu else "Resume","more":"More options  ›","back":"‹  Back","restart":"New round · apply options"}[item.action]
+			value.text = ""
+		var primary: bool = item.get("action") == "play"
+		var fill := Color("cee79a") if selected else (Color("f6dc8f") if primary else Color("00000000"))
+		var line := Color("6b8745") if selected else (Color("c99d45") if primary else Color("00000000"))
+		var style := _panel(fill,line); style.set_content_margin_all(0)
+		if not selected and not primary: style.shadow_size = 0
+		menu_rows[i].add_theme_stylebox_override("normal",style); menu_rows[i].add_theme_stylebox_override("hover",style); menu_rows[i].add_theme_stylebox_override("pressed",style)
 
 func _menu_action(index: int, direction: int) -> void:
-	if index == 0: _close_menu(); return
-	if index == menu_rows.size()-1:
-		_new_round(); active = true; initial_menu = false; _close_menu(); return
-	var spec: Dictionary = SETTINGS[index-1]
+	var item: Dictionary = menu_items[index]
+	match item.get("action",""):
+		"play": _close_menu(); return
+		"more": _show_page("advanced"); return
+		"back": _show_page("main"); return
+		"restart": _new_round(); active = true; initial_menu = false; _close_menu(); return
+	var spec: Dictionary = {}
+	for candidate in SETTINGS:
+		if candidate.key == item.key: spec = candidate
 	var v: Variant = settings.get(spec.key,spec.default)
 	match spec.kind:
 		"number": v = clampi(int(v)+direction,spec.min,spec.max)
@@ -400,7 +457,7 @@ func _menu_action(index: int, direction: int) -> void:
 func _build_audio() -> void:
 	# Soft procedural percussion: no music, no harsh looping engine/noise layer.
 	var noise := RandomNumberGenerator.new(); noise.seed = 19
-	for kind in ["plant","boom","pickup","out"]:
+	for kind in ["plant","boom","pickup","out","kick"]:
 		var samples := PackedByteArray()
 		var seconds := .45 if kind == "boom" else .13
 		var count := int(22050*seconds)
@@ -410,7 +467,7 @@ func _build_audio() -> void:
 			var t := float(i)/22050; var fraction := float(i)/count
 			var envelope := minf(t*100,1.0)*pow(1-fraction,3)
 			smoothed = lerpf(smoothed,noise.randf_range(-1,1),.15)
-			var frequency := 120.0 if kind == "plant" else (660.0 if kind == "pickup" else 80.0)
+			var frequency: float = {"plant":120.0,"pickup":660.0,"kick":220.0}.get(kind,80.0)
 			var value := sin(TAU*frequency*t*(1-fraction*.3))*.45
 			if kind == "boom": value = smoothed*.6+sin(TAU*70*t)*.4
 			samples.encode_s16(i*2,int(clampf(value*envelope,-1,1)*22000))

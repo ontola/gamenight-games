@@ -1,6 +1,6 @@
 Bombing Bugs, a couch arena game for one to four players: ladybug, ant, bee
 and beetle plant bombs in a clay garden, blow open sand mounds, collect
-bomb and range power-ups and try to be the last bug (or team) standing.
+power-ups (extra bombs, range, speed, kick, ghost and mega blasts) and try to be the last bug (or team) standing.
 
 - Windows build: unzip `BombingBugs-windows.zip` and run `BombingBugs.exe`.
   `release-sha256.txt` holds its checksum.

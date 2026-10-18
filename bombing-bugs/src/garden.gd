@@ -1,6 +1,8 @@
 extends Node3D
 const Clay = preload("res://src/clay.gd")
 const Blast = preload("res://src/blast.gd")
+const POWER_ICONS := {"capacity":preload("res://assets/power-bombs.svg"),"range":preload("res://assets/power-range.svg"),"speed":preload("res://assets/power-speed.svg"),"kick":preload("res://assets/power-kick.svg"),"ghost":preload("res://assets/power-ghost.svg"),"mega":preload("res://assets/power-mega.svg")}
+const POWER_COLORS := {"capacity":Color("438c78"),"range":Color("d1a34d"),"speed":Color("5d9db8"),"kick":Color("c4704c"),"ghost":Color("9a86c9"),"mega":Color("c8382c")}
 var blast_views: Dictionary = {}
 var blast_lights: Array[OmniLight3D] = []
 var obstacles: Dictionary = {}
@@ -35,45 +37,149 @@ func build() -> void:
 	burst_root = Node3D.new(); add_child(burst_root)
 
 ## Sand pit, bank, grass and onlookers sized to the round's garden; rebuilt only when the size changes.
-func build_scenery(garden_size: Vector2i) -> void:
-	if garden_size == size: return
-	size = garden_size; hx = (size.x-2)*.5; hz = (size.y-2)*.5
+# Meadow moods: each round draws one and jitters it, so no two gardens look alike.
+const MOODS := [
+	{"soil":Color("6f5b40"),"moss":Color("6a8a45"),"base":Color("365c2a"),"tip":Color("a9c95a"),"flowers":[Color("fff0c8"),Color("f7d34f")]},
+	{"soil":Color("8a7650"),"moss":Color("8a9150"),"base":Color("5a6a32"),"tip":Color("d6c879"),"flowers":[Color("f4e2a0"),Color("e98a5d")]},
+	{"soil":Color("5e4b35"),"moss":Color("557a40"),"base":Color("2c5530"),"tip":Color("9ccf66"),"flowers":[Color("f2b8d0"),Color("ffffff")]},
+	{"soil":Color("7a6142"),"moss":Color("7f8648"),"base":Color("4d5c2a"),"tip":Color("cfb055"),"flowers":[Color("c9a0e8"),Color("fff0c8")]},
+]
+const GRASS_SHADER := """shader_type spatial;
+render_mode cull_disabled;
+uniform float gust = 1.0;
+varying float tip;
+void vertex() {
+ tip = UV.y;
+ vec3 world = (MODEL_MATRIX*vec4(VERTEX,1.0)).xyz;
+ float t = TIME;
+ // Two slow waves plus a travelling gust: blades lean together, not in lockstep.
+ float wave = sin(t*1.7+world.x*.55+world.z*.35)*.6+sin(t*2.9+world.x*1.3-world.z*.9)*.25;
+ float g = pow(max(sin(t*.45-world.x*.18+world.z*.07),0.0),3.0)*gust;
+ float bend = UV.y*UV.y;
+ VERTEX.x += (wave*.11+g*.32)*bend;
+ VERTEX.z += (wave*.05+g*.12)*bend;
+ // Soft, up-facing normals: lit like a lawn, not like folded paper.
+ NORMAL = normalize(mix(NORMAL,vec3(0.0,1.0,0.0),.65));
+}
+void fragment() {
+ ALBEDO = COLOR.rgb*mix(.7,1.08,smoothstep(0.0,.7,tip));
+ ROUGHNESS = .8;
+ BACKLIGHT = COLOR.rgb*.35*tip;
+}
+"""
+const MEADOW_SHADER := """shader_type spatial;
+render_mode cull_disabled;
+uniform vec4 soil : source_color;
+uniform vec4 moss : source_color;
+uniform vec2 offset;
+varying vec3 world;
+float hash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float noise(vec2 p) {
+ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+ return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+}
+void vertex() { world=(MODEL_MATRIX*vec4(VERTEX,1.0)).xyz; }
+void fragment() {
+ vec2 p = world.xz+offset;
+ float patches = noise(p*.45)*.6+noise(p*1.3)*.3+noise(p*5.0)*.1;
+ float grain = noise(p*23.0)*.5+noise(p*61.0)*.5;
+ vec3 meadow = mix(soil.rgb, moss.rgb, smoothstep(.22,.58,patches));
+ meadow *= .9+grain*.2;
+ // Vertex alpha marks the meadow; the sandy bank keeps its own colours.
+ ALBEDO = mix(COLOR.rgb*(.92+grain*.16), meadow, COLOR.a);
+ ROUGHNESS = .95;
+}
+"""
+var mood: Dictionary = {}
+var swaying: Array[Node3D] = []
+var snail_node: Node3D
+var round_seed := -1
+
+## Sand pit, bank, meadow and onlookers. Rebuilt each round from the round seed,
+## so the garden around the same arena still looks a little different every time.
+func build_scenery(garden_size: Vector2i, seed_value: int) -> void:
+	if garden_size == size and seed_value == round_seed: return
+	size = garden_size; round_seed = seed_value; hx = (size.x-2)*.5; hz = (size.y-2)*.5
 	if scenery: scenery.free()
+	swaying.clear()
 	scenery = Node3D.new(); add_child(scenery)
-	rng.seed = 431+size.x*31+size.y
+	rng.seed = seed_value*7919+size.x*31+size.y
+	mood = MOODS[rng.randi() % MOODS.size()].duplicate()
+	for key in ["soil","moss","base","tip"]:
+		var c: Color = mood[key]
+		mood[key] = Color.from_hsv(wrapf(c.h+rng.randf_range(-.025,.025),0,1),clampf(c.s*rng.randf_range(.85,1.1),0,1),clampf(c.v*rng.randf_range(.92,1.06),0,1))
 	build_terrain()
 	build_grass()
 	for i in int(420*hx*hz/24.75):
 		var x := rng.randf_range(-hx+.1,hx-.1); var z := rng.randf_range(-hz+.1,hz-.1)
 		var speck := rng.randf_range(.018,.055)
 		Clay.ball(scenery,Vector3(x,-.005,z),Vector3(speck,speck*.45,speck),Color("8e7049").lerp(Color("d1ad78"),rng.randf()))
-	for i in 85:
-		var at := Vector3(rng.randf_range(-hx-3.5,hx+3.5),.49,rng.randf_range(-hz-3.5,hz+2.5))
-		if absf(at.x)<hx+.7 and absf(at.z)<hz+.7: continue
+	var flower_colors: Array = mood.flowers
+	for i in 110:
+		var at := Vector3(rng.randf_range(-hx-4,hx+4),.45,rng.randf_range(-hz-3.5,hz+2.8))
+		if absf(at.x)<hx+.75 and absf(at.z)<hz+.75: continue
 		clover(at,rng.randf_range(.3,.75))
-		if i%5==0: flower(at,rng.randf_range(.4,.85))
-	Clay.rod(scenery,Vector3(-hx-2.5,.25,-hz-2.3),Vector3(hx+1.5,.6,-hz-3.1),.3,Color("74513b"))
-	for i in int((2*hx+2)/3)+1:
-		Clay.rod(scenery,Vector3(-hx-.5+i*3,.5,-hz-2.5),Vector3(-hx+.5+i*3,.7,-hz-3.7),.1,Color("74513b"))
-	# A snail spectator and mushrooms establish the tiny scale.
-	var snail := Vector3(hx+2.1,0,hz-1.5)
-	Clay.ball(scenery,snail+Vector3(0,.22,0),Vector3(1.4,.4,.6),Color("cbac70"))
-	Clay.ball(scenery,snail+Vector3(-.2,.65,0),Vector3(.9,.95,.8),Color("9c653e"))
+		if rng.randf() < .3: flower(at+Vector3(rng.randf_range(-.3,.3),0,rng.randf_range(-.3,.3)),rng.randf_range(.4,.9),flower_colors[rng.randi() % flower_colors.size()])
+	# One back-edge prop: a fallen twig, a row of pebbles or nothing at all.
+	match rng.randi() % 3:
+		0:
+			Clay.rod(scenery,Vector3(-hx-2.5,.25,-hz-2.3),Vector3(hx+1.5,.6,-hz-3.1),.3,Color("74513b"))
+			for i in int((2*hx+2)/3)+1:
+				Clay.rod(scenery,Vector3(-hx-.5+i*3,.5,-hz-2.5),Vector3(-hx+.5+i*3,.7,-hz-3.7),.1,Color("74513b"))
+		1:
+			for i in 9:
+				var at := Vector3(rng.randf_range(-hx-2,hx+2),.45,-hz-rng.randf_range(2.2,3.4))
+				Clay.pebble(scenery,at,rng.randf()).scale *= rng.randf_range(.5,.9)
+	# A snail spectator and mushrooms establish the tiny scale; their spots change per round.
+	var side := 1.0 if rng.randf() < .7 else -1.0
+	snail_node = Node3D.new(); scenery.add_child(snail_node)
+	snail_node.position = Vector3(side*(hx+2.1),0,rng.randf_range(-hz+.5,hz-1.0)); snail_node.scale.x = side
+	snail_node.set_meta("home",snail_node.position)
+	Clay.ball(snail_node,Vector3(0,.22,0),Vector3(1.4,.4,.6),Color("cbac70"))
+	Clay.ball(snail_node,Vector3(-.2,.65,0),Vector3(.9,.95,.8),Color("9c653e"))
 	for i in 3:
 		var ring := TorusMesh.new(); ring.inner_radius = .14+i*.08; ring.outer_radius = .17+i*.08
-		var mesh := MeshInstance3D.new(); mesh.mesh = ring; mesh.material_override = Clay.material(Color("d4a16b")); mesh.position = snail+Vector3(-.2,.65,.4); mesh.rotation.x = PI/2; scenery.add_child(mesh)
-	for side in [-1,1]:
-		Clay.rod(scenery,snail+Vector3(.4,.3,side*.16),snail+Vector3(.7,.75,side*.22),.035,Color("cbac70"))
-		Clay.ball(scenery,snail+Vector3(.7,.77,side*.22),Vector3(.12,.12,.12),Color("382d30"))
-	for x in [-hx-2.7,-hx-1.9]:
-		Clay.rod(scenery,Vector3(x,0,-hz+1.5),Vector3(x,.8,-hz+1.5),.11,Color("e5ce99"))
-		Clay.ball(scenery,Vector3(x,.8,-hz+1.5),Vector3(.9,.35,.9),Color("dd7350"))
+		var mesh := MeshInstance3D.new(); mesh.mesh = ring; mesh.material_override = Clay.material(Color("d4a16b")); mesh.position = Vector3(-.2,.65,.4); mesh.rotation.x = PI/2; snail_node.add_child(mesh)
+	for s in [-1,1]:
+		var stalk := _sway_node(snail_node,Vector3(.4,.3,s*.16),2.5)
+		Clay.rod(stalk,Vector3.ZERO,Vector3(.3,.45,s*.06),.035,Color("cbac70"))
+		Clay.ball(stalk,Vector3(.3,.47,s*.06),Vector3(.12,.12,.12),Color("382d30"))
+	var cap := Color("dd7350") if rng.randf() < .6 else Color("c8a46a")
+	var mx := -side*(hx+rng.randf_range(1.8,2.6)); var mz := rng.randf_range(-hz+.5,hz-.5)
+	for i in rng.randi_range(1,3):
+		var m := _sway_node(scenery,Vector3(mx+i*.75,0,mz+rng.randf_range(-.3,.3)),.6)
+		var height := rng.randf_range(.55,.95)
+		Clay.rod(m,Vector3.ZERO,Vector3(0,height,0),.11,Color("e5ce99"))
+		Clay.ball(m,Vector3(0,height,0),Vector3(.9,.35,.9)*rng.randf_range(.75,1.1),cap)
+
+## A pivot that _process rocks gently; children lean with the meadow's wind.
+func _sway_node(parent: Node3D, at: Vector3, strength: float) -> Node3D:
+	var n := Node3D.new(); n.position = at; parent.add_child(n)
+	n.set_meta("strength",strength); n.set_meta("phase",rng.randf()*TAU)
+	swaying.append(n)
+	return n
+
+func _process(dt: float) -> void:
+	var t := Time.get_ticks_msec()/1000.0
+	for n in swaying:
+		var at := n.global_position
+		var strength: float = n.get_meta("strength")
+		# Same waves as the grass shader, so flowers lean with the blades around them.
+		var wave := sin(t*1.7+at.x*.55+at.z*.35)*.6+sin(t*2.9+at.x*1.3-at.z*.9+n.get_meta("phase"))*.25
+		var gust := pow(maxf(sin(t*.45-at.x*.18+at.z*.07),0.0),3.0)
+		n.rotation.z = -(wave*.06+gust*.16)*strength
+		n.rotation.x = (wave*.03+gust*.06)*strength
+	if snail_node:
+		# The snail inches along its edge of the garden and back.
+		var home: Vector3 = snail_node.get_meta("home")
+		snail_node.position.z = home.z+sin(t*.07)*.9
+		snail_node.position.y = absf(sin(t*1.1))*.015
 
 # The collision boundary remains the outer tile row. Only its presentation changes:
 # a continuous eroded bank rises outside the playable cells, rather than a rock fence.
 func build_terrain() -> void:
 	var rings: Array[PackedVector3Array] = []
-	var profiles := [Vector3(hx+.03,-.04,hz+.03),Vector3(hx+.22,.18,hz+.22),Vector3(hx+.68,.53,hz+.68),Vector3(hx+1.15,.49,hz+1.15),Vector3(hx+6.5,.43,hz+5.5)]
+	var profiles := [Vector3(hx+.03,-.04,hz+.03),Vector3(hx+.22,.18,hz+.22),Vector3(hx+.68,.53,hz+.68),Vector3(hx+1.15,.49,hz+1.15),Vector3(hx+7.5,.43,hz+6.5)]
 	var count := 192
 	for r in profiles.size():
 		var ring := PackedVector3Array(); var profile: Vector3 = profiles[r]
@@ -85,62 +191,97 @@ func build_terrain() -> void:
 			ring.append(Vector3(x,profile.y+(rough if r>0 else 0),z))
 		rings.append(ring)
 	var surface := SurfaceTool.new(); surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sand := Color("c09a68"); sand.a = 0
 	for i in count:
 		for v in [Vector3(0,-.04,0),rings[0][i],rings[0][i+1]]:
-			surface.set_color(Color("c09a68")); surface.add_vertex(v)
+			surface.set_color(sand); surface.add_vertex(v)
 	for r in profiles.size()-1:
-		var inner_color := Color("a78551") if r<2 else Color("49652b")
-		var outer_color := Color("897046") if r<2 else Color("4a692a")
+		# Alpha 1 hands the colour to the meadow shader: soil and moss patches.
+		var inner_color := Color("a78551",0) if r<2 else Color("8a7046",1)
+		var outer_color := Color("897046",0) if r<2 else Color("8a7046",1)
+		if r == 1: outer_color = Color("897046",.6)
 		for i in count:
 			var vertices := [rings[r][i],rings[r+1][i],rings[r+1][i+1],rings[r][i],rings[r+1][i+1],rings[r][i+1]]
 			for j in 6:
 				surface.set_color(inner_color if j in [0,3,5] else outer_color); surface.add_vertex(vertices[j])
 	surface.index(); surface.generate_normals()
 	var ground := MeshInstance3D.new(); ground.mesh=surface.commit()
-	ground.material_override=Clay.earth_material(Color.WHITE,.065); scenery.add_child(ground)
+	var shader := Shader.new(); shader.code = MEADOW_SHADER
+	var material := ShaderMaterial.new(); material.shader = shader
+	material.set_shader_parameter("soil",mood.soil); material.set_shader_parameter("moss",mood.moss)
+	material.set_shader_parameter("offset",Vector2(rng.randf_range(0,100),rng.randf_range(0,100)))
+	ground.material_override = material; scenery.add_child(ground)
 
+## Thousands of curved, folded blades in clumps, so soil shows between tufts.
+## One mesh and a wind shader keep it cheap; UV.y carries the height for the sway.
 func build_grass() -> void:
-	# One mesh for thousands of tapered, bent blades keeps the lush border inexpensive.
-	var surface := SurfaceTool.new(); surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for i in int(2400*(hx+5)*(hz+3.6)/(10.5*8.1)):
-		var at := Vector3(rng.randf_range(-hx-5,hx+5),.49,rng.randf_range(-hz-4,hz+3.2))
-		if absf(at.x)<hx+.62 and absf(at.z)<hz+.62: continue
-		var height := rng.randf_range(.45,1.8)
-		if at.z>4: height *= .50
-		var width := rng.randf_range(.065,.16)
-		var a := rng.randf()*TAU
-		var side := Vector3(cos(a),0,sin(a))*width
-		var bend := Vector3(sin(a),0,cos(a))*rng.randf_range(.15,.60)
-		var base := Color("315325").lerp(Color("66832e"),rng.randf())
-		var tip := Color("84a73c").lerp(Color("b3bd52"),rng.randf())
-		for segment in 4:
-			var t := segment/4.0; var u := (segment+1)/4.0
-			var low := at+Vector3(0,height*t,0)+bend*t*t
-			var high := at+Vector3(0,height*u,0)+bend*u*u
-			var vs := [low-side*(1-t),high-side*(1-u),high+side*(1-u),low-side*(1-t),high+side*(1-u),low+side*(1-t)]
-			for j in 6:
-				surface.set_color(base.lerp(tip,t if j in [0,3,5] else u)); surface.add_vertex(vs[j])
-	surface.generate_normals()
-	var grass := MeshInstance3D.new(); grass.mesh=surface.commit()
-	var material := StandardMaterial3D.new(); material.vertex_color_use_as_albedo=true; material.cull_mode=BaseMaterial3D.CULL_DISABLED; material.roughness=.85
-	grass.material_override=material; scenery.add_child(grass)
+	var verts := PackedVector3Array(); var normals := PackedVector3Array(); var colors := PackedColorArray(); var uvs := PackedVector2Array(); var indices := PackedInt32Array()
+	var reach := Vector2(hx+6,hz+4.5)
+	var clumps := int(820*(reach.x*reach.y)/(11.5*9.0))
+	var base_color: Color = mood.base; var tip_color: Color = mood.tip
+	for c in clumps:
+		var center := Vector3(rng.randf_range(-reach.x,reach.x),.47,rng.randf_range(-reach.y,reach.y-1.2))
+		if absf(center.x)<hx+.75 and absf(center.z)<hz+.75: continue
+		var radius := rng.randf_range(.2,.6)
+		var lush := rng.randf_range(.6,1.25)
+		for b in rng.randi_range(10,26):
+			var off := Vector2.from_angle(rng.randf()*TAU)*sqrt(rng.randf())*radius
+			var at := center+Vector3(off.x,0,off.y)
+			if absf(at.x)<hx+.62 and absf(at.z)<hz+.62: continue
+			var height := rng.randf_range(.35,1.25)*lush
+			if at.z>hz+1.2: height *= .55 # keep the front edge low so it never hides the arena
+			var width := rng.randf_range(.05,.1)
+			var a := rng.randf()*TAU
+			var side := Vector3(cos(a),0,sin(a))
+			var facing := Vector3(-sin(a),0,cos(a))
+			var lean := facing*rng.randf_range(.1,.45)*height+Vector3(off.x,0,off.y)*.4
+			var shade := rng.randf()
+			var low_c := base_color.lerp(mood.soil,rng.randf()*.25)
+			var high_c := tip_color.lerp(base_color,shade*.35)
+			var start := verts.size()
+			var rows := 4
+			for r in rows:
+				var t := float(r)/(rows-1)
+				# Wide at the root, curving to a fine point; the centre rib sits forward.
+				var w := width*(1.0-pow(t,1.6))
+				var p := at+Vector3(0,height*t,0)+lean*t*t
+				var color := low_c.lerp(high_c,t)
+				for k in [-1,0,1]:
+					verts.append(p+side*w*k+facing*(w*.45 if k == 0 else 0.0))
+					normals.append((facing+Vector3(0,.4,0)).normalized())
+					colors.append(color); uvs.append(Vector2((k+1)*.5,t))
+			for r in rows-1:
+				var i0 := start+r*3
+				for k in 2:
+					indices.append_array([i0+k,i0+3+k,i0+k+1, i0+k+1,i0+3+k,i0+4+k])
+	var arrays := []; arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts; arrays[Mesh.ARRAY_NORMAL] = normals; arrays[Mesh.ARRAY_COLOR] = colors; arrays[Mesh.ARRAY_TEX_UV] = uvs; arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new(); mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	var grass := MeshInstance3D.new(); grass.mesh = mesh
+	grass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var shader := Shader.new(); shader.code = GRASS_SHADER
+	var material := ShaderMaterial.new(); material.shader = shader; material.set_shader_parameter("gust",rng.randf_range(.6,1.3))
+	grass.material_override = material; scenery.add_child(grass)
 
-func flower(at: Vector3, height: float) -> void:
-	Clay.rod(scenery,at,at+Vector3(.1,height,0),.035,Color("5e8535"))
+func flower(at: Vector3, height: float, petals: Color) -> void:
+	var stem := _sway_node(scenery,at,1.0)
+	Clay.rod(stem,Vector3.ZERO,Vector3(.1,height,0),.035,Color("5e8535"))
 	for i in 7:
 		var a := i*TAU/7
-		var petal := Clay.ball(scenery,at+Vector3(cos(a)*.22,height,sin(a)*.22),Vector3(.3,.12,.18),Color("fff0c8"))
+		var petal := Clay.ball(stem,Vector3(cos(a)*.22+.1,height,sin(a)*.22),Vector3(.3,.12,.18),petals)
 		petal.rotation.y = -a
-	Clay.ball(scenery,at+Vector3(0,height+.07,0),Vector3(.27,.15,.27),Color("e6b73f"))
+	Clay.ball(stem,Vector3(.1,height+.07,0),Vector3(.27,.15,.27),Color("e6b73f") if petals != Color("f7d34f") else Color("c9862f"))
 
-func clover(at: Vector3, size: float) -> void:
+func clover(at: Vector3, leaf_size: float) -> void:
+	var tuft := _sway_node(scenery,at,.5)
+	var leaf_color := (mood.moss as Color).lerp(Color("6c9b48"),.6)
 	for i in 3:
 		var a := i*TAU/3
-		var leaf := Clay.ball(scenery,at+Vector3(cos(a)*size*.2,.14,sin(a)*size*.2),Vector3(size*.5,.12,size*.4),Color("6c9b48"))
+		var leaf := Clay.ball(tuft,Vector3(cos(a)*leaf_size*.2,.14,sin(a)*leaf_size*.2),Vector3(leaf_size*.5,.12,leaf_size*.4),leaf_color)
 		leaf.rotation.y = -a
 
 func reset(match_state: RefCounted) -> void:
-	build_scenery(Vector2i(match_state.w,match_state.h))
+	build_scenery(Vector2i(match_state.w,match_state.h),match_state.seed_value)
 	for n in arena_root.get_children(): n.free()
 	for n in flame_root.get_children(): n.free()
 	for n in burst_root.get_children(): n.free()
@@ -164,7 +305,9 @@ func sync(match_state: RefCounted, dt: float) -> void:
 	for b in match_state.bombs:
 		ids[b.id] = true
 		if not bomb_views.has(b.id):
-			bomb_views[b.id] = Clay.bomb(arena_root); bomb_views[b.id].position = world(Vector2(b.cell))
+			bomb_views[b.id] = Clay.bomb(arena_root)
+		# Kicked bombs glide between cells instead of hopping.
+		bomb_views[b.id].position = world(Vector2(b.cell)+Vector2(b.get("slide",Vector2i.ZERO))*b.get("glide",0.0))
 		var pulse := 1.0+sin(clock*(16 if b.time < 1 else 7))*.07
 		bomb_views[b.id].scale = Vector3(pulse,2-pulse,pulse)
 	for id in bomb_views.keys():
@@ -175,9 +318,8 @@ func sync(match_state: RefCounted, dt: float) -> void:
 			var n := Node3D.new(); arena_root.add_child(n); n.position = world(Vector2(c)); pickup_views[c] = n
 			var face := Node3D.new(); n.add_child(face); face.rotation.x = deg_to_rad(-46)
 			var kind: String = match_state.pickups[c].kind
-			var color := Color("d1a34d") if kind == "range" else Color("438c78")
-			Clay.ball(face,Vector3.ZERO,Vector3(.78,.78,.19),color)
-			var icon := Sprite3D.new(); icon.texture = preload("res://assets/power-range.svg") if kind == "range" else preload("res://assets/power-bombs.svg")
+			Clay.ball(face,Vector3.ZERO,Vector3(.78,.78,.19),POWER_COLORS[kind])
+			var icon := Sprite3D.new(); icon.texture = POWER_ICONS[kind]
 			icon.pixel_size = .0055; icon.position.z = .105; icon.shaded = true; face.add_child(icon)
 		pickup_views[c].position.y = .48+sin(clock*3+c.x)*.055
 		pickup_views[c].rotation.y = sin(clock*1.8+c.y)*.16

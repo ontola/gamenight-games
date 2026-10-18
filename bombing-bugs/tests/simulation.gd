@@ -112,6 +112,25 @@ func _init() -> void:
 		m.step(.01,[])
 		check(m.bugs[0][kind] == original+1,"Pickup must increase the correct stat")
 		check(m.events.any(func(e): return e.type == "pickup" and e.who == 0 and e.kind == kind),"HUD needs the collector and pickup kind")
+	# The wilder power-ups.
+	m = fresh(); clear_inside(m)
+	m.bugs[0].pos = Vector2(1,3); m.bugs[0].kick = true
+	m.bombs.append({"id":99,"cell":Vector2i(2,3),"owner":1,"range":1,"time":9.0,"passers":[],"slide":Vector2i.ZERO,"glide":0.0})
+	m.cells[Vector2i(6,3)] = 2
+	for tick in 120: m.step(1.0/60,[{"move":Vector2.RIGHT if tick < 10 else Vector2.ZERO}])
+	check(m.bombs[0].cell == Vector2i(5,3) and m.bombs[0].slide == Vector2i.ZERO,"Kicked bomb must slide until the sand stops it: %s"%[m.bombs[0].cell])
+	m = fresh(); clear_inside(m); m.bugs[0].pos = Vector2(1,3); m.cells[Vector2i(2,3)] = 2
+	m.move_bug(0,Vector2.RIGHT,.5); check(m.bugs[0].pos.x < 1.3,"Sand must block a normal bug")
+	m.bugs[0].ghost = true; m.move_bug(0,Vector2.RIGHT,.5); check(m.bugs[0].pos.x > 2,"A ghost bug walks through sand")
+	m = fresh(); clear_inside(m); var slow := fresh(); clear_inside(slow)
+	m.bugs[0].pos = Vector2(1,3); slow.bugs[0].pos = Vector2(1,3); m.collect(m.bugs[0],"speed")
+	m.move_bug(0,Vector2.RIGHT,.5); slow.move_bug(0,Vector2.RIGHT,.5)
+	check(m.bugs[0].pos.x > slow.bugs[0].pos.x+.1,"Speed must make a bug faster")
+	m.collect(m.bugs[0],"mega"); check(m.bugs[0].range == Match.MAX_RANGE,"Mega fire maxes the range")
+	m.collect(m.bugs[0],"range"); check(m.bugs[0].range == Match.MAX_RANGE,"A range pickup must not shrink mega fire")
+	var kinds := {}
+	for i in 2000: kinds[m._power_kind()] = true
+	check(kinds.size() == Match.POWER_ODDS.size(),"Every power-up must be able to drop")
 	var completed := 0
 	for seed_value in 10:
 		m = fresh(); m.start([{},{},{},{}],{},seed_value)
