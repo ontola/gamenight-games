@@ -96,7 +96,7 @@ func _ready() -> void:
 	garden = Garden.new(); add_child(garden); garden.build()
 	camera = Camera3D.new(); add_child(camera)
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL; camera.keep_aspect = Camera3D.KEEP_WIDTH; camera.size = 18.0
-	camera.position = Vector3(0,16,15); camera.look_at(Vector3(0,0,-.2)); camera.current = true
+	camera.current = true; _frame_camera(13,11)
 	_build_ui(); _build_audio()
 	_warm_up_shaders()
 	if managed:
@@ -152,9 +152,7 @@ func _new_round() -> void:
 	round_index += 1
 	sim.start(roster,settings,seed_base+round_index*71)
 	garden.reset(sim)
-	# Frame each garden size the same way the medium garden was composed.
-	var zoom := maxf(sim.w/13.0,sim.h/11.0)
-	camera.size = 18.0*zoom; camera.position = Vector3(0,16,15)*zoom; camera.look_at(Vector3(0,0,-.2*zoom))
+	_frame_camera(sim.w,sim.h)
 	for view in views: view.queue_free()
 	views.clear()
 	for i in sim.bugs.size():
@@ -162,9 +160,27 @@ func _new_round() -> void:
 		v.position = garden.world(sim.bugs[i].pos)
 	_update_badges()
 	result_time = 0; countdown = 3.0 if intro else 2.0
-	hint.text = "A  ·  Plant bomb     B  ·  Detonate     Start  ·  Options     Back  ·  GameNight" if managed else "A / Space  ·  Plant bomb     B / E  ·  Detonate     Start / Esc  ·  Options"
+	# Controls speak for themselves; the hint line only returns between rounds.
+	hint.text = ""
 	if demo:
 		for p in sim.bugs: p.bot = true
+
+## Three-quarter view (Garden.CAM_PITCH/CAM_YAW) sized so the whole pit and its
+## bank fit on screen with the same breathing room for every garden size.
+func _frame_camera(cols: int, rows: int) -> void:
+	var hx := (cols-2)*.5+1.2; var hz := (rows-2)*.5+1.2
+	var pitch := deg_to_rad(Garden.CAM_PITCH); var yaw := deg_to_rad(Garden.CAM_YAW)
+	var back := Vector3(sin(yaw)*cos(pitch),sin(pitch),cos(yaw)*cos(pitch))
+	# Nudge the aim down a little so the player badges along the top have room.
+	var target := Vector3(0,0,-.35)
+	camera.position = target+back*30.0; camera.look_at(target)
+	var right := camera.global_basis.x; var up := camera.global_basis.y
+	var w := 0.0; var h := 0.0
+	for c in [Vector3(-hx,0,-hz),Vector3(hx,0,-hz),Vector3(hx,0,hz),Vector3(-hx,0,hz),Vector3(-hx,.6,-hz),Vector3(hx,.6,-hz)]:
+		w = maxf(w,absf(c.dot(right))); h = maxf(h,absf((c-target).dot(up)))
+	var view := get_viewport().get_visible_rect().size
+	var aspect := view.x/maxf(view.y,1.0)
+	camera.size = maxf(w*2.0,h*2.0*aspect)*1.06
 
 func _prepared(id: String, seats: Array, players: Array) -> void:
 	session = id; host_seats = seats; host_players = players; active = false; host_paused = false
@@ -348,8 +364,8 @@ func _build_ui() -> void:
 	var root := Control.new(); root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); root.mouse_filter = Control.MOUSE_FILTER_IGNORE; layer.add_child(root)
 	badges = HBoxContainer.new(); root.add_child(badges); badges.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE); badges.offset_left = 40; badges.offset_right = -40; badges.offset_top = 18; badges.offset_bottom = 90; badges.add_theme_constant_override("separation",24); badges.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	banner = _label("",44); root.add_child(banner); banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP); banner.position = Vector2(300,112); banner.size = Vector2(1000,70); banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; banner.add_theme_color_override("font_color",Color("fff0bb")); banner.add_theme_color_override("font_outline_color",Color("4b4328")); banner.add_theme_constant_override("outline_size",8)
-	hint = _label("A / Space  ·  Plant bomb     Start / Esc  ·  Options",18); root.add_child(hint); hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE); hint.offset_top = -45; hint.offset_bottom = -12; hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; hint.add_theme_color_override("font_color",Color("fff3ce")); hint.add_theme_color_override("font_outline_color",Color("3d3928")); hint.add_theme_constant_override("outline_size",5)
-	if managed: hint.text = "A  ·  Plant bomb     B  ·  Detonate     Start  ·  Options     Back  ·  GameNight"
+	hint = _label("",18); root.add_child(hint); hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE); hint.offset_top = -45; hint.offset_bottom = -12; hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; hint.add_theme_color_override("font_color",Color("fff3ce")); hint.add_theme_color_override("font_outline_color",Color("3d3928")); hint.add_theme_constant_override("outline_size",5)
+	hint.text = ""
 	var center := CenterContainer.new(); root.add_child(center); center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay = PanelContainer.new(); center.add_child(overlay); overlay.custom_minimum_size = Vector2(560,0)
 	var card := _panel(Color("fff3e0f5"),Color("886842")); card.set_content_margin_all(26); overlay.add_theme_stylebox_override("panel",card)

@@ -35,7 +35,9 @@ func build() -> void:
 	env.glow_enabled = true; env.glow_hdr_threshold = 1.0; env.glow_intensity = .9; env.glow_bloom = 0.0; env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	env_node.environment = env; add_child(env_node)
 	var sun := DirectionalLight3D.new(); sun.rotation_degrees = Vector3(SUN_ANGLES.x,SUN_ANGLES.y,0); sun.light_color = Color("ffe7bd"); sun.light_energy = .74
-	sun.shadow_enabled = true; sun.shadow_blur = 2.0; sun.directional_shadow_max_distance = 40; add_child(sun)
+	sun.shadow_enabled = true; sun.shadow_blur = 1.6; sun.directional_shadow_max_distance = 40
+	# One full-resolution cascade: the ortho camera sees the whole garden at once.
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL; sun.shadow_normal_bias = 1.2; add_child(sun)
 	arena_root = Node3D.new(); add_child(arena_root)
 	flame_root = Node3D.new(); add_child(flame_root)
 	burst_root = Node3D.new(); add_child(burst_root)
@@ -49,6 +51,10 @@ const MOODS := [
 	{"soil":Color("7a6142"),"moss":Color("7f8648"),"base":Color("4d5c2a"),"tip":Color("cfb055"),"flowers":[Color("c9a0e8"),Color("fff0c8")]},
 ]
 const SUN_ANGLES := Vector2(-52,-32)
+## A playful three-quarter view: tilted down CAM_PITCH degrees and turned CAM_YAW
+## degrees off straight-on, so the garden reads as a little diorama.
+const CAM_PITCH := 54.0
+const CAM_YAW := 13.0
 const GRASS_SHADER := """shader_type spatial;
 render_mode cull_disabled;
 uniform float gust = 1.0;
@@ -79,12 +85,13 @@ uniform vec2 arena;
 varying vec3 world;
 void vertex() { world = (MODEL_MATRIX*vec4(VERTEX,1.0)).xyz; }
 void fragment() {
- // The quads float at meadow height, so they must never hang over the sunken pit.
- if (abs(world.x) < arena.x && abs(world.z) < arena.y) discard;
+ // Fade out towards the pit instead of cutting off at a hard edge.
+ float outside = max(abs(world.x)-arena.x,abs(world.z)-arena.y);
+ float near_pit = smoothstep(0.0,.9,outside);
  float d = length(UV);
  float core = mix(1.0,.55,smoothstep(-1.0,1.0,UV.x));
  ALBEDO = vec3(.08,.1,.04);
- ALPHA = (1.0-smoothstep(.25,1.0,d))*.32*core;
+ ALPHA = (1.0-smoothstep(.25,1.0,d))*.32*core*near_pit;
 }
 """
 const MEADOW_SHADER := """shader_type spatial;
@@ -143,8 +150,7 @@ func build_scenery(garden_size: Vector2i, seed_value: int) -> void:
 			var stem_at := at+Vector3(rng.randf_range(-.3,.3),0,rng.randf_range(-.3,.3))
 			# Daisies stand taller than the bugs, except along the front edge where they'd hide the sand.
 			var height := rng.randf_range(1.1,2.3)
-			var front := stem_at.z-(hz+.62)
-			if front > -.62 and absf(stem_at.x) < hx+2.5: height = minf(height,(front-.5)*.9)
+			height = minf(height,_cover_limit(stem_at,Vector3.ZERO)-.5)
 			if height > .5: flower(stem_at,height,flower_colors[rng.randi() % flower_colors.size()])
 	# One back-edge prop: a fallen twig, a row of pebbles or nothing at all.
 	match rng.randi() % 3:
@@ -174,7 +180,8 @@ func build_scenery(garden_size: Vector2i, seed_value: int) -> void:
 	var mx := -side*(hx+rng.randf_range(1.8,2.6)); var mz := rng.randf_range(-hz+.5,hz-.5)
 	for i in rng.randi_range(1,3):
 		var m := _sway_node(scenery,Vector3(mx-side*i*.8,0,mz+rng.randf_range(-.3,.3)),.6)
-		var height := rng.randf_range(.9,1.6)
+		var height := minf(rng.randf_range(.9,1.6),_cover_limit(m.position,Vector3.ZERO)-.7)
+		if height < .5: m.visible = false
 		Clay.rod(m,Vector3.ZERO,Vector3(0,height,0),.11,Color("e5ce99"))
 		Clay.ball(m,Vector3(0,height,0),Vector3(1.2,.45,1.2)*rng.randf_range(.8,1.15),cap)
 
@@ -205,7 +212,7 @@ func _process(dt: float) -> void:
 # a continuous eroded bank rises outside the playable cells, rather than a rock fence.
 func build_terrain() -> void:
 	var rings: Array[PackedVector3Array] = []
-	var profiles := [Vector3(hx+.03,-.04,hz+.03),Vector3(hx+.22,.18,hz+.22),Vector3(hx+.68,.53,hz+.68),Vector3(hx+1.15,.49,hz+1.15),Vector3(hx+7.5,.43,hz+6.5)]
+	var profiles := [Vector3(hx+.03,-.04,hz+.03),Vector3(hx+.22,.18,hz+.22),Vector3(hx+.68,.53,hz+.68),Vector3(hx+1.15,.49,hz+1.15),Vector3(hx+16,.43,hz+14)]
 	var count := 192
 	for r in profiles.size():
 		var ring := PackedVector3Array(); var profile: Vector3 = profiles[r]
@@ -244,7 +251,7 @@ func build_terrain() -> void:
 ## One mesh and a wind shader keep it cheap; UV.y carries the height for the sway.
 func build_grass() -> void:
 	var verts := PackedVector3Array(); var normals := PackedVector3Array(); var colors := PackedColorArray(); var uvs := PackedVector2Array(); var indices := PackedInt32Array()
-	var reach := Vector2(hx+6,hz+4.5)
+	var reach := Vector2(hx+9,hz+7.5)
 	var shadow_tool := SurfaceTool.new(); shadow_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var clumps := int(660*(reach.x*reach.y)/(11.5*9.0))
 	var base_color: Color = mood.base; var tip_color: Color = mood.tip
@@ -268,15 +275,12 @@ func build_grass() -> void:
 			var lean := facing*rng.randf_range(.1,.4)*height+Vector3(off.x,0,off.y)*.4
 			# Blades beside the arena lean away from it, never over it.
 			if absf(at.x) > hx+.62 and absf(at.z) < hz+1.5: lean.x = absf(lean.x)*signf(at.x)
-			var front := at.z-(hz+.62)
-			if front > -.62 and absf(at.x) < hx+2.5:
-				# The camera looks over the front edge, so the grass there is swept
-				# aside: leaning outward and only as tall as it can be without its
-				# tips reaching over the sand (ortho camera at ~46 degrees).
-				var sweep := rng.randf_range(.3,.5)
-				lean.z = sweep*height
-				height = minf(height,maxf(.12,front/(1.0-sweep)))
-				lean.z = sweep*height
+			# Blades between the camera and the sand stay short enough that their
+			# tips never hide it; they stand upright rather than swept aside.
+			var reach_on_screen := _cover_limit(at,lean/height)
+			if height > reach_on_screen:
+				var k := maxf(.12,reach_on_screen)/height
+				height *= k; lean *= k
 			tallest = maxf(tallest,height)
 			var shade := rng.randf()
 			var low_c := base_color.lerp(mood.soil,rng.randf()*.25)
@@ -309,11 +313,39 @@ func build_grass() -> void:
 	shade_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var shade_shader := Shader.new(); shade_shader.code = CLUMP_SHADOW_SHADER
 	shade_mesh.material_override = ShaderMaterial.new(); shade_mesh.material_override.shader = shade_shader
-	shade_mesh.material_override.set_shader_parameter("arena",Vector2(hx+.9,hz+.9))
+	shade_mesh.material_override.set_shader_parameter("arena",Vector2(hx+.7,hz+.7))
 	scenery.add_child(shade_mesh)
 	var shader := Shader.new(); shader.code = GRASS_SHADER
 	var material := ShaderMaterial.new(); material.shader = shader; material.set_shader_parameter("gust",rng.randf_range(.6,1.3))
 	grass.material_override = material; scenery.add_child(grass)
+
+## Approximate height of the bank and meadow at a point (see build_terrain's profiles).
+func _meadow_height(p: Vector3) -> float:
+	var d := maxf(absf(p.x)-hx,absf(p.z)-hz)
+	if d < .68: return .53
+	if d < 1.15: return lerpf(.53,.49,(d-.68)/.47)
+	return lerpf(.49,.43,clampf((d-1.15)/14.85,0,1))
+
+## Horizontal direction the camera looks in.
+static func view_away() -> Vector3:
+	return Vector3(-sin(deg_to_rad(CAM_YAW)),0,-cos(deg_to_rad(CAM_YAW)))
+
+## How tall something standing at `at` may be (leaning `lean_per_height` per unit
+## of height) before its top, seen from the camera, overlaps the sand pit.
+func _cover_limit(at: Vector3, lean_per_height: Vector3) -> float:
+	var per := Vector2(view_away().x,view_away().z)/tan(deg_to_rad(CAM_PITCH))+Vector2(lean_per_height.x,lean_per_height.z)
+	var half := Vector2(hx+.62,hz+.62)
+	var t_in := -INF; var t_out := INF
+	for axis in 2:
+		var o: float = at.x if axis == 0 else at.z
+		var d: float = per[axis]
+		if absf(d) < .0001:
+			if absf(o) >= half[axis]: return INF
+			continue
+		var t1 := (-half[axis]-o)/d; var t2 := (half[axis]-o)/d
+		t_in = maxf(t_in,minf(t1,t2)); t_out = minf(t_out,maxf(t1,t2))
+	if t_in >= t_out or t_out <= 0: return INF
+	return maxf(t_in,0.0)*.92
 
 ## One soft ellipse per clump: a dark core under the tuft fading out along the sun.
 func _clump_shadow(tool: SurfaceTool, center: Vector3, radius: float, height: float) -> void:
@@ -321,8 +353,9 @@ func _clump_shadow(tool: SurfaceTool, center: Vector3, radius: float, height: fl
 	var reach := Vector3(light.x,0,light.z)/-light.y*height*.8
 	var along := reach.normalized(); var across := Vector3(-along.z,0,along.x)
 	var half_len := reach.length()*.5+radius*1.2; var half_w := radius*1.4+height*.08
-	var mid := Vector3(center.x,.5,center.z)+reach*.5
+	var mid := Vector3(center.x,0,center.z)+reach*.5
 	var corners := [mid-along*half_len-across*half_w,mid+along*half_len-across*half_w,mid+along*half_len+across*half_w,mid-along*half_len+across*half_w]
+	for i in 4: corners[i].y = _meadow_height(corners[i])+.05
 	var uv := [Vector2(-1,-1),Vector2(1,-1),Vector2(1,1),Vector2(-1,1)]
 	for i in [0,1,2,0,2,3]:
 		# UV.x < 0 is the end under the tuft; it stays darker than the tail.

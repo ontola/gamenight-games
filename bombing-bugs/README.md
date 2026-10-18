@@ -50,14 +50,18 @@ side props, and where the snail crawls. Grass grows in clumps of curved,
 tapered blades that sway in the wind, and flowers, clovers, mushrooms and the
 snail move with the same breeze. Blades don't cast shadow-map shadows (swaying
 blades flicker as pixel blobs); each clump instead lays one still, soft shadow
-on the soil, stretched away from the sun.
+on the soil, stretched away from the sun. The camera looks down at a tilted,
+slightly turned three-quarter angle (`Garden.CAM_PITCH`/`CAM_YAW`); grass,
+flowers and mushrooms between the camera and the pit are only as tall as they
+can be without hiding the sand. There are no control hints during play.
 
 Explosions use Growing Guns' layered blast: lumpy fire clouds along every
 burning cell, flame tongues, embers, dusty smoke, a flash and a fireball light,
 a short camera jolt and a scorch mark. The sound is Growing Guns' synthesised
 bang and rumble (`src/boom_sound.gd`); bombs that go off in the same tick play
 as one blast, louder and deeper the more cells burn. A bug caught in a blast
-flips onto its back, chars black with a small fire on its belly, then slowly
+flips onto its back, chars black and burns with the same rolling fire as the
+blasts (looping puffs, a flickering glow and embers), then slowly
 sags and crumbles: legs, wings and head drop off where it lies. Planting a bomb
 plays a soft plop while the bug squats and squeezes its eyes shut.
 

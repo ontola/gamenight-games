@@ -1,5 +1,6 @@
 extends Node3D
 const Clay = preload("res://src/clay.gd")
+const Explosion = preload("res://src/explosion.gd")
 const COLORS := [Color("f1634c"),Color("bf784b"),Color("f7c74c"),Color("3ebeb0")]
 var body: Node3D
 var legs: Array[Node3D] = []
@@ -10,10 +11,13 @@ var phase := 0.0
 # Death: flipped on its back, charred, a little fire on the belly, then it falls apart.
 var dead_time := -1.0
 var charred: Array = []   # [material, original colour]
-var flames: Array[MeshInstance3D] = []
+# The corpse fire reuses the blast's billow shader in looping mode, plus a glow and embers.
+var fire: MultiMeshInstance3D
+var fire_material: ShaderMaterial
+var fire_light: OmniLight3D
+var embers: Array[MeshInstance3D] = []
 var wisps: Array[MeshInstance3D] = []
 var pieces: Array = []    # [node, velocity, spin]
-var flame_material: StandardMaterial3D
 var flame_core: StandardMaterial3D
 var smoke_material: StandardMaterial3D
 const CHAR := Color("1c1612")
@@ -116,7 +120,7 @@ func _die(dt: float) -> void:
 	var angle := PI*flip
 	body.rotation.z = angle
 	# Once the fire dies down the husk sags flat.
-	var slump := smoothstep(2.3,3.6,t)
+	var slump := smoothstep(2.9,4.2,t)
 	body.position = Vector3(.37*sin(angle),.37-.37*cos(angle)-.14*flip+sin(clampf(t/.5,0,1)*PI)*.55-.1*slump,0)
 	body.scale = Vector3(1.0+.1*slump,1.0-.22*slump,1.0+.1*slump)
 	# Scorched black within a blink; the embers in the char glow out.
@@ -129,22 +133,30 @@ func _die(dt: float) -> void:
 	for i in legs.size():
 		if legs[i].top_level: continue
 		legs[i].rotation.x = sin(t*28.0+i*1.7)*.7*clampf(t-.45,0,1)*exp(-t*1.3)
-	# A small fire licks the upturned belly, then gutters out.
-	var fire_left := clampf((2.6-t)/.8,0,1)*smoothstep(.35,.6,t)
-	for i in flames.size():
-		var f := flames[i]
-		var flicker := .75+.25*sin(t*(23.0+i*7.0)+i)*sin(t*(13.0+i*3.0))
-		f.visible = fire_left > 0
-		f.scale = Vector3(.26,.6*flicker,.26)*[1.0,.8,.5][i]*fire_left
-		f.position = Vector3(sin(t*9.0+i*2.0)*.04+[-.06,.07,0.0][i],.58+f.scale.y*.4,cos(t*7.0+i)*.04)
+	# The upturned belly burns: rolling fire puffs, a flickering glow and embers drifting up.
+	var fire_left := clampf((3.6-t)/1.0,0,1)*smoothstep(.3,.6,t)
+	var flicker := .8+.2*sin(t*23.0)*sin(t*13.0+1.0)
+	fire.visible = fire_left > 0
+	fire.position.y = .52-.1*slump
+	fire.scale = Vector3.ONE*(.45+.55*fire_left)
+	fire_material.set_shader_parameter("anim",t*1.3)
+	fire_material.set_shader_parameter("intensity",fire_left)
+	fire_light.visible = fire_left > 0
+	fire_light.light_energy = 1.1*fire_left*flicker
+	for i in embers.size():
+		var e := embers[i]
+		var life := fmod(t*.85+i*.137,1.0)
+		e.visible = fire_left > 0
+		e.position = Vector3(sin(i*2.3+life*3.0)*(.12+life*.2),.55+life*1.5-.1*slump,cos(i*1.7+life*2.0)*(.12+life*.15))
+		e.scale = Vector3.ONE*.045*(1.0-life)*fire_left
 	for i in wisps.size():
 		var w := wisps[i]
 		var life := fmod(t*.6+i/6.0,1.0)
-		var strength := clampf((3.6-t)/1.2,0,1)*smoothstep(.4,.8,t)
+		var strength := clampf((4.6-t)/1.2,0,1)*smoothstep(.4,.8,t)
 		w.visible = strength > 0
 		w.position = Vector3(sin(life*5.0+i)*.1+life*.25,.8+life*1.2,cos(life*4.0+i)*.08)
 		w.scale = Vector3.ONE*(.22+life*.4)*strength*(1.0-life*.4)
-	if t >= 2.4 and pieces.is_empty(): _fall_apart()
+	if t >= 3.0 and pieces.is_empty(): _fall_apart()
 	for p in pieces:
 		var node: Node3D = p[0]
 		var v: Vector3 = p[1]
@@ -173,15 +185,34 @@ func _start_dying() -> void:
 			m.emission_enabled = true; m.emission = Color("ff5a1a"); m.emission_energy_multiplier = 0.0
 			n.material_override = m
 			charred.append([m,source.albedo_color])
-	if flame_material == null:
-		flame_material = StandardMaterial3D.new(); flame_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		flame_material.albedo_color = Color("e2561a"); flame_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		flame_core = flame_material.duplicate(); flame_core.albedo_color = Color("ffc24a")
+	if flame_core == null:
+		flame_core = StandardMaterial3D.new(); flame_core.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		flame_core.albedo_color = Color(1.0,.72,.3)*2.2; flame_core.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 		smoke_material = StandardMaterial3D.new(); smoke_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		smoke_material.albedo_color = Color(.36,.33,.3,.32); smoke_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	for i in 3:
-		var f := Clay.ball(self,Vector3(0,.7,0),Vector3.ONE*.01,Color.WHITE); f.material_override = flame_core if i == 2 else flame_material
-		f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; f.visible = false; flames.append(f)
+	Explosion.ensure_shaders()
+	var random := RandomNumberGenerator.new(); random.seed = kind*131+int(global_position.x*13.0+global_position.z*7.0)
+	var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.use_colors = true; mm.use_custom_data = true
+	mm.mesh = Explosion.puff_mesh; mm.instance_count = 16
+	for i in mm.instance_count:
+		var at := Vector3(random.randf_range(-.22,.22),random.randf_range(0,.12),random.randf_range(-.28,.22))
+		var near := 1.0-clampf(Vector2(at.x,at.z).length()/.35,0,1)
+		mm.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*random.randf_range(.26,.42)*(.8+.4*near)),at))
+		mm.set_instance_color(i,Color(1,1,1,random.randf_range(.8,.95)))
+		# custom: seed, loop phase, heat (hotter in the middle), cycle speed
+		mm.set_instance_custom_data(i,Color(random.randf(),random.randf(),.7+.3*near,random.randf_range(.1,.6)))
+	fire = MultiMeshInstance3D.new(); fire.multimesh = mm; fire.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	fire.custom_aabb = AABB(Vector3(-1,-1,-1),Vector3(2,3.5,2))
+	fire_material = ShaderMaterial.new(); fire_material.shader = Explosion.billow_shader
+	fire_material.set_shader_parameter("is_fire",1.0); fire_material.set_shader_parameter("loop",1.0)
+	fire_material.set_shader_parameter("loop_rise",1.6); fire_material.set_shader_parameter("tail_power",1.6)
+	fire_material.set_shader_parameter("lump_amount",.3)
+	fire.material_override = fire_material; fire.visible = false; add_child(fire)
+	fire_light = OmniLight3D.new(); fire_light.position = Vector3(0,.9,0); fire_light.omni_range = 2.0; fire_light.omni_attenuation = 1.2
+	fire_light.light_color = Color("ff8a32"); fire_light.visible = false; add_child(fire_light)
+	for i in 8:
+		var e := Clay.ball(self,Vector3(0,.7,0),Vector3.ONE,Color.WHITE); e.material_override = flame_core
+		e.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; e.visible = false; embers.append(e)
 	for i in 6:
 		var w := Clay.ball(self,Vector3(0,.8,0),Vector3.ONE*.01,Color.WHITE); w.material_override = smoke_material
 		w.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; w.visible = false; wisps.append(w)

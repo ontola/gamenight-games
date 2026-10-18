@@ -14,6 +14,10 @@ uniform float lump_amount = 0.32;
 uniform float growth_min = 0.35;
 uniform float tail_power = 1.5;
 uniform vec3 smoke_tint : source_color = vec3(1.0);
+// Looping fire (a burning bug): every puff cycles on its own phase and rises as it ages.
+uniform float loop = 0.0;
+uniform float loop_rise = 0.0;
+uniform float intensity = 1.0;
 varying float v_age;
 varying float v_heat;
 varying vec3 v_body;
@@ -26,13 +30,15 @@ void vertex() {
  v_body = COLOR.rgb;
  v_opk = COLOR.a;
  v_age = clamp((anim-delay)*(1.0+INSTANCE_CUSTOM.w)/max(1.0-delay,0.001),0.0,1.0);
+ if (loop > .5) v_age = fract(anim*(1.0+INSTANCE_CUSTOM.w)+delay);
  float s = seed*100.0;
  float a = sin(VERTEX.x*6.3+s)*sin(VERTEX.y*5.1+s*1.7)*sin(VERTEX.z*7.2+s*.9);
  float b = sin(VERTEX.x*13.0+s*2.1)*sin(VERTEX.z*11.0+s*1.3);
  float c = sin(VERTEX.x*21.0+s*3.3)*sin(VERTEX.y*18.0+s*2.1)*sin(VERTEX.z*25.0+s*1.5);
  v_shade = (a*.7+b*.3)*.55+c*.45;
  VERTEX += NORMAL*(a*.7+b*.3)*lump_amount;
- VERTEX *= mix(growth_min,1.0,v_age);
+ VERTEX *= mix(growth_min,1.0,v_age)*mix(1.0,.55,loop*v_age*v_age);
+ VERTEX.y += loop_rise*v_age*v_age;
 }
 void fragment() {
  float facing = abs(dot(normalize(NORMAL),normalize(VIEW)));
@@ -40,7 +46,7 @@ void fragment() {
  float fade_in = smoothstep(0.0,.12,v_age);
  float t = clamp((v_age-.12)/.88,0.0,1.0);
  float fade_out = pow(1.0-t,tail_power)*(1.0-smoothstep(.5,1.0,t));
- ALPHA = v_opk*fade_in*fade_out*smoothstep(0.0,.85,facing);
+ ALPHA = v_opk*fade_in*fade_out*smoothstep(0.0,.85,facing)*intensity;
  vec2 px_cell = floor(UV*vec2(8.0,5.0));
  float cell_band = mod(px_cell.x+px_cell.y,3.0)-1.0;
  if (is_fire > .5) {
@@ -120,12 +126,18 @@ var size := 1.0
 ## cells: every burning cell of this blast (the bomb's own cell first).
 ## world_of maps a cell to its world position.
 func setup(cells: Array, world_of: Callable, seed_value: int) -> void:
+	ensure_shaders()
+	_setup(cells,world_of,seed_value)
+
+static func ensure_shaders() -> void:
 	if billow_shader == null:
 		billow_shader = Shader.new(); billow_shader.code = BILLOW_CODE
 		spark_shader = Shader.new(); spark_shader.code = SPARK_CODE
 		scorch_shader = Shader.new(); scorch_shader.code = SCORCH_CODE
 		puff_mesh = SphereMesh.new(); puff_mesh.radius = .5; puff_mesh.height = 1.0; puff_mesh.radial_segments = 16; puff_mesh.rings = 9
 		spark_mesh = SphereMesh.new(); spark_mesh.radius = .06; spark_mesh.height = .12; spark_mesh.radial_segments = 5; spark_mesh.rings = 3
+
+func _setup(cells: Array, world_of: Callable, seed_value: int) -> void:
 	var rng := RandomNumberGenerator.new(); rng.seed = seed_value
 	var center: Vector2i = cells[0]
 	var origin: Vector3 = world_of.call(Vector2(center))
