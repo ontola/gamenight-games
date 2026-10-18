@@ -1,14 +1,40 @@
 {
+  "$schema": "https://raw.githubusercontent.com/ontola/gamenight/main/catalog/schema.json",
   "id": "bombing-bugs",
   "title": "Bombing Bugs",
-  "tagline": "Tiny bugs. Big trouble. A clay garden bomb battle.",
+  "tagline": "Tiny bugs. Big trouble. Plant bombs, blow open the sand and be the last bug standing in a clay garden.",
   "developer": "Joep Meindertsma",
-  "players": {"min": 1, "max": 4, "best": 4},
+  "players": {
+    "min": 1,
+    "max": 4,
+    "best": 4
+  },
   "match_minutes": 3,
   "price": "free",
-  "tags": ["party", "arena", "versus", "teams", "local-multiplayer", "godot"],
+  "tags": [
+    "party",
+    "arena",
+    "versus",
+    "teams",
+    "bombs",
+    "local-multiplayer",
+    "3d",
+    "godot"
+  ],
   "emoji": "🐞",
   "color": "#ef7056",
-  "integration": {"level": "integrated", "protocol": 1},
-  "links": {"source": "https://github.com/ontola/gamenight-games/tree/main/bombing-bugs"}
+  "integration": {
+    "level": "integrated",
+    "protocol": 1
+  },
+  "requirements": {
+    "disk_mb": 120,
+    "ram_mb": 1024,
+    "cpu": "Dual-core CPU",
+    "gpu": "OpenGL 3.3 compatible graphics"
+  },
+  "links": {
+    "source": "https://github.com/ontola/gamenight-games/tree/main/bombing-bugs",
+    "releases": "https://github.com/ontola/gamenight-games/releases/tag/bombing-bugs-v0.1.0"
+  }
 }
