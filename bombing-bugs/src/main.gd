@@ -370,7 +370,7 @@ func _build_ui() -> void:
 	overlay = PanelContainer.new(); center.add_child(overlay); overlay.custom_minimum_size = Vector2(560,0)
 	var card := _panel(Color("fff3e0f5"),Color("886842")); card.set_content_margin_all(26); overlay.add_theme_stylebox_override("panel",card)
 	var box := VBoxContainer.new(); overlay.add_child(box); box.add_theme_constant_override("separation",10)
-	# The game's name only appears on the start menu.
+	# The game's name heads the main menu page, at the start and on pause.
 	title = RichTextLabel.new(); box.add_child(title); title.custom_minimum_size = Vector2(550,70); title.fit_content = true
 	title.bbcode_enabled = true; title.scroll_active = false; title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title.add_theme_font_override("normal_font",PLAY_FONT); title.add_theme_font_size_override("normal_font_size",52)
@@ -438,9 +438,9 @@ func _show_page(page: String) -> void:
 	menu_items = []
 	if page == "main":
 		menu_items.append({"action":"play"})
+		if not initial_menu: menu_items.append({"action":"restart"})
 		for key in BASIC_SETTINGS: menu_items.append({"key":key})
 		menu_items.append({"action":"more"})
-		if not initial_menu: menu_items.append({"action":"restart"})
 	else:
 		for key in ADVANCED_SETTINGS: menu_items.append({"key":key})
 		menu_items.append({"action":"back"})
@@ -470,8 +470,10 @@ func _display(key: String) -> String:
 
 func _refresh_menu() -> void:
 	menu_title.text = ("Ready to rumble?" if initial_menu else "Take a breather") if menu_page == "main" else "More options"
-	title.visible = initial_menu and menu_page == "main"
-	menu_help.text = "↑↓ Choose   ←→ Change   A Select   " + ("B Back" if menu_page == "advanced" else ("B Play" if initial_menu else "B Resume"))
+	# The name shows whenever Start opens the menu, so everyone learns what they're playing.
+	title.visible = menu_page == "main"
+	# Controls speak for themselves: no button hints in the menu.
+	menu_help.visible = false
 	for i in menu_items.size():
 		var item: Dictionary = menu_items[i]
 		var row := menu_rows[i].get_child(0)

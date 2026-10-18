@@ -113,6 +113,12 @@ static func bomb(parent: Node3D) -> Node3D:
 	var n := Node3D.new(); parent.add_child(n)
 	ball(n,Vector3(0,.25,0),Vector3(.55,.51,.55),Color("49322d"))
 	ball(n,Vector3(0,.46,0),Vector3(.34,.14,.34),Color("97623b"))
-	rod(n,Vector3(0,.5,0),Vector3(.10,.72,0),.032,Color("d6b47b"))
-	ball(n,Vector3(.1,.73,0),Vector3(.11,.11,.11),Color("ffbd41"),2)
+	# The fuse burns down into the bomb: garden.gd shortens "Fuse" along its length
+	# and moves the "Spark" with its tip; the bomb goes off once it is all the way in.
+	var fuse := Node3D.new(); fuse.name = "Fuse"; n.add_child(fuse)
+	fuse.position = Vector3(0,.5,0); fuse.rotation.z = -atan2(.10,.22)
+	rod(fuse,Vector3.ZERO,Vector3(0,FUSE_LENGTH,0),.032,Color("d6b47b"))
+	var spark := ball(n,Vector3(.1,.73,0),Vector3(.11,.11,.11),Color("ffbd41"),2); spark.name = "Spark"
 	return n
+
+const FUSE_LENGTH := .242

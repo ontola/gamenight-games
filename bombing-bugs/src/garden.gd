@@ -409,18 +409,31 @@ func sync(match_state: RefCounted, dt: float) -> void:
 			_mark_bomb(bomb_views[b.id],b)
 		# Kicked bombs glide between cells instead of hopping.
 		bomb_views[b.id].position = world(Vector2(b.cell)+Vector2(b.get("slide",Vector2i.ZERO))*b.get("glide",0.0))
-		# Remote bombs sit still with a blinking light; fused ones pulse faster as they run out.
-		var pulse := 1.0+sin(clock*(16 if b.time < 1 and not b.get("remote",false) else 7))*.07
-		var blink: Node3D = bomb_views[b.id].get_node_or_null("Blink")
-		if blink: blink.visible = b.get("remote",false) and fmod(clock,.6) < .3
-		bomb_views[b.id].scale = Vector3(pulse,2-pulse,pulse)
+		var view: Node3D = bomb_views[b.id]
+		var remote: bool = b.get("remote",false)
+		# Burnt share of the fuse: 0 when planted, 1 as it goes off. Remote bombs never burn.
+		if not view.has_meta("full"): view.set_meta("full",maxf(b.time,.01)); view.set_meta("phase",0.0)
+		var burnt := 0.0 if remote else clampf(1.0-b.time/float(view.get_meta("full")),0,1)
+		# The pulse speeds up smoothly the closer the bomb gets to going off.
+		var phase: float = view.get_meta("phase")+dt*lerpf(4.5,30.0,pow(burnt,1.6))
+		view.set_meta("phase",phase)
+		var pulse := 1.0+sin(phase)*lerpf(.035,.09,burnt)
+		view.scale = Vector3(pulse,2-pulse,pulse)
+		var fuse: Node3D = view.get_node("Fuse")
+		var left := maxf(1.0-burnt,.001)
+		fuse.scale.y = left
+		var spark: MeshInstance3D = view.get_node("Spark")
+		spark.position = fuse.position+fuse.transform.basis.y*Clay.FUSE_LENGTH
+		spark.scale = Vector3.ONE*.11*(1.0+.35*burnt)*(.85+.3*absf(sin(clock*37.0+b.id)))
+		var blink: Node3D = view.get_node_or_null("Blink")
+		if blink: blink.visible = remote and fmod(clock,.6) < .3
 	for id in bomb_views.keys():
 		if not ids.has(id): bomb_views[id].queue_free(); bomb_views.erase(id)
 	for c in match_state.pickups:
 		if match_state.pickups[c].wait > 0: continue
 		if not pickup_views.has(c):
 			var n := Node3D.new(); arena_root.add_child(n); n.position = world(Vector2(c)); pickup_views[c] = n
-			var face := Node3D.new(); n.add_child(face); face.rotation.x = deg_to_rad(-46)
+			var face := Node3D.new(); n.add_child(face); face.rotation.x = deg_to_rad(-CAM_PITCH)
 			var kind: String = match_state.pickups[c].kind
 			Clay.ball(face,Vector3.ZERO,Vector3(.78,.78,.19),POWER_COLORS[kind])
 			var icon := Sprite3D.new(); icon.texture = POWER_ICONS[kind]
