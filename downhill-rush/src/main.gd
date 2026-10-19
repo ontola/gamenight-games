@@ -540,8 +540,8 @@ func _aim_steer(b: Bike, stick: Vector2) -> float:
 	return clampf(-err * 3.5, -1.0, 1.0) * minf(1.0, stick.length() * 1.3)
 
 ## Riders are solid: each bike is two circles, front and back wheel. Overlaps
-## are pushed apart completely and the bikes trade momentum, so you can
-## shoulder someone off the line, and a big hit makes a rider wobble.
+## are pushed apart and drift away from each other. A hit knocks both riders
+## off balance: they lose speed, lurch sideways and wobble, but stay up.
 func _bump_riders() -> void:
 	for i in players.size():
 		var a: Dictionary = players[i]
@@ -549,43 +549,7 @@ func _bump_riders() -> void:
 		for j in range(i + 1, players.size()):
 			var b: Dictionary = players[j]
 			if b.out or b.bike.crashed or b.get("respawn_left", 0.0) > 0.0: continue
-			_collide(a.bike, b.bike)
-
-func _collide(ba: Bike, bb: Bike) -> void:
-	if absf(ba.y - bb.y) > 1.2: return
-	if absf(ba.s - bb.s) > 3.0 or absf(ba.d - bb.d) > 3.0: return
-	var ua := Vector2(cos(ba.psi), sin(ba.psi)) * Bike.HALF_LENGTH
-	var ub := Vector2(cos(bb.psi), sin(bb.psi)) * Bike.HALF_LENGTH
-	var pa := Vector2(ba.s, ba.d)
-	var pb := Vector2(bb.s, bb.d)
-	var best := INF
-	var normal := Vector2.ZERO
-	for sa in [-1.0, 1.0]:
-		for sb in [-1.0, 1.0]:
-			var delta: Vector2 = (pb + ub * sb) - (pa + ua * sa)
-			var dist := delta.length()
-			if dist < best:
-				best = dist
-				normal = delta / dist if dist > 0.001 else Vector2(0, 1)
-	var overlap := Bike.RADIUS * 2.0 - best
-	if overlap <= 0.0: return
-	ba.s -= normal.x * overlap * 0.5; ba.d -= normal.y * overlap * 0.5
-	bb.s += normal.x * overlap * 0.5; bb.d += normal.y * overlap * 0.5
-	var va := Vector2(cos(ba.psi), sin(ba.psi)) * ba.v
-	var vb := Vector2(cos(bb.psi), sin(bb.psi)) * bb.v
-	var closing := (va - vb).dot(normal)
-	if closing <= 0.0: return
-	var impulse := closing * 0.75
-	va -= normal * impulse
-	vb += normal * impulse
-	for pair in [[ba, va], [bb, vb]]:
-		var bike: Bike = pair[0]
-		var vel: Vector2 = pair[1]
-		# Shoves change your speed, never which way the bike points.
-		bike.v = maxf(0.0, vel.dot(Vector2(cos(bike.psi), sin(bike.psi))))
-		if closing > 3.5: bike.wobble = maxf(bike.wobble, 0.35)
-		# A big shoulder charge makes you wobble, but never puts you down.
-		if closing > 4.0: Bike.knock(bike, (closing - 4.0) / 7.0)
+			Bike.collide(a.bike, b.bike)
 
 ## Eliminations by the camera, finishes and the end of the round.
 func _referee() -> void:

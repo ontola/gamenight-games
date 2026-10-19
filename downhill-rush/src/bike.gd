@@ -34,6 +34,8 @@ var landed := false         ## This step touched down after air time.
 var launched := false       ## This step left the ground.
 var air_time := 0.0
 var wobble := 0.0
+var shove := Vector2.ZERO  ## Sideways drift from a hit by another rider, m/s (s, d).
+var bumped := 0.0       ## Cooldown after a rider hit, so one contact costs once.
 var crashes := 0
 var skid := 0.0         ## How hard the tyres are sliding this step, 0..1.
 var skid_time := 0.0
@@ -58,6 +60,8 @@ func place(c: Course, p_s: float, p_d: float, p_v: float = 0.0) -> void:
 	_stuck_d = d
 	_stuck_t = 0.0
 	pinned = 0.0
+	shove = Vector2.ZERO
+	bumped = 0.0
 	v = p_v
 	vy = 0.0
 	psi = 0.0
@@ -95,6 +99,7 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	b.brake_locked = false
 	b.invulnerable = maxf(0.0, b.invulnerable - dt)
 	b.wobble = maxf(0.0, b.wobble - dt)
+	b.bumped = maxf(0.0, b.bumped - dt)
 	if b.crashed:
 		_step_crashed(b, c, dt)
 		return
@@ -172,6 +177,12 @@ static func step(b: Bike, c: Course, input: Dictionary, dt: float) -> void:
 	b.s += ds
 	b.d += b.v * sin(b.psi) * dt
 	b.psi += k * ds
+	# A hit from another rider carries you sideways for a moment, without
+	# turning the bike: the rider's weight moves, the wheels follow.
+	if b.shove != Vector2.ZERO:
+		b.s += b.shove.x * scale * dt
+		b.d += b.shove.y * dt
+		b.shove = b.shove.move_toward(Vector2.ZERO, 6.0 * dt)
 	# The stick can point uphill too. Preserve a full heading, rather than
 	# silently stopping the bars at 83 degrees from the downhill direction.
 	b.psi = wrapf(b.psi, -PI, PI)
@@ -367,11 +378,60 @@ static func _collide_obstacles(b: Bike, c: Course, steer := 0.0) -> void:
 		b.v = maxf(0.0, b.v - into * 1.2)
 		b.wobble = maxf(b.wobble, 0.3)
 
-## A knock from another rider: you wobble and get shoved, but a shove alone
-## never puts you down.
-static func knock(b: Bike, amount: float) -> void:
+## Two riders touching: see Main._bump_riders.
+static func collide(ba: Bike, bb: Bike) -> void:
+	if absf(ba.y - bb.y) > 1.2: return
+	if absf(ba.s - bb.s) > 3.0 or absf(ba.d - bb.d) > 3.0: return
+	var ua := Vector2(cos(ba.psi), sin(ba.psi)) * HALF_LENGTH
+	var ub := Vector2(cos(bb.psi), sin(bb.psi)) * HALF_LENGTH
+	var pa := Vector2(ba.s, ba.d)
+	var pb := Vector2(bb.s, bb.d)
+	var best := INF
+	var normal := Vector2.ZERO
+	for sa in [-1.0, 1.0]:
+		for sb in [-1.0, 1.0]:
+			var delta: Vector2 = (pb + ub * sb) - (pa + ua * sa)
+			var dist := delta.length()
+			if dist < best:
+				best = dist
+				normal = delta / dist if dist > 0.001 else Vector2(0, 1)
+	var overlap := RADIUS * 2.0 - best
+	if overlap <= 0.0: return
+	ba.s -= normal.x * overlap * 0.5; ba.d -= normal.y * overlap * 0.5
+	bb.s += normal.x * overlap * 0.5; bb.d += normal.y * overlap * 0.5
+	var va := Vector2(cos(ba.psi), sin(ba.psi)) * ba.v + ba.shove
+	var vb := Vector2(cos(bb.psi), sin(bb.psi)) * bb.v + bb.shove
+	var closing := (va - vb).dot(normal)
+	# Bikes that touch always drift apart, so they can't hook into each other
+	# and grind to a halt side by side.
+	ba.shove -= normal * maxf(0.0, 1.2 + ba.shove.dot(normal))
+	bb.shove += normal * maxf(0.0, 1.2 - bb.shove.dot(normal))
+	if closing <= 0.0: return
+	# The hit itself goes sideways, into both riders' balance, not into a
+	# head-on stop. It costs once per contact.
+	if ba.bumped > 0.0 and bb.bumped > 0.0: return
+	# Half of the hit trades speed along each bike's heading (a rear-ender
+	# slows you and speeds them up), the rest becomes sideways drift.
+	var impulse := closing * 0.75
+	ba.v = maxf(0.0, ba.v - impulse * 0.5 * normal.dot(Vector2(cos(ba.psi), sin(ba.psi))))
+	bb.v = maxf(0.0, bb.v + impulse * 0.5 * normal.dot(Vector2(cos(bb.psi), sin(bb.psi))))
+	ba.shove -= normal * impulse * 0.5
+	bb.shove += normal * impulse * 0.5
+	if closing > 1.0:
+		knock(ba, closing, -normal)
+		knock(bb, closing, normal)
+
+## A hit from another rider: it knocks you off balance. You lose some speed,
+## the bike lurches to the side you were hit towards and the bars wobble for a
+## moment. A hit alone never puts you down. `hit` is the closing speed, m/s;
+## `away` the direction you're pushed in (s, d).
+static func knock(b: Bike, hit: float, away: Vector2) -> void:
 	if b.crashed or b.invulnerable > 0.0: return
-	b.wobble = maxf(b.wobble, clampf(amount, 0.2, 0.6))
+	b.bumped = 0.4
+	b.wobble = maxf(b.wobble, clampf(0.25 + hit * 0.07, 0.25, 0.9))
+	b.v *= 1.0 - clampf(hit * 0.035, 0.03, 0.25)
+	var right := Vector2(-sin(b.psi), cos(b.psi))
+	b.lean = clampf(b.lean + away.dot(right) * clampf(hit * 0.06, 0.08, 0.45), -0.7, 0.7)
 
 ## Rider and bike part ways. What happens next is physics: each is thrown
 ## with the speed it had, the rider over the bars if the bike stopped dead.
