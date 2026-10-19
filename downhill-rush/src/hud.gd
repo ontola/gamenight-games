@@ -18,7 +18,8 @@ var _title_card: PanelContainer
 var _subtitle: Label
 var _center: Label
 var _center_sub: Label
-var _scores: VBoxContainer
+var _scores: Control         ## Rider cards, slid into race order.
+var _order: Array = []       ## Player indices, top card first.
 var _toasts: VBoxContainer
 var _join: PanelContainer
 var _join_title: Label
@@ -61,8 +62,8 @@ func _ready() -> void:
 	_subtitle = _label(22, PAPER, font_body())
 	_subtitle.position = Vector2(38, 86)
 	root.add_child(_subtitle)
-	_scores = VBoxContainer.new()
-	_scores.add_theme_constant_override("separation", 6)
+	_scores = Control.new()
+	_scores.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_scores.anchor_left = 1.0
 	_scores.anchor_right = 1.0
 	_scores.offset_left = -320
@@ -250,8 +251,8 @@ func update(main: Node, delta: float) -> void:
 	_center.pivot_offset = _center.size * 0.5
 	_center.scale = Vector2(s, s)
 	_center.rotation_degrees = -4.0 * exp(-_pop * 6.0)
-	_subtitle.text = "" if main.round_number == 0 else "Round %d · first to %d" % [main.round_number, main.rounds_to_win]
-	_refresh_scores(main)
+	_subtitle.text = "" if main.round_number == 0 else "Round %d/%d" % [main.round_number, main.rounds_to_win]
+	_refresh_scores(main, delta)
 	for t in _toasts.get_children():
 		t.set_meta("age", t.get_meta("age") + delta)
 		var age: float = t.get_meta("age")
@@ -260,14 +261,20 @@ func update(main: Node, delta: float) -> void:
 		if age > 3.0: t.queue_free()
 
 ## Riders in race order: whoever is furthest down the mountain on top, and
-## the ones who are out below them, crossed through.
-func _refresh_scores(main: Node) -> void:
+## the ones who are out at the bottom, crossed through. The order is the
+## ranking, so the cards slide past each other instead of showing numbers.
+func _refresh_scores(main: Node, delta: float) -> void:
 	var players: Array = main.players
 	while _scores.get_child_count() < players.size():
-		var row := HBoxContainer.new()
-		row.alignment = BoxContainer.ALIGNMENT_END
+		var box := VBoxContainer.new()
+		box.add_theme_constant_override("separation", 2)
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var name := _label(22, INK, font_bold())
-		var card := _sticker(name, PAPER, 0.0)
+		box.add_child(name)
+		var hearts := Hearts.new()
+		hearts.color = INK
+		box.add_child(hearts)
+		var card := _sticker(box, PAPER, 0.0)
 		var strike := ColorRect.new()
 		strike.color = Color(INK, 0.85)
 		strike.anchor_left = -0.03
@@ -278,33 +285,85 @@ func _refresh_scores(main: Node) -> void:
 		strike.offset_bottom = 3
 		strike.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		name.add_child(strike)
-		row.add_child(card)
-		_scores.add_child(row)
+		card.set_meta("fresh", true)
+		_scores.add_child(card)
 	while _scores.get_child_count() > players.size():
 		var last := _scores.get_child(_scores.get_child_count() - 1)
 		_scores.remove_child(last)
 		last.queue_free()
-	var order: Array = players.duplicate()
-	order.sort_custom(func(a, b):
+	# Out riders sink to the bottom; the rest swap places only when one is
+	# clearly ahead, so a tight pack doesn't make the cards flicker.
+	var order: Array = _order.filter(func(i): return i < players.size())
+	for i in players.size():
+		if not order.has(i): order.append(i)
+	order.sort_custom(func(i, j):
+		var a: Dictionary = players[i]
+		var b: Dictionary = players[j]
 		if a.out != b.out: return not a.out
 		if a.out: return a.out_rank > b.out_rank
-		return a.bike != null and b.bike != null and a.bike.s > b.bike.s)
-	for i in order.size():
-		var p: Dictionary = order[i]
-		var card: PanelContainer = _scores.get_child(i).get_child(0)
-		var l: Label = card.get_child(0)
+		return order.find(i) < order.find(j))
+	for k in range(1, order.size()):
+		var a: Dictionary = players[order[k - 1]]
+		var b: Dictionary = players[order[k]]
+		if a.out or b.out or a.bike == null or b.bike == null: continue
+		if b.bike.s > a.bike.s + 1.0:
+			var swap: int = order[k - 1]
+			order[k - 1] = order[k]
+			order[k] = swap
+	_order = order
+	var y := 0.0
+	for rank in order.size():
+		var p: Dictionary = players[order[rank]]
+		var card: PanelContainer = _scores.get_child(order[rank])
+		var box: VBoxContainer = card.get_child(0)
+		var l: Label = box.get_child(0)
+		var hearts: Hearts = box.get_child(1)
 		var pips := ""
 		for k in main.rounds_to_win: pips += "★" if k < p.wins else "·"
-		var place := "%d " % (i + 1) if main.phase == 2 and not p.out else ""
-		var life_count := int(p.get("lives", 0))
-		var life_text := "%d %s" % [life_count, "LIFE" if life_count == 1 else "LIVES"]
-		if p.get("respawn_left", 0.0) > 0.0: life_text += " · BACK IN %d" % maxi(1, ceili(p.respawn_left))
-		l.text = "%s%s %s\n%s" % [place, p.name.to_upper(), pips, "OUT" if p.out else life_text]
+		l.text = "%s %s" % [p.name.to_upper(), pips]
+		hearts.count = int(p.get("lives", 0))
+		hearts.note = "BACK IN %d" % maxi(1, ceili(p.respawn_left)) if p.get("respawn_left", 0.0) > 0.0 and not p.out else ""
+		hearts.font = font_body()
+		hearts.queue_redraw()
 		var style: StyleBoxFlat = card.get_theme_stylebox("panel")
 		style.bg_color = p.color if not p.out else Color(0.55, 0.55, 0.58)
-		card.rotation_degrees = 2.0 if i % 2 == 0 else -2.0
+		card.rotation_degrees = 2.0 if rank % 2 == 0 else -2.0
 		card.modulate.a = 0.7 if p.out else 1.0
 		l.get_child(0).visible = p.out
+		card.reset_size()
+		var target := Vector2(_scores.size.x - card.size.x, y)
+		if card.get_meta("fresh", false):
+			card.set_meta("fresh", false)
+			card.position = target
+		card.position = card.position.lerp(target, 1.0 - exp(-delta * 14.0))
+		y += card.size.y + 6.0
+
+## A rider's lives as hearts. None left: the card is crossed through instead.
+class Hearts extends Control:
+	var count := 3
+	var color := Color.BLACK
+	var note := ""
+	var font: Font
+
+	func _get_minimum_size() -> Vector2:
+		return Vector2(maxf(1, count) * 24.0 + (90.0 if note != "" else 0.0), 22.0)
+
+	func _draw() -> void:
+		update_minimum_size()
+		for k in count:
+			_heart(Vector2(10.0 + k * 24.0, 11.0), 9.0)
+		if note != "" and font:
+			draw_string(font, Vector2(maxf(1, count) * 24.0 + 4.0, 18.0), note, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, color)
+
+	func _heart(c: Vector2, r: float) -> void:
+		var pts := PackedVector2Array()
+		for i in 24:
+			var t := float(i) / 24.0 * TAU
+			# The classic heart curve, scaled to fit r.
+			var x := 16.0 * pow(sin(t), 3)
+			var y := 13.0 * cos(t) - 5.0 * cos(2 * t) - 2.0 * cos(3 * t) - cos(4 * t)
+			pts.append(c + Vector2(x, -y) * (r / 16.0))
+		draw_colored_polygon(pts, color)
 
 func toast(text: String, color: Color) -> void:
 	var l := _label(26, INK, font_bold())

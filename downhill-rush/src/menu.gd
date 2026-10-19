@@ -12,8 +12,6 @@ const ROW_FONT := 40
 var main: Node
 var _panel: PanelContainer
 var _rows: VBoxContainer
-var _hint: Label
-var _riders: Label
 var _items: Array = []      ## {id, label, values?}
 var _index := 0
 var _held := {}             ## Edge detection per controller and button.
@@ -47,22 +45,10 @@ func _ready() -> void:
 	title.add_theme_color_override("font_color", Hud.SUN)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(title)
-	_riders = Label.new()
-	_riders.add_theme_font_override("font", Hud.font_body())
-	_riders.add_theme_font_size_override("font_size", 26)
-	_riders.add_theme_color_override("font_color", Hud.PAPER)
-	_riders.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	column.add_child(_riders)
 	_rows = VBoxContainer.new()
 	_rows.add_theme_constant_override("separation", 6)
 	column.add_child(_rows)
-	_hint = Label.new()
-	_hint.add_theme_font_override("font", Hud.font_body())
-	_hint.add_theme_font_size_override("font_size", 24)
-	_hint.add_theme_color_override("font_color", Hud.PAPER.darkened(0.3))
-	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hint.text = "Stick or arrows to choose, A or Enter to pick, Start or Esc to close\nAdd rider puts whoever picks it on a bike. Settings apply from the next mountain"
-	column.add_child(_hint)
+	column.add_child(_legend())
 	visible = false
 
 func open() -> void:
@@ -90,6 +76,54 @@ func close() -> void:
 	visible = false
 	closed.emit()
 
+## What each button does, small, in the pad's own colours.
+const _GREEN := Color("5cb85c")
+const _RED := Color("d9534f")
+const _BLUE := Color("3f7fd9")
+const _GREY := Color("5a5d66")
+func _legend() -> Control:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 22)
+	for entry in [[["L"], _GREY, true, "steer"], [["RT", "X"], _BLUE, false, "pedal"], [["LT", "B"], _RED, false, "brake"],
+			[["A"], _GREEN, true, "hop"], [["START"], _GREY, false, "menu"]]:
+		var item := HBoxContainer.new()
+		item.add_theme_constant_override("separation", 5)
+		var keys: Array = entry[0]
+		for k in keys.size():
+			var key: String = keys[k]
+			# Face buttons in their colour, triggers and Start as dark pills.
+			var face := key in ["A", "B", "X", "Y"]
+			item.add_child(_badge(key, entry[1] if face or keys.size() == 1 and entry[2] else _GREY, face or entry[2]))
+		var what := Label.new()
+		what.text = entry[3]
+		what.add_theme_font_override("font", Hud.font_body())
+		what.add_theme_font_size_override("font_size", 20)
+		what.add_theme_color_override("font_color", Hud.PAPER.darkened(0.2))
+		item.add_child(what)
+		row.add_child(item)
+	return row
+
+func _badge(text: String, color: Color, round: bool) -> PanelContainer:
+	var badge := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.set_corner_radius_all(14 if round else 7)
+	style.content_margin_left = 7 if round else 8
+	style.content_margin_right = 7 if round else 8
+	style.content_margin_top = 1
+	style.content_margin_bottom = 1
+	badge.add_theme_stylebox_override("panel", style)
+	var l := Label.new()
+	l.text = text
+	l.custom_minimum_size = Vector2(14, 0) if round else Vector2.ZERO
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_override("font", Hud.font_bold())
+	l.add_theme_font_size_override("font_size", 16)
+	l.add_theme_color_override("font_color", Color.WHITE)
+	badge.add_child(l)
+	return badge
+
 func _value(id: String) -> String:
 	match id:
 		"difficulty": return main.difficulty
@@ -110,10 +144,6 @@ func _set_value(id: String, value: String) -> void:
 		"lives": main.lives_per_rider = int(value)
 
 func _draw() -> void:
-	var names := []
-	for p in main.players:
-		names.append("%s (%s)" % [p.name, p.controls.label() if p.controls else "bot"])
-	_riders.text = "Riders: " + (", ".join(names) if not names.is_empty() else "nobody yet. Pick Add rider, or press A outside the menu")
 	for child in _rows.get_children(): child.queue_free()
 	for i in _items.size():
 		var item: Dictionary = _items[i]

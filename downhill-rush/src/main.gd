@@ -56,6 +56,7 @@ var _skip := 0.0
 var _shot_phase := "race"
 var _shot_frames := 0
 var _shot_air := false
+var _shot_menu := false  ## Screenshot helper: show the Start menu (without pausing).
 var _look_s := -1.0   ## Screenshot helper: park the camera at this distance down the run.
 var _showcase := false
 var _out_order := 0
@@ -111,6 +112,7 @@ func _parse_args() -> void:
 		elif arg.begins_with("--shot-phase="): _shot_phase = arg.substr(13)
 		elif arg == "--shot-air": _shot_air = true
 		elif arg == "--showcase": _showcase = true
+		elif arg == "--shot-menu": _shot_menu = true
 		elif arg.begins_with("--look="): _look_s = float(arg.substr(7))
 
 
@@ -445,6 +447,7 @@ func _process(delta: float) -> void:
 		for p in players:
 			if not p.out and not p.bike.grounded and p.bike.air_time > 0.25: flying += 1
 		shot_ready = flying >= 2
+	if _shot_menu and shot_ready and not menu.visible: menu.open()
 	_shot_frames = _shot_frames + 1 if shot_ready else 0
 	if not _shot_path.is_empty() and _shot_frames > 3:
 		var image := get_viewport().get_texture().get_image()

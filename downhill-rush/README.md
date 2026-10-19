@@ -58,11 +58,14 @@ There is no title screen: the game opens on the mountain. Press A on any pad
 the countdown; during the countdown you join the grid; mid-race you drop in
 just behind the leader. Riding alone works too.
 
-Start (or Escape) opens the menu, the only one there is: the game's name, who
-is riding, Add rider (puts whoever picks it on a bike), New race, difficulty,
+Start (or Escape) opens the menu, the only one there is: the game's name, Add rider (puts whoever picks it on a bike), New race, difficulty,
 landscape, mountain length, rounds to win, bots (off by default; on, they fill
 the field up to four riders) and Quit. Settings apply from the next mountain;
-New race builds one straight away.
+New race builds one straight away. Along the bottom a small legend shows
+what each pad button does, in the pad's own colours.
+
+The rider cards top right are the ranking: they slide into race order, with
+your lives as hearts. A rider who's out is crossed through at the bottom.
 
 ## How a mountain works
 
