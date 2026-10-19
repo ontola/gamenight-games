@@ -80,12 +80,21 @@ shuffled string of set pieces with open mountain between them:
 - **flat**: a bench where you have to pedal;
 - **road**: a two-lane mountain road crosses the dirt trail on a quiet bench,
   with roadside posts and parked cars clear of both trail approaches. Asphalt
-  smooths the small bumps across the short crossing;
+  smooths the small bumps across the short crossing. Cars drive by in both
+  lanes; get hit and you're thrown off, bleeding. Hop clean over the bonnet
+  and you ride on;
 - **kicker**: one to three jumps built into the slope;
 - **gully**: a single narrow, steep path between boulder-strewn banks;
 - **slalom**: rows of trees or rocks with a few gaps;
 - **open**: just the mountain;
 - **lake**: a tarn on a bench; ride round it, because the deep end is a crash;
+- start and finish are ordinary places on the mountain: the grid is a
+  clearing in the woods, and the finish line runs through the same terrain as
+  the rest of the way down;
+- wildlife grazes beside the trail and bolts when you come close, often right
+  across your line. Hit a deer or sheep at speed (a hare only when you're
+  flying) and you go over the bars. Away from the desert a bear or two lives
+  in the woods: get close and it charges, so keep your speed up;
 - **chasm**: a gorge right across the slope, crossed on a narrow rock bridge
   or by flying the ramp next to it. Fall in and you crash and come back on
   the far side.
@@ -203,6 +212,8 @@ host the game:
 godot --headless --path downhill-rush --script tests/course_check.gd  # cliff bands all have a way down
 godot --headless --path downhill-rush --script tests/terrain_variety.gd # broad trails, curved cliffs, roads
 godot --headless --path downhill-rush --script tests/scenery_check.gd   # vegetation and safe wildlife
+godot --headless --path downhill-rush --script tests/traffic_check.gd   # cars, bolting deer and a bear knock you off
+godot --headless --path downhill-rush --script tests/rider_bump.gd      # rider hits wobble, never hook or stall
 godot --headless --path downhill-rush --script tests/wheel_contact.gd # low rocks and fast impacts
 godot --headless --path downhill-rush --script tests/air_speed.gd     # airborne momentum and landing energy
 godot --headless --path downhill-rush --script tests/rider_animation.gd # airborne pedals, legs and wheel inertia

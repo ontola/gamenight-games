@@ -23,6 +23,7 @@ var phase := Phase.IDLE
 var players: Array[Dictionary] = []
 var course: Course
 var mountain: MountainView
+var traffic: Traffic        ## Cars, wildlife and bears on this mountain.
 var camera: Camera3D
 var sun: DirectionalLight3D
 var hud: Hud
@@ -183,6 +184,8 @@ func _new_course() -> void:
 	mountain = job.view
 	add_child(mountain)
 	mountain._drain()
+	traffic = Traffic.new(course, mountain)
+	mountain.add_child(traffic)
 	hud.set_mountain(_mountain_name(job.seed), course)
 	focus_s = Course.START_LINE + 2.0
 	focus_d = 0.0
@@ -492,6 +495,11 @@ func _physics_process(_delta: float) -> void:
 			p.seen_crashes = b.crashes
 			_lose_life(p)
 	_bump_riders()
+	if traffic:
+		var bikes := []
+		for p in players:
+			if not p.out and p.get("respawn_left", 0.0) <= 0.0: bikes.append(p.bike)
+		traffic.step(bikes, PHYSICS_DT)
 	if racing: _referee()
 
 ## One loss per incident. Recovery stays in the race while everybody else rides.

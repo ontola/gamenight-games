@@ -433,9 +433,20 @@ static func knock(b: Bike, hit: float, away: Vector2) -> void:
 	var right := Vector2(-sin(b.psi), cos(b.psi))
 	b.lean = clampf(b.lean + away.dot(right) * clampf(hit * 0.06, 0.08, 0.45), -0.7, 0.7)
 
+## Hit by something big (a car, a bear): off the bike and thrown along with
+## it. `push` is added to rider and bike (s, up, d), m/s.
+static func struck(b: Bike, push: Vector3, reason: String) -> void:
+	if b.crashed or b.invulnerable > 0.0: return
+	var at := Vector3(b.s, b.y, b.d)
+	_crash(b, reason, push)
+	# That hurts: blood where you were hit, and a smear where you were thrown.
+	var flat := Vector2(push.x, push.z).normalized()
+	b.rider_body.splats.append({"at": at, "size": 1.0})
+	b.rider_body.splats.append({"at": at + Vector3(flat.x, 0.0, flat.y) * 1.3, "size": 0.6})
+
 ## Rider and bike part ways. What happens next is physics: each is thrown
 ## with the speed it had, the rider over the bars if the bike stopped dead.
-static func _crash(b: Bike, reason := "hit") -> void:
+static func _crash(b: Bike, reason := "hit", push := Vector3.ZERO) -> void:
 	b.brake_locked = false
 	b.skid = 0.0
 	b.crash_reason = reason
@@ -470,6 +481,8 @@ static func _crash(b: Bike, reason := "hit") -> void:
 		_:
 			rider_vel = vel * 0.85 + Vector3.UP * 1.2
 			bike_vel = vel * 0.7
+	rider_vel += push
+	bike_vel += push * 0.8
 	# The rider goes limp: a ragdoll, flipping over the bars faster the
 	# harder the bike stopped.
 	var flip := (flat - Vector3(bike_vel.x, 0.0, bike_vel.z)).length() * 0.35

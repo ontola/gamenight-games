@@ -389,7 +389,7 @@ func _props(parent: Node3D, key: int) -> void:
 ## Deliberate patches beside the route make the open slope feel alive without
 ## hiding the riding surface or adding collision obstacles.
 func _verge_plants(lp: LowPoly, s0: float, s1: float) -> void:
-	var s := maxf(s0, Course.START_LINE + 6.0)
+	var s := s0
 	while s < s1:
 		for side in [-1.0, 1.0]:
 			var d: float = course.trail_d(s) + side * (course.trail_half(s) + _rng.randf_range(2.5, 5.0))
@@ -414,7 +414,7 @@ func _verge_plants(lp: LowPoly, s0: float, s1: float) -> void:
 		s += 5.0
 
 func _wildlife(parent: Node3D, key: int) -> void:
-	if key % 2 == 0 or key * CHUNK > course.length - 25.0: return
+	if key % 2 == 0: return
 	var animals: Array[Node3D] = []
 	var side := -1.0 if key % 4 == 1 else 1.0
 	var kind := "hare" if course.biome in ["desert", "snow"] else ("deer" if course.biome in ["forest", "autumn"] else "sheep")
@@ -437,6 +437,7 @@ func _wildlife(parent: Node3D, key: int) -> void:
 			animal.set_meta("ground_y", animal.position.y)
 			animal.set_meta("phase", _rng.randf() * TAU)
 			animal.set_meta("hare", kind == "hare")
+			animal.set_meta("kind", kind)
 			animal.set_meta("course_position", Vector2(s, d))
 			parent.add_child(animal)
 			animals.append(animal)

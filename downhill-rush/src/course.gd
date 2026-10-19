@@ -13,7 +13,7 @@ const DS := 1.0
 const CORRIDOR := 26.0         ## The valley floor never reaches further than this either side.
 const TRACK_HALF := 3.4        ## Half width of the start and finish gates.
 const EDGE := 70.0             ## Terrain extends this far sideways.
-const START_FLAT := 75.0
+const START_FLAT := 75.0         ## Where the first set piece may begin to build up.
 const START_LINE := 50.0       ## Riders line up here, with hillside behind for the camera.
 const RUNOUT := 60.0
 
@@ -98,7 +98,7 @@ func _init(p_seed: int = 1, p_length: float = 900.0, p_difficulty: int = 1, p_bi
 func _plan_sections() -> void:
 	var bag: Array[String] = []
 	var last := ""
-	var s := START_FLAT + 30.0
+	var s := START_LINE + 22.0
 	while s < length - 70.0:
 		if bag.is_empty():
 			bag = ["band", "band", "turn", "turn", "flat", "kicker", "kicker", "gully", "slalom", "open", "chasm", "lake"]
@@ -228,7 +228,7 @@ func _generate_line() -> void:
 	theta.resize(n); cx.resize(n); cz.resize(n); base.resize(n); curv.resize(n); view.resize(n)
 	# Between the set pieces the fall line wanders gently.
 	var plan := PackedFloat32Array(); plan.resize(n)
-	var i := int(START_FLAT / DS)
+	var i := int(START_LINE / DS)
 	var side := 1.0 if _rng.randf() < 0.5 else -1.0
 	while i < n:
 		i += _rng.randi_range(6, 24)
@@ -250,9 +250,10 @@ func _generate_line() -> void:
 		var want: float = sec.grade if not sec.is_empty() and sec.grade >= 0.0 else target
 		if want > 0.2: want *= _STEEP[difficulty]
 		g = lerpf(g, want, 0.12)
-		# The start eases into the mountain instead of kinking from flat to steep.
-		var lead := smoothstep(START_FLAT - 45.0, START_FLAT + 15.0, sj)
-		grade[j] = 0.08 if sj > length + 8.0 else lerpf(0.1, g, lead)
+		# The start is just a place on the mountain: only the grid itself is a
+		# little gentler, so nobody rolls off before the gate drops.
+		var lead := smoothstep(START_LINE - 6.0, START_LINE + 14.0, sj)
+		grade[j] = lerpf(0.2, g, lead)
 	var th := 0.0
 	var x := 0.0
 	var z := 0.0
@@ -335,11 +336,10 @@ func world(s: float, d: float, y: float = INF) -> Vector3:
 
 # ── Height ───────────────────────────────────────────────────────────────────
 
-## How wild the ground is: gently rolling on the start and finish, 1 on the
-## mountain, so the start is a sloping alp that rolls into the mountain.
+## How wild the ground is. Start and finish are ordinary places on the
+## mountain; only around the grid the ground calms down a little.
 func _wild(s: float) -> float:
-	var start := lerpf(0.3, 1.0, smoothstep(5.0, START_FLAT + 25.0, s))
-	return start * (1.0 - 0.7 * smoothstep(length - 25.0, length - 5.0, s))
+	return lerpf(0.75, 1.0, smoothstep(START_LINE - 4.0, START_LINE + 22.0, s)) if s > START_LINE - 30.0 else lerpf(1.0, 0.75, smoothstep(START_LINE - 60.0, START_LINE - 30.0, s))
 
 func height(s: float, d: float) -> float:
 	var h := base_height(s)
@@ -664,7 +664,7 @@ func grip(s: float, d: float, slope: float = -1.0) -> float:
 
 func _place_streams() -> void:
 	if biome == "desert" or biome == "snow": return
-	var s := START_FLAT + 80.0
+	var s := START_LINE + 60.0
 	while s < length - 40.0:
 		var clear := true
 		for sec in sections:
@@ -686,8 +686,8 @@ func band_ahead(s: float, within: float) -> Dictionary:
 
 func _place_obstacles() -> void:
 	_place_set_piece_obstacles()
-	var s := START_FLAT
-	while s < length - 10.0:
+	var s := 0.0
+	while s < total - 4.0:
 		# Forest clumps with gaps to thread, boulder fields, loose rocks.
 		var d := -CORRIDOR - 14.0
 		while d < CORRIDOR + 14.0:
@@ -711,6 +711,15 @@ func _place_obstacles() -> void:
 			elif roll < 0.035 * _DENSITY[difficulty]:
 				var r := _rng.randf_range(0.3, 0.55)
 				_add_obstacle(ss, dd, r, r * 0.8, "rock")
+			# Riders set off from somewhere in the thick of it: a clearing in
+			# the woods, with boulders about, never a bare field.
+			if s < START_LINE + 45.0 and roll > 0.55 and roll < 0.55 + 0.3 * _DENSITY[difficulty]:
+				var tree := _noise.get_noise_2d(ss * 2.0 + 4100.0, dd * 2.0) > -0.25
+				if biome == "desert" or not tree:
+					var r := _rng.randf_range(0.7, 1.8)
+					_add_obstacle(ss + 1.5, dd + 1.2, r, r * 0.9, "rock")
+				else:
+					_add_obstacle(ss + 1.5, dd + 1.2, 0.45, 9.0, "tree")
 			d += 3.0
 		s += 4.0
 
@@ -778,7 +787,8 @@ func _add_obstacle(s: float, d: float, r: float, h: float, kind: String, set_pie
 		if not sec.is_empty() and sec.kind == "chasm" and absf(s - chasm_center_s(sec, d)) < chasm_half(sec, d) + 8.0: return
 		if water_depth(s, d) > 0.0 or _lake_calm(s, d) < 0.6: return
 		if on_path(s, d) or on_path(s + 6.0, d): return
-	if s < START_FLAT + 8.0: return
+	# Room on the grid for a full field, and nothing else special about it.
+	if s > START_LINE - 15.0 and s < START_LINE + 7.0 and absf(d) < 6.5 + r: return
 	if s > length - 12.0 and s < length + 6.0 and absf(d) < TRACK_HALF + 3.0: return
 	for b in bands:
 		if absf(s - band_edge_s(b, d)) < r + 1.5: return
