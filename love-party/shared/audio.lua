@@ -1,15 +1,12 @@
-local A = { enabled = true, sources = {}, last = {} }
+local A = { enabled = true, sources = {}, last = {}, spread = { shot = 0.12, hit = 0.1, burst = 0.08 } }
 function A.load()
 	if not love.sound or not love.audio then
 		return
 	end
 	for name, frequency in pairs({
 		point = 740,
-		hit = 160,
 		finish = 980,
 		blast = 90,
-		shot = 1100,
-		burst = 120,
 		hurt = 65,
 		pickup = 880,
 		pulse = 180,
@@ -22,6 +19,32 @@ function A.load()
 		end
 		A.sources[name] = love.audio.newSource(data, "static")
 	end
+	-- Shots, hits and kills fire constantly, so they are short, soft clicks:
+	-- a puff of high-passed noise over a quick ping instead of a sine blip.
+	-- A.play varies their pitch so a stream of them never drones.
+	local function click(name, ms, ping, noiseLevel, pingLevel, body)
+		local rate = 22050
+		local count = math.floor(rate * ms / 1000)
+		local data = love.sound.newSoundData(count, rate, 16, 1)
+		local seed, last, phase = 7, 0, 0
+		for i = 0, count - 1 do
+			local t = i / count
+			seed = (seed * 1103515245 + 12345) % 2147483648
+			local white = seed / 1073741824 - 1
+			local high = white - last
+			last = white
+			phase = phase + ping * (1 - t * 0.3) / rate
+			local attack = math.min(1, i / 12)
+			local sample = high * noiseLevel * (1 - t) ^ 6
+				+ math.sin(phase * math.pi * 2) * pingLevel * (1 - t) ^ 3
+				+ math.sin(i / rate * body * math.pi * 2) * pingLevel * 0.6 * (1 - t) ^ 8
+			data:setSample(i, sample * attack)
+		end
+		A.sources[name] = love.audio.newSource(data, "static")
+	end
+	click("shot", 28, 2600, 0.035, 0.012, 900)
+	click("hit", 34, 1900, 0.07, 0.035, 420)
+	click("burst", 60, 1500, 0.11, 0.07, 260)
 	-- A pilot going down: a long falling wail over a crackle, unmistakable
 	-- next to the short blips of the rest of the set.
 	local rate, count = 22050, 19845
@@ -49,6 +72,10 @@ function A.play(name)
 	if A.enabled and source then
 		A.last[name] = now
 		source:stop()
+		local spread = A.spread[name]
+		if spread then
+			source:setPitch(1 + (math.random() * 2 - 1) * spread)
+		end
 		source:play()
 	end
 end

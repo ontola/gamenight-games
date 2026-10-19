@@ -602,6 +602,8 @@ local function shotsStep(s, dt)
 			burst(s, b.x + (x - b.x) * t, b.y + (y - b.y) * t, { 0.8, 0.9, 1 }, 3)
 			if best.hp <= 0 then
 				M.kill(s, best)
+			else
+				sound(s, "hit")
 			end
 		end
 		b.x, b.y = x, y
