@@ -1,0 +1,20 @@
+{
+  "game": "bombing-bugs",
+  "generated_on": "2026-10-20",
+  "generator": "Built-in image_gen",
+  "use": "Illustrated promotional cover, not a gameplay screenshot",
+  "prompt": "Use case: stylized-concept. Create a finished premium indie game cover for GameNight. Portrait 3:4 composition, ideally 1536x2048. Full bleed artwork, no frame. The supplied screenshot is a reference for the actual game's identity, not an image to copy or a screenshot to decorate. Reimagine it as beautiful authored key art. A striking clear silhouette and deliberate composition, carefully crafted materials and lighting, rich but controlled detail. A large beautifully designed title occupies the upper quarter, stays entirely inside safe margins and is legible at 180 pixels wide. No subtitle, badge, developer/publisher logos, watermark, UI, scores, or interface text. Do not imitate another game's branding. Title exactly 'BOMBING BUGS', two lines of chunky hand-sculpted cream-yellow lettering. Beautiful stop-motion clay garden battle: expressive red ladybug with black spots rushing toward camera past one round dark-brown bomb with a tiny glowing fuse, yellow bee, turquoise beetle and small orange ant visible further behind among rounded pebbles and sand mounds in a garden maze. Warm sandy ochre and lush clover greens, tactile plasticine fingerprints, enormous grass and little daisies at edges to establish insect scale. One playful orange burst throwing small clods of sand in background. Strong close-up character-led triangular composition, mischievous energy, no humans, no humanoid bomber costumes.",
+  "reference": "reference.png",
+  "master": "cover-source.png",
+  "runtime": "../../../assets/gamenight/cover.png",
+  "export": {
+    "width": 360,
+    "height": 480,
+    "format": "indexed PNG",
+    "max_bytes": 262144,
+    "colors": 256,
+    "command": "magick cover-source.png -resize 360x480! -strip -dither FloydSteinberg -colors 256 -define png:compression-level=9 PNG8:cover.png"
+  },
+  "review": "Actual game rendered and inspected; generated master and final 360x480 cover visually reviewed. Promotional illustration, not gameplay.",
+  "source_revision": "196f1819f81c3914f7c79d58c992a961efab7376"
+}

@@ -51,10 +51,10 @@ var menu_title: Label
 var banner: Label
 var hint: Label
 var badges: HBoxContainer
-var title: RichTextLabel
+var title: TextureRect
 ## The big name over the garden while the first round counts down (the only
 ## start screen a GameNight launch has, since the host skips the menu).
-var title_card: RichTextLabel
+var title_card: TextureRect
 var intro := true
 var sound: AudioStreamPlayer
 var clips := {}
@@ -371,20 +371,14 @@ func _build_ui() -> void:
 	var card := _panel(Color("fff3e0f5"),Color("886842")); card.set_content_margin_all(26); overlay.add_theme_stylebox_override("panel",card)
 	var box := VBoxContainer.new(); overlay.add_child(box); box.add_theme_constant_override("separation",10)
 	# The game's name heads the main menu page, at the start and on pause.
-	title = RichTextLabel.new(); box.add_child(title); title.custom_minimum_size = Vector2(550,70); title.fit_content = true
-	title.bbcode_enabled = true; title.scroll_active = false; title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title.add_theme_font_override("normal_font",PLAY_FONT); title.add_theme_font_size_override("normal_font_size",52)
-	title.add_theme_color_override("font_outline_color",Color("433c22")); title.add_theme_constant_override("outline_size",8)
-	title.text = "[center][wave amp=3 freq=1.3][color=#ffd477]Bombing[/color] [color=#b9e579]Bugs![/color][/wave][/center]"
+	title = _game_logo(); box.add_child(title); title.custom_minimum_size = Vector2(550, 155)
 	menu_title = _label("Ready to rumble?",30); menu_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; box.add_child(menu_title)
 	menu_list = VBoxContainer.new(); box.add_child(menu_list); menu_list.add_theme_constant_override("separation",6)
 	menu_help = _label("",15); menu_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; menu_help.add_theme_color_override("font_color",Color("8a7558")); box.add_child(menu_help)
 	overlay.hide()
-	title_card = RichTextLabel.new(); root.add_child(title_card); title_card.position = Vector2(200,250); title_card.size = Vector2(1200,140)
-	title_card.bbcode_enabled = true; title_card.scroll_active = false; title_card.mouse_filter = Control.MOUSE_FILTER_IGNORE; title_card.visible = false
-	title_card.add_theme_font_override("normal_font",PLAY_FONT); title_card.add_theme_font_size_override("normal_font_size",104)
-	title_card.add_theme_color_override("font_outline_color",Color("433c22")); title_card.add_theme_constant_override("outline_size",14)
-	title_card.text = "[center][wave amp=6 freq=1.2][color=#ffd477]Bombing[/color] [color=#b9e579]Bugs![/color][/wave][/center]"
+	title_card = _game_logo(); root.add_child(title_card)
+	title_card.position = Vector2(450, 190); title_card.size = Vector2(700, 345)
+	title_card.visible = false
 	sound = AudioStreamPlayer.new(); sound.volume_db = -16; add_child(sound)
 
 const FLAGS := ["kick","ghost","remote","pierce","square","line"]
@@ -575,3 +569,11 @@ func _warm_up_shaders() -> void:
 	if DisplayServer.get_name() != "headless": RenderingServer.force_draw(true)
 	var done := get_tree().create_timer(.15)
 	done.timeout.connect(rig.queue_free); done.timeout.connect(light.queue_free)
+
+func _game_logo() -> TextureRect:
+	var logo := TextureRect.new()
+	logo.texture = preload("res://assets/branding/logo.png")
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return logo
