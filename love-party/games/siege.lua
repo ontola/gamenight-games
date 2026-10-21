@@ -1,12 +1,14 @@
 local U = require("shared.util")
 local Waves = require("games.siege_waves")
 local Gravity = require("games.siege_gravity")
+local Bosses = require("games.siege_bosses")
 local M = {
 	id = "neon-siege",
 	title = "NEON SIEGE",
 	tagline = "One swarm. One team. Keep moving.",
 	coop = true,
-	duration = 240,
+	untimed = true,
+	finalWave = 24,
 	controls = "MOVE left stick / keys   AIM + FIRE right stick / keyboard auto   DASH A / action   PULSE B / secondary",
 	limits = { enemies = 96, shots = 600, hostile = 240, particles = 650, pickups = 36 },
 }
@@ -32,6 +34,7 @@ local specs = {
 	segment = { hp = 1, r = 17, speed = 0, value = 5, armor = true },
 }
 specs.boss.boss = true
+for kind, spec in pairs(Bosses.specs) do specs[kind] = spec end
 M.SEGMENTS = 12
 -- Bosses and serpent armour shrug off pulses and dashes; only fire wears them down.
 function M.tough(e)
@@ -62,6 +65,7 @@ local function ring(s, x, y, r, color)
 		s.rings[#s.rings + 1] = { x = x, y = y, r = r, ttl = 0.35, color = color }
 	end
 end
+M.ring = ring
 local function burst(s, x, y, color, count)
 	for _ = 1, math.min(count, M.limits.particles - #s.particles) do
 		local a = s.rng() * math.pi * 2
@@ -95,6 +99,7 @@ function M.spawn(s, kind, x, y, delay)
 	if def.boss then e.hp=def.hp + math.max(0,#s.players-1)*60 end
 	e.maxHp=e.hp
 	s.enemies[#s.enemies + 1] = e
+	if Bosses.colors[kind] then Bosses.spawned(s, M, e, delay) end
 	if kind == "serpent" then
 		-- The body trails off-screen behind the head and follows it link by link.
 		e.segments = {}
@@ -201,6 +206,7 @@ local enemyColors = {
 	serpent = { 0.25, 1, 0.75 },
 	segment = { 0.2, 0.75, 0.6 },
 }
+for kind, color in pairs(Bosses.colors) do enemyColors[kind] = color end
 M.enemyColors = enemyColors
 function M.kill(s, e)
 	if e.dead then
@@ -221,6 +227,7 @@ function M.kill(s, e)
 			M.kill(s, segment)
 		end
 	end
+	if Bosses.colors[e.kind] then Bosses.killed(s, M, e) end
 	if specs[e.kind].boss then
 		s.shake = 5
 		ring(s, e.x, e.y, 160, color)
@@ -269,7 +276,7 @@ function M.pulse(s, p)
 	for i = 1, count do
 		local e = s.enemies[i]
 		if not e.dead and (e.x - p.x) ^ 2 + (e.y - p.y) ^ 2 < 190 ^ 2 then
-			if e.kind=="segment" then
+			if specs[e.kind].armor then
 				e.flash=0.2
 			elseif M.tough(e) then
 				e.hp=e.hp-12;e.flash=0.2
@@ -512,6 +519,10 @@ local function enemiesStep(s, dt)
 			end
 			e.flash = math.max(0, e.flash - dt)
 			local p = nearest(s, e.x, e.y)
+			if e.kind == "node" then
+				Bosses.node(s, M, e)
+				p = nil
+			end
 			if e.kind == "segment" then
 				-- A swallowed link is skipped; a lost head takes the whole body.
 				while e.lead.dead and e.lead ~= e.head do e.lead = e.lead.lead end
@@ -552,7 +563,7 @@ local function enemiesStep(s, dt)
 						end
 					end
 				end
-				speed = special(s, e, dx, dy, length, dt) or speed
+				speed = special(s, e, dx, dy, length, dt) or (Bosses.colors[e.kind] and Bosses.step(s, M, e, dx, dy, length, dt)) or speed
 				if e.kind == "fort" then
 					if length < 300 then
 						speed = 0
@@ -566,8 +577,8 @@ local function enemiesStep(s, dt)
 				e.x, e.y = e.x + dx * speed * dt, e.y + dy * speed * dt
 				for _, pilot in ipairs(s.players) do
 					if not e.dead and alive(pilot) and (pilot.x - e.x) ^ 2 + (pilot.y - e.y) ^ 2 < (e.r + 11) ^ 2 then
-						M.hurt(s, pilot)
-						if pilot.dash > 0 and not M.tough(e) then
+						-- Fodder that lands a hit is spent, so it never hides under a pilot.
+						if (M.hurt(s, pilot) or pilot.dash > 0) and not M.tough(e) then
 							M.kill(s, e)
 						end
 					end
@@ -722,6 +733,11 @@ function M.update(s, dt, inputs)
 	if s.wipe >= 2 then
 		s.over = true
 	end
+	if s.won then
+		s.victoryClock = s.victoryClock + dt
+		if s.victoryClock >= 2.5 then s.over = true end
+	end
+	s.layout = "WAVE " .. math.max(1, s.wave) .. " / " .. M.finalWave
 end
 function M.describe(p)
 	if p.hp == 0 then

@@ -1,6 +1,7 @@
 local M = {}
 local Gravity=require("games.siege_gravity")
 local Siege = require("games.siege")
+local BossRender = require("games.siege_boss_render")
 -- Each wave drifts the sky to a new pair of nebula colours.
 local skies = {
 	{ { 0.10, 0.30, 0.75 }, { 0.75, 0.15, 0.55 } },
@@ -69,24 +70,154 @@ function M.background(s, G)
 		G.circle("fill", x, y, star.size)
 	end
 	G.setBlendMode("alpha")
-	-- A ringed planet hangs low in one corner.
-	local px, py, pr = w * 0.86, h * 0.86, h * 0.22
-	G.setColor(c2[1] * 0.12, c2[2] * 0.12, c2[3] * 0.18)
+	-- Each boss stage has its own landmark, growing stranger toward the end.
+	local stage, fade = M.stage(s)
+	if fade < 1 and stage > 1 then M.landmark(stage - 1, G, w, h, t, 1 - fade) end
+	M.landmark(stage, G, w, h, t, fade)
+end
+-- Stage 1..6 follows the boss every fourth wave; a new stage fades in.
+function M.stage(s)
+	local wave = math.max(1, s.wave)
+	local stage = math.min(6, math.ceil(wave / 4))
+	local first = (wave - 1) % 4 == 0 and s.wavePhase == "attack"
+	return stage, first and math.min(1, (s.waveClock or 0) / 4) or 1
+end
+local function glow(G, x, y, r, color, alpha)
+	G.setBlendMode("add")
+	G.setColor(color[1], color[2], color[3], alpha)
+	G.draw(blob, x, y, 0, r / 64, r / 64, 64, 64)
+	G.setBlendMode("alpha")
+end
+local function planet(G, px, py, pr, base, bands, light, a)
+	G.stencil(function() G.circle("fill", px, py, pr) end, "replace", 1)
+	G.setStencilTest("equal", 1)
+	G.setColor(base[1], base[2], base[3], a)
 	G.circle("fill", px, py, pr)
-	-- Light the far side only: a crescent cut out by the stencil.
-	G.stencil(function() G.circle("fill", px - pr * 0.3, py - pr * 0.25, pr * 1.02) end, "replace", 1)
-	G.setStencilTest("equal", 0)
-	for i = 0, 5 do
-		G.setColor(c2[1] * 0.5, c2[2] * 0.5, c2[3] * 0.6, 0.18)
-		G.circle("fill", px + i * 2, py + i * 2, pr - i * 4)
+	for i, b in ipairs(bands) do
+		G.setColor(b[1], b[2], b[3], a * 0.8)
+		G.rectangle("fill", px - pr, py - pr + (i - 1) * pr * 2 / #bands, pr * 2, pr * 2 / #bands * 0.55)
+	end
+	-- Night side: darken away from the light.
+	for i = 1, 8 do
+		G.setColor(0, 0, 0.02, a * 0.11)
+		G.circle("fill", px + light[1] * pr * (0.2 + i * 0.07), py + light[2] * pr * (0.2 + i * 0.07), pr)
 	end
 	G.setStencilTest()
-	G.setColor(c1[1], c1[2], c1[3], 0.35)
-	G.setLineWidth(3)
-	G.ellipse("line", px, py, pr * 1.7, pr * 0.32)
-	G.setColor(c1[1], c1[2], c1[3], 0.15)
-	G.setLineWidth(9)
-	G.ellipse("line", px, py, pr * 1.85, pr * 0.38)
+end
+function M.landmark(stage, G, w, h, t, a)
+	if stage == 1 then
+		-- Saturn, low in the corner.
+		local px, py, pr = w * 0.84, h * 0.82, h * 0.2
+		G.setColor(0.85, 0.72, 0.45, 0.25 * a)
+		G.setLineWidth(10)
+		G.arc("line", "open", px, py, pr * 1.85, math.pi * 1.06, math.pi * 1.94, 40)
+		planet(G, px, py, pr, { 0.55, 0.45, 0.28 }, { { 0.7, 0.58, 0.36 }, { 0.48, 0.38, 0.24 }, { 0.75, 0.63, 0.4 }, { 0.5, 0.4, 0.26 }, { 0.68, 0.56, 0.35 } }, { 1, 0.8 }, 0.55 * a)
+		G.push()
+		G.translate(px, py)
+		G.rotate(-0.25)
+		G.setColor(0.9, 0.78, 0.5, 0.5 * a)
+		G.setLineWidth(4)
+		G.ellipse("line", 0, 0, pr * 1.75, pr * 0.36)
+		G.setColor(0.75, 0.62, 0.4, 0.3 * a)
+		G.setLineWidth(10)
+		G.ellipse("line", 0, 0, pr * 1.95, pr * 0.42)
+		G.pop()
+	elseif stage == 2 then
+		-- A storm giant with a red eye, and two moons.
+		local px, py, pr = w * 0.12, h * 0.16, h * 0.34
+		glow(G, px, py, pr * 1.6, { 0.9, 0.5, 0.3 }, 0.12 * a)
+		planet(G, px, py, pr, { 0.6, 0.42, 0.3 }, { { 0.8, 0.6, 0.42 }, { 0.55, 0.35, 0.25 }, { 0.85, 0.7, 0.5 }, { 0.6, 0.38, 0.28 }, { 0.8, 0.62, 0.45 }, { 0.5, 0.33, 0.24 }, { 0.78, 0.6, 0.42 } }, { -0.7, -0.7 }, 0.6 * a)
+		G.setColor(0.85, 0.3, 0.2, 0.55 * a)
+		G.ellipse("fill", px + pr * 0.35, py + pr * 0.35, pr * 0.2, pr * 0.11)
+		for i = 1, 2 do
+			local m = t * 0.05 * i + i * 2
+			G.setColor(0.75, 0.75, 0.8, 0.5 * a)
+			G.circle("fill", px + math.cos(m) * pr * (1.5 + i * 0.4), py + math.sin(m) * pr * 0.5 + pr * 0.6, 6 + i * 4)
+		end
+	elseif stage == 3 then
+		-- A burning sun just off the edge.
+		local px, py, pr = w * 0.92, h * 0.12, h * 0.3
+		glow(G, px, py, pr * 4.5, { 1, 0.4, 0.1 }, 0.35 * a)
+		glow(G, px, py, pr * 2.4, { 1, 0.7, 0.2 }, 0.45 * a)
+		G.setColor(1, 0.7, 0.25, 0.85 * a)
+		G.circle("fill", px, py, pr)
+		G.setColor(1, 0.92, 0.6, 0.9 * a)
+		G.circle("fill", px, py, pr * 0.8)
+		G.setLineWidth(3)
+		for i = 1, 18 do
+			local ang = i * math.pi / 9 + t * 0.05
+			local l = pr * (1.15 + 0.35 * math.abs(math.sin(t * 0.7 + i * 1.3)))
+			G.setColor(1, 0.55, 0.15, 0.45 * a)
+			G.line(px + math.cos(ang) * pr, py + math.sin(ang) * pr, px + math.cos(ang) * l, py + math.sin(ang) * l)
+		end
+	elseif stage == 4 then
+		-- Deep inside a glowing nebula; colours slowly cycle.
+		for i = 1, 9 do
+			local hue = t * 0.05 + i * 0.7
+			local x = w * (0.5 + 0.45 * math.sin(i * 2.3 + t * 0.02))
+			local y = h * (0.5 + 0.42 * math.cos(i * 1.7 + t * 0.017))
+			glow(G, x, y, h * (0.35 + (i % 3) * 0.15), { 0.5 + 0.5 * math.sin(hue), 0.4 + 0.4 * math.sin(hue + 2.1), 0.6 + 0.4 * math.sin(hue + 4.2) }, 0.22 * a)
+		end
+		-- Dark pillars rise through the gas.
+		for i = 1, 3 do
+			local x = w * (0.2 + i * 0.22)
+			G.setColor(0.01, 0.01, 0.03, 0.45 * a)
+			G.polygon("fill", x - 40, h, x - 14, h * (0.45 + i * 0.07), x + 18, h * (0.5 + i * 0.05), x + 50, h)
+		end
+	elseif stage == 5 then
+		-- A supernova: shock fronts keep rolling out from a white core.
+		local px, py = w * 0.7, h * 0.4
+		for i = 0, 3 do
+			local k = (t * 0.12 + i / 4) % 1
+			G.setColor(1, 0.5 + 0.4 * (1 - k), 0.8 * k, (1 - k) * 0.45 * a)
+			G.setLineWidth(3 + 10 * (1 - k))
+			G.circle("line", px, py, 30 + k * w * 0.8)
+		end
+		glow(G, px, py, h * 0.9, { 1, 0.3, 0.6 }, 0.25 * a)
+		glow(G, px, py, h * 0.35, { 1, 0.9, 0.7 }, 0.7 * a)
+		G.setLineWidth(2)
+		for i = 1, 28 do
+			local ang = i * 0.2244 + math.sin(i * 7.1)
+			local l = h * (0.15 + 0.35 * ((t * 0.1 + i * 0.37) % 1))
+			G.setColor(1, 0.85, 0.6, 0.35 * a)
+			G.line(px + math.cos(ang) * l * 0.4, py + math.sin(ang) * l * 0.4, px + math.cos(ang) * l, py + math.sin(ang) * l)
+		end
+		G.setColor(1, 1, 1, a)
+		G.circle("fill", px, py, 9)
+	else
+		-- The black hole: a huge accretion disk, a lensing ring and a hue shift.
+		local px, py, pr = w * 0.5, h * 0.5, h * 0.17
+		for i = 1, 3 do
+			local hue = t * 0.3 + i * 2
+			glow(G, px, py, h * (0.5 + i * 0.3), { 0.5 + 0.5 * math.sin(hue), 0.3 + 0.3 * math.sin(hue + 2), 0.8 + 0.2 * math.sin(hue + 4) }, 0.16 * a)
+		end
+		G.setBlendMode("add")
+		for i = 1, 14 do
+			local k = i / 14
+			local hue = t * 0.4 + k * 5
+			G.setColor(0.6 + 0.4 * math.sin(hue), 0.4 + 0.4 * math.sin(hue + 2.1), 0.8 + 0.2 * math.sin(hue + 4.2), 0.22 * a * (1 - k * 0.6))
+			G.setLineWidth(4 + k * 6)
+			G.push()
+			G.translate(px, py)
+			G.rotate(0.18 + math.sin(t * 0.1) * 0.05)
+			G.ellipse("line", 0, 0, pr * (1.6 + k * 3.2), pr * (0.28 + k * 0.5))
+			G.pop()
+		end
+		G.setBlendMode("alpha")
+		G.setColor(0, 0, 0, 0.95 * a)
+		G.circle("fill", px, py, pr)
+		G.setColor(1, 0.9, 0.8, 0.6 * a)
+		G.setLineWidth(3)
+		G.circle("line", px, py, pr * 1.08)
+		-- Stars spiral inward and vanish at the horizon.
+		for i = 1, 60 do
+			local k = 1 - ((t * 0.06 + i * 0.137) % 1)
+			local ang = i * 2.39 + (1 - k) * 9 + t * 0.2
+			local r = pr * 1.1 + k * h * 0.9
+			G.setColor(0.9, 0.85, 1, 0.6 * a * k)
+			G.circle("fill", px + math.cos(ang) * r, py + math.sin(ang) * r * 0.75, 1.2 + k)
+		end
+	end
 end
 -- Pickups read at a glance: a heart heals, a fan of three shots spreads,
 -- an arrow through a wall pierces and a lightning bolt fires faster.
@@ -193,7 +324,9 @@ function M.draw(s, G, fonts, playerColor)
 		elseif e.kind == "segment" or e.kind == "hive" then
 			angle = e.phase
 		end
-		if e.warm > 0 then
+		if e.warm <= 0 and BossRender.draw(G, s, e, c, fonts) then
+			-- drawn by the late-boss renderer
+		elseif e.warm > 0 then
 			tint(c, 0.25)
 			G.setLineWidth(1)
 			G.circle("line", e.x, e.y, e.r + e.warm * 22)
@@ -245,6 +378,7 @@ function M.draw(s, G, fonts, playerColor)
 			end
 		end
 	end
+	BossRender.beams(G, s)
 	for _, p in ipairs(s.particles) do
 		tint(p.color, math.min(1, p.ttl * 3))
 		G.setLineWidth(2)
@@ -322,6 +456,8 @@ function M.draw(s, G, fonts, playerColor)
 		G.printf("WAVE " .. (s.wave + 1) .. "  /  " .. math.ceil(s.waveRest), 0, 65, s.width, "center")
 	elseif s.waveClock < 2 then
 		G.printf("WAVE " .. s.wave .. "  /  " .. s.waveName, 0, 65, s.width, "center")
+	else
+		BossRender.banner(G, s, fonts, Siege.specs)
 	end
 end
 return M

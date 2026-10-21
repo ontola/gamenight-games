@@ -1,10 +1,20 @@
 -- Authored formations repeat in a readable order; difficulty follows clears,
 -- never elapsed time. A struggling team cannot accumulate another wave.
 local W = { names = { "SWEEP", "PINCER", "CORNERS", "CROSSWIND" }, rest = 2, warning = 1.4 }
-W.bosses = { { kind = "boss", name = "OVERSEER" }, { kind = "hive", name = "HIVE QUEEN" }, { kind = "serpent", name = "SERPENT" } }
+-- Six bosses, one every fourth wave; the Singularity on the last wave ends the run.
+W.bosses = {
+	{ kind = "boss", name = "OVERSEER" },
+	{ kind = "hive", name = "HIVE QUEEN" },
+	{ kind = "serpent", name = "SERPENT" },
+	{ kind = "prism", name = "PRISM TWINS" },
+	{ kind = "sun", name = "SOLAR WARDEN" },
+	{ kind = "singularity", name = "THE SINGULARITY" },
+}
 function W.plan(number, players, width, height, difficulty)
 	local pressure = ({relaxed=0.7,standard=1,intense=1.35})[difficulty or "standard"] or 1
 	local count = math.min(60, math.floor((14 + (number - 1) * 4 + math.max(0, players - 2) * 4) * pressure))
+	-- Boss waves bring a lighter escort so the fight stays readable.
+	if number % 4 == 0 then count = math.floor(count * (number >= 16 and 0.35 or 0.6)) end
 	local pattern = (number - 1) % 4 + 1
 	local rotation = math.floor((number - 1) / 4) % 4
 	local groups = pattern == 1 and 2 or 3
@@ -51,13 +61,16 @@ function W.plan(number, players, width, height, difficulty)
 	end
 	-- Every fourth wave a boss joins the formation, rotating through three kinds.
 	if number%4==0 then
-		local boss=W.bosses[(number/4-1)%#W.bosses+1]
-		plan[#plan+1]={x=width/2,y=50,kind=boss.kind,at=0,group=0}
+		local boss=W.bosses[math.min(#W.bosses,number/4)]
+		local final=boss.kind=="singularity"
+		plan[#plan+1]={x=width/2,y=final and height/2 or (boss.kind=="prism" and height/2 or 50),kind=boss.kind,at=0,group=0}
+		if boss.kind=="prism" then plan[#plan].x=width*0.2 end
 		return plan,boss.name
 	end
 	return plan, W.names[pattern]
 end
 function W.update(s, dt, spawn)
+	if s.won then return end
 	if s.wavePhase == "rest" then
 		s.waveRest = math.max(0, s.waveRest - dt)
 		if s.waveRest == 0 then

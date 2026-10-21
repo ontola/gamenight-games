@@ -180,7 +180,7 @@ function R.game(mode, s, remaining, finished, managed)
 		G.setColor(0.02, 0.03, 0.06, 0.92)
 		G.rectangle("fill", 260, 255, 760, 290, 20, 20)
 		if mode.coop then
-			centered(s.over and "TEAM DOWN" or "TEAM SURVIVED", 290, "title", { 0.3, 0.92, 0.83 })
+			centered(s.won and "THE SINGULARITY FALLS" or s.over and "TEAM DOWN" or "TEAM SURVIVED", 290, "title", s.won and { 1, 0.85, 1 } or { 0.3, 0.92, 0.83 })
 			centered(s.kills .. " ENEMIES / WAVE " .. s.wave, 350, "body")
 			centered(s.teamScore .. " POINTS", 391, "huge")
 		else

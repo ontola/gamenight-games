@@ -36,8 +36,8 @@ function tests.boss_is_not_killed_by_one_pulse()
 end
 function tests.bosses_rotate_every_fourth_wave()
 	local W=require("games.siege_waves")
-	local expected={[4]="boss",[8]="hive",[12]="serpent",[16]="boss"}
-	for wave=1,16 do
+	local expected={[4]="boss",[8]="hive",[12]="serpent",[16]="prism",[20]="sun",[24]="singularity"}
+	for wave=1,24 do
 		local plan,name=W.plan(wave,2,1280,800)
 		local bosses=0
 		for _,entry in ipairs(plan) do if M.specs[entry.kind].boss then bosses=bosses+1 end end
@@ -65,6 +65,47 @@ function tests.serpent_body_blocks_shots_and_dies_with_its_head()
 	M.pulse(s,p);assert(not segment.dead)
 	head.hp=1;M.kill(s,head);tick(s)
 	assert(#s.enemies==0,"the body goes down with the head")
+end
+function tests.late_bosses_telegraph_beams_and_the_singularity_wins_the_run()
+	for _,kind in ipairs({"prism","sun","singularity"}) do
+		local s=fresh(1);s.waveRest=1000
+		local p=s.players[1];p.invul=1000
+		local boss=M.spawn(s,kind,s.width/2,s.height/2,0)
+		if kind=="singularity" then boss.hp=boss.maxHp*0.5 end
+		local seen={}
+		for _=1,120*12 do
+			p.x,p.y=60,60
+			M.update(s,1/120,{{x=0,y=0}})
+			seen.bullets=seen.bullets or #s.hostile>0
+			for _,e in ipairs(s.enemies) do
+				for _,beam in ipairs(e.beams or {}) do
+					if beam.state=="live" then assert(seen.warn,kind.." beam burned without warning") end
+					seen[beam.state]=true
+				end
+			end
+		end
+		assert(seen.warn and seen.live,kind.." never fired its beam")
+		assert(seen.bullets,kind.." fires bullets")
+		if kind=="prism" then assert(boss.twin and not boss.twin.dead,"twins come in pairs") end
+		if kind=="singularity" then
+			local nodes=0
+			for _,e in ipairs(s.enemies) do if e.kind=="node" and not e.dead then nodes=nodes+1 end end
+			assert(nodes==8,"the core is shielded")
+			assert(not s.over)
+			M.kill(s,boss)
+			assert(s.won and #s.hostile==0)
+			for _=1,120*3 do M.update(s,1/120,{{x=0,y=0}}) end
+			assert(s.over and s.won,"beating the final boss ends the run in victory")
+			for _,e in ipairs(s.enemies) do assert(e.dead) end
+		end
+	end
+end
+function tests.fodder_dies_after_landing_a_hit()
+	local s=fresh(1);s.waveRest=1000
+	local p=s.players[1];p.invul=0
+	local shard=M.spawn(s,"shard",p.x+5,p.y,0)
+	M.update(s,1/120,{{x=0,y=0}})
+	assert(p.hp==2 and shard.dead)
 end
 function tests.hive_hatches_and_dasher_telegraphs()
 	local s=fresh(1);s.waveRest=100
@@ -267,7 +308,7 @@ function tests.waves_warn_clear_and_rest_before_advancing()
 	assert(s.wave == 2)
 	for number = 1, 12 do
 		local plan, name = W.plan(number, 4, 1422, 800)
-		assert(#plan <= 61 and name == (number%4==0 and W.bosses[(number/4-1)%3+1].name or W.names[(number - 1) % 4 + 1]))
+		assert(#plan <= 61 and name == (number%4==0 and W.bosses[number/4].name or W.names[(number - 1) % 4 + 1]))
 		for _, e in ipairs(plan) do
 			assert(e.x >= 0 and e.x <= 1422 and e.y >= 0 and e.y <= 800)
 			if number < 2 then
