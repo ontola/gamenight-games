@@ -11,9 +11,12 @@ local M = {
 	limits = { enemies = 96, shots = 600, hostile = 240, particles = 650, pickups = 36 },
 }
 require("shared.settings").bind(M, {
-    {key="difficulty", label="Enemy pressure (next round)", kind="choice", default="standard", options={"relaxed","standard","intense"}},
-    {key="gravity", label="Gravity strength % (next round)", kind="number", default=100, min=0, max=175},
+    {key="difficulty", label="Difficulty (next round)", kind="choice", default="standard", options={"relaxed","standard","intense"}},
+    {key="start_wave", label="Starting wave (next round)", kind="number", default=1, min=1, max=24},
+    {key="lives", label="Pilot lives (next round)", kind="number", default=3, min=1, max=6},
+    {key="gravity", label="Gravity strength (next round)", kind="number", default=100, min=0, max=175, step=25, suffix="%"},
 })
+require("shared.pause_menu")(M)
 
 local specs = {
 	boss = { hp = 180, r = 38, speed = 60, value = 1000 },
@@ -120,6 +123,7 @@ function M.new(players, rng)
 		sfx = {},
 		time = 0,
 		wave = 0,
+		lives = 3,
 		width = 1280,
 		height = 800,
 		wavePhase = "rest",
@@ -135,9 +139,11 @@ function M.new(players, rng)
 		wipe = 0,
 		over = false,
 	}
+	s.wave = (s.settings.start_wave or 1) - 1
+	s.lives = s.settings.lives or 3
 	for i, p in ipairs(players) do
 		p.x, p.y = 640 + (i - (#players + 1) / 2) * 65, 415
-		p.hp = 3
+		p.hp = s.lives
 		p.invul = 1.5
 		p.fireClock = 0
 		p.dash = 0
@@ -150,6 +156,13 @@ function M.new(players, rng)
 		p.score = 0
 	end
 	return s
+end
+-- Restart in place keeps the roster and takes the latest settings.
+function M.restart(s)
+	local fresh = M.new(s.players, s.rng)
+	for k in pairs(s) do s[k] = nil end
+	for k, v in pairs(fresh) do s[k] = v end
+	s.restarted = true
 end
 -- Instant join uses a fresh pilot only; the arena, wave and team score survive.
 function M.join(s, player)
@@ -335,7 +348,7 @@ local function playerStep(s, p, c, dt)
 			p.revive = math.max(0, p.revive - dt * 0.5)
 		end
 		if helper and (p.revive >= 1.2 or p.downTime >= 6) then
-			p.hp = 3
+			p.hp = s.lives
 			p.invul = 2
 			p.revive = 0
 			sound(s, "pickup")
@@ -657,7 +670,7 @@ local function effectsStep(s, dt)
 		end
 		if p and d < 22 ^ 2 then
 			if q.kind == "repair" then
-				p.hp = math.min(3, p.hp + 1)
+				p.hp = math.min(s.lives, p.hp + 1)
 			else
 				p.powers[q.kind] = M.ammo[q.kind]
 			end

@@ -88,6 +88,42 @@ function M.background(s, G)
 	G.setLineWidth(9)
 	G.ellipse("line", px, py, pr * 1.85, pr * 0.38)
 end
+-- Pickups read at a glance: a heart heals, a fan of three shots spreads,
+-- an arrow through a wall pierces and a lightning bolt fires faster.
+M.pickupColors = { repair = { 1, 0.3, 0.42 }, spread = { 1, 0.75, 0.2 }, pierce = { 1, 0.45, 0.85 }, rapid = { 0.25, 1, 1 } }
+M.pickupNames = { repair = "LIFE", spread = "SPREAD", pierce = "PIERCE", rapid = "RAPID" }
+function M.pickup(G, kind, x, y, alpha, time, fonts)
+	local c = M.pickupColors[kind]
+	local pulse = 1 + 0.08 * math.sin(time * 6)
+	G.setColor(c[1], c[2], c[3], 0.16 * alpha)
+	G.circle("fill", x, y, 21 * pulse)
+	G.setColor(c[1], c[2], c[3], alpha)
+	G.setLineWidth(2)
+	G.circle("line", x, y, 18 * pulse)
+	if kind == "repair" then
+		G.circle("fill", x - 4.5, y - 3, 5.2)
+		G.circle("fill", x + 4.5, y - 3, 5.2)
+		G.polygon("fill", x - 9.4, y - 1.2, x + 9.4, y - 1.2, x, y + 10)
+	elseif kind == "spread" then
+		G.setLineWidth(2.5)
+		for i = -1, 1 do
+			local a = -math.pi / 2 + i * 0.55
+			G.line(x - 0.0, y + 8, x + math.cos(a) * 13, y + 8 + math.sin(a) * 13)
+			G.circle("fill", x + math.cos(a) * 13, y + 8 + math.sin(a) * 13, 2.4)
+		end
+	elseif kind == "pierce" then
+		G.rectangle("fill", x - 1, y - 10, 4, 7)
+		G.rectangle("fill", x - 1, y + 3, 4, 7)
+		G.setLineWidth(2.5)
+		G.line(x - 12, y, x + 8, y)
+		G.polygon("fill", x + 13, y, x + 6, y - 5, x + 6, y + 5)
+	else
+		G.polygon("fill", x + 3, y - 12, x - 7, y + 2, x - 1, y + 2, x - 4, y + 12, x + 7, y - 3, x + 1, y - 3)
+	end
+	G.setFont(fonts.small)
+	G.setColor(c[1], c[2], c[3], 0.85 * alpha)
+	G.printf(M.pickupNames[kind], x - 50, y + 22, 100, "center")
+end
 function M.draw(s, G, fonts, playerColor)
 	local function tint(c, a)
 		G.setColor(c[1], c[2], c[3], a or 1)
@@ -127,11 +163,7 @@ function M.draw(s, G, fonts, playerColor)
 		G.circle("line", r.x, r.y, r.r * (1 - r.ttl / 0.4))
 	end
 	for _, q in ipairs(s.pickups) do
-		G.setColor(0.4, 1, 0.8, math.min(1, q.ttl))
-		G.setLineWidth(2)
-		polygon(q.x, q.y, 15, 4, s.time)
-		G.setFont(fonts.small)
-		G.printf(({ spread = "S", pierce = "P", rapid = "R", repair = "+" })[q.kind], q.x - 12, q.y - 8, 24, "center")
+		M.pickup(G, q.kind, q.x, q.y + math.sin(s.time * 3 + q.x) * 2, math.min(1, q.ttl), s.time, fonts)
 	end
 	for _, b in ipairs(s.shots) do
 		local c = ({pierce={1,0.45,0.85},spread={1,0.75,0.2},rapid={0.25,1,1}})[b.special] or playerColor(b.owner)
@@ -278,7 +310,7 @@ function M.draw(s, G, fonts, playerColor)
 			end
 			tint(c)
 			for i = 1, p.hp do
-				G.circle("fill", p.x + (i - 2) * 7, p.y + 28, 2)
+				G.circle("fill", p.x + (i - (p.hp + 1) / 2) * 7, p.y + 28, 2)
 			end
 		end
 	end

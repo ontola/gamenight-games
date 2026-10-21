@@ -190,7 +190,13 @@ function love.update(dt)
     if mode.menuUpdate and mode.menuUpdate(state, dt, Input.menu(pads()), function(key,value)
         mode.setting(key,value)
         if bridge then bridge.transport:send({type="set_setting",game=mode.id,key=key,value=value}) end
-    end) then return end
+    end) then
+        if state.restarted then
+            state.restarted = nil
+            remaining, finished, accumulator, resultsTime = mode.untimed and math.huge or duration or mode.duration or 60, false, 0, 0
+        end
+        return
+    end
 	if finished then
         resultsTime = resultsTime + math.min(dt, 0.1)
         if resultsTime >= 3 then
