@@ -1,19 +1,26 @@
 local Input=require("shared.input")
 local Audio=require("shared.audio")
-local V=require("games.coop.view")
 return function(module)
  local M={id=module.id,title=module.title,tagline="One very cooperative couch",controls="Move / A action / B drop",duration=math.huge,coop=true}
  require("shared.settings").bind(M,module.settings)
+ require("shared.pause_menu")(M)
  if module.resize then function M.resize(s,w,h) module.resize(s,w,h) end end
  function M.new(players,rng)
-  local s=module.new(players,module.render and rng or nil,M.preferences())
+  local s=module.new(players,rng,M.preferences())
+  s.roster,s.rngSource=players,rng
   for i,p in ipairs(s.players) do
    local identity=players[i]
    p.id,p.controller,p.color,p.skin_color=identity.id,identity.controller,identity.color,identity.skin_color
    p.score=0
   end
-  s.presentation={game=s,module=module,screen="play",managed=true}
   return s
+ end
+ -- Restart in place keeps the roster and takes the latest settings.
+ function M.restart(s)
+  local fresh=M.new(s.roster,s.rngSource)
+  for k in pairs(s) do s[k]=nil end
+  for k,v in pairs(fresh) do s[k]=v end
+  s.restarted=true
  end
  function M.input(slot)
   local v=Input.sample(slot)
@@ -28,11 +35,7 @@ return function(module)
  end
  function M.finish(s) if not s.over then s.phase="won" end end
  function M.render(s)
-  if module.render then return module.render(s) end
-  local w,h=love.graphics.getDimensions();local scale=math.min(w/1280,h/800)
-  love.graphics.clear(.03,.04,.08);love.graphics.push()
-  love.graphics.translate((w-1280*scale)/2,(h-800*scale)/2);love.graphics.scale(scale)
-  V.draw(s.presentation);love.graphics.pop()
+  module.render(s,function(g) M.menuDraw(s,g,require("shared.render").fonts) end)
  end
  return M
 end

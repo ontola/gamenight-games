@@ -40,7 +40,9 @@ function T.spawn(g,p)
 end
 function T.new(seats,seed,settings)
   settings=settings or {target=12,speed=100}
-  local g={board={},players={},rows=0,target=settings.target,settings=settings,phase="play",time=0,seed=seed or 7381,events={},flash=0}
+  -- Every round gets its own pieces: draw the seed from the round's generator.
+  if type(seed)=="function" then seed=seed(1,2147483646) end
+  local g={board={},players={},rows=0,target=settings.target,settings=settings,phase="play",time=0,seed=seed or 7381,events={},flash=0,width=1280}
   for y=1,T.height do g.board[y]={} end
   for i,s in ipairs(seats) do if i<=2 then
     g.players[i]={slot=s.slot,name=s.name,avatar=s.avatar,bot=s.bot,lane=(i-1)*6+1,bag={},previous={}}
@@ -48,6 +50,8 @@ function T.new(seats,seed,settings)
   for _,p in ipairs(g.players) do T.spawn(g,p) end
   return g
 end
+function T.resize(g,w,h) g.width=800*w/math.max(1,h) end
+function T.render(g,overlay) require("games.coop.stack_view").render(g,overlay) end
 function T.clear(g)
   local n=0
   for y=T.height,1,-1 do

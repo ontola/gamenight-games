@@ -25,8 +25,13 @@ play (or requests the GameNight party); remaining controller slots stay stable.
 
 Each player places falling pieces in one half of a shared 12x18 board. Only
 full-width rows clear. Clear 12 together to win; either half reaching the top
-ends the match. Seven-piece bags, rotation with wall kicks, landing ghosts,
-soft drop, hard drop, next-piece preview, and a CPU teammate are included.
+ends the match. Seven-piece bags (seeded per round, so every round differs),
+rotation with wall kicks, landing ghosts, soft drop, hard drop, next-piece
+preview, and a CPU teammate are included. The well fills the screen height with
+no text: each player's face and next piece sit beside their half, and a meter
+on both sides of the well shows the shared rows. Start opens the menu with
+Resume, Restart and the settings (rows to clear, falling speed); the same menu
+exists in Bubble Buddies.
 
 | Input | Move | Rotate | Soft drop | Hard drop |
 | --- | --- | --- | --- | --- |

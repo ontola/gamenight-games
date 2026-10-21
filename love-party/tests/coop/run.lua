@@ -86,6 +86,18 @@ return function()
     local g=B.new(seats); local x=g.players[2].x
     B.resize(g,1920,1080); assert(math.abs(g.width-800*16/9)<.01 and math.abs(g.players[2].x-x*g.width/1280)<.01)
   end)
+  check("stack rounds draw their pieces from the round generator",function()
+    local U=require("shared.util"); local seen={}
+    for seed=1,12 do local g=T.new(seats,U.rng(seed*7919)); seen[g.players[1].kind..g.players[1].next..g.players[2].kind]=true end
+    local n=0; for _ in pairs(seen) do n=n+1 end; assert(n>=6)
+  end)
+  check("restart from the start menu keeps players and applies settings",function()
+    local M=require("games.coop")(T); local U=require("shared.util")
+    local s=M.new({{slot=1,name="A",id="a"},{slot=2,name="B",id="b"}},U.rng(5))
+    s.rows=3; assert(M.setting("target",20)); M.restart(s)
+    assert(s.rows==0 and s.target==20 and s.restarted and s.players[2].id=="b")
+    M.setting("target",12)
+  end)
   check("CPU crews can clear rows and pop bubbles",function()
     local bots={{slot=1,bot=true},{slot=2,bot=true}}
     local rows,pops=0,0

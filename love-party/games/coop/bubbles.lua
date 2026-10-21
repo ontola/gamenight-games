@@ -202,5 +202,5 @@ function B.step(g,inputs,dt)
   end
   if #g.bubbles==0 then g.phase="clear"; g.timer=1.5; g.pickups={}; event(g,"clear") end
 end
-function B.render(g) require("games.coop.bubbles_view").render(g) end
+function B.render(g,overlay) require("games.coop.bubbles_view").render(g,overlay) end
 return B

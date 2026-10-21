@@ -167,11 +167,11 @@ function V.draw(g)
   end
   if g.flash>0 then color(C.coral,g.flash*.45); G.rectangle("fill",0,0,w,800) end
 end
-function V.render(g)
+function V.render(g,overlay)
   G=love.graphics
   local w,h=G.getDimensions(); local scale=math.min(w/g.width,h/800)
   G.clear(C.sky1[1],C.sky1[2],C.sky1[3]); G.push()
   G.translate((w-g.width*scale)/2,(h-800*scale)/2); G.scale(scale)
-  V.draw(g); G.pop()
+  V.draw(g); if overlay then overlay(G) end; G.pop()
 end
 return V
