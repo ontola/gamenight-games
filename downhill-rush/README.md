@@ -98,6 +98,8 @@ shuffled string of set pieces with open mountain between them:
   across your line. Hit a deer or sheep at speed (a hare only when you're
   flying) and you go over the bars. Away from the desert a bear or two lives
   in the woods: get close and it charges, so keep your speed up;
+- hikers walk the trail, up or down. Hear a rider coming and they step aside,
+  but not all of them in time: ride into one and you both go down;
 - **chasm**: a gorge right across the slope, crossed on a narrow rock bridge
   or by flying the ramp next to it. Fall in and you crash and come back on
   the far side.

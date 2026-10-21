@@ -17,6 +17,7 @@ var view: MountainView
 var cars: Array[Dictionary] = []    ## {road, d, dir, speed, node}
 var bears: Array[Dictionary] = []   ## {s, d, home, heading, charge, rest, node}
 var _next_car: Array[float] = []    ## Per road: seconds until the next car.
+var hikers: Array[Dictionary] = [] ## {s, d, dir, home_d, aside, wait, down, node}
 var _fleeing := {}                  ## animal -> {dir: Vector2, speed, left}
 var _rng := RandomNumberGenerator.new()
 
@@ -27,6 +28,7 @@ func _init(c: Course, v: MountainView) -> void:
 	_rng.seed = c.seed_value * 13 + 7
 	for road in course.roads: _next_car.append(_rng.randf_range(0.0, 2.5))
 	_place_bears()
+	_place_hikers()
 
 ## One physics step: move everything, then see who got hit.
 func step(bikes: Array, dt: float) -> void:
@@ -35,6 +37,7 @@ func step(bikes: Array, dt: float) -> void:
 	_step_cars(bikes, lead, dt)
 	_step_animals(bikes, dt)
 	_step_bears(bikes, dt)
+	_step_hikers(bikes, dt)
 
 # ── Cars ─────────────────────────────────────────────────────────────────────
 
@@ -241,3 +244,131 @@ func _bear_mesh() -> Node3D:
 	bear.name = "Bear"
 	bear.add_child(mi)
 	return bear
+
+# ── Hikers ───────────────────────────────────────────────────────────────────
+# People out for a walk on the trail. Hear a rider coming and they step aside,
+# but not all of them in time. Ride into one and you both go down.
+
+const HIKER_RADIUS := 0.55
+const HIKER_WALK := 1.1
+
+func _place_hikers() -> void:
+	var s := Course.START_LINE + 70.0
+	while s < course.length - 40.0:
+		var group := 1 if _rng.randf() < 0.6 else 2
+		var dir := 1.0 if _rng.randf() < 0.5 else -1.0  # Walking down or back up.
+		for k in group:
+			var hs := s + k * 1.6
+			var d := course.trail_d(hs) + _rng.randf_range(-0.6, 0.6) * course.trail_half(hs) + k * 0.7
+			if course.in_water(hs, d): continue
+			var hiker := {"s": hs, "d": d, "dir": dir, "home": 0.0, "aside": 0.0, "wait": 0.0,
+				"heard": false, "react": _rng.randf_range(0.0, 0.9), "down": 0.0, "node": _hiker_mesh()}
+			add_child(hiker.node)
+			hikers.append(hiker)
+			_place_hiker(hiker, 0.0)
+		s += _rng.randf_range(70.0, 130.0)
+
+func _step_hikers(bikes: Array, dt: float) -> void:
+	for h in hikers:
+		var pos := Vector2(h.s, h.d)
+		# Who's coming: the nearest rider closing in from up the trail.
+		var near: Bike = null
+		var best := INF
+		for b in bikes:
+			if b.crashed: continue
+			var dist := Vector2(b.s - pos.x, b.d - pos.y).length()
+			if dist < best:
+				best = dist
+				near = b
+		if h.down > 0.0:
+			# Knocked flat: lie there a moment, then get up again.
+			h.down -= dt
+			_place_hiker(h, dt)
+			continue
+		var coming: bool = near != null and best < 11.0 and near.s < h.s + 1.0
+		if coming and not h.heard:
+			h.heard = true
+			h.wait = h.react
+			# Off the trail on the nearer side, a step past its edge.
+			var mid := course.trail_d(h.s)
+			var side: float = signf(h.d - mid) if absf(h.d - mid) > 0.1 else (1.0 if _rng.randf() < 0.5 else -1.0)
+			h.aside = mid + side * (course.trail_half(h.s) + 2.0)
+		if h.heard:
+			h.wait -= dt
+			if h.wait <= 0.0:
+				# Hurry aside.
+				h.d = move_toward(h.d, h.aside, 2.6 * dt)
+			if not coming and best > 14.0:
+				h.heard = false
+		else:
+			# Stroll along the trail.
+			h.s += h.dir * HIKER_WALK * dt
+			var mid := course.trail_d(h.s)
+			h.d = lerpf(h.d, clampf(h.d, mid - course.trail_half(h.s) * 0.7, mid + course.trail_half(h.s) * 0.7), dt)
+		_place_hiker(h, dt)
+		if near and best < HIKER_RADIUS + Bike.RADIUS and near.grounded and near.invulnerable <= 0.0:
+			if near.v > 4.0:
+				# Over the bars, and the hiker goes flying too.
+				Bike.struck(near, Vector3(cos(near.psi), 0.6, sin(near.psi)) * 1.2, "hiker")
+			else:
+				near.v *= 0.4
+				near.wobble = maxf(near.wobble, 0.6)
+			h.down = 3.0 if near.v > 2.0 or near.crashed else 1.2
+			h.heard = false
+
+func _place_hiker(h: Dictionary, dt: float) -> void:
+	var node: Node3D = h.node
+	var p := course.world(h.s, h.d)
+	node.position = p
+	var facing: Vector2 = Vector2(h.dir, 0.0) if not h.heard else Vector2(0.0, signf(h.aside - h.d) if absf(h.aside - h.d) > 0.05 else h.dir)
+	var ahead := course.world(h.s + facing.x, h.d + facing.y)
+	node.rotation.y = atan2(-(ahead.x - p.x), -(ahead.z - p.z))
+	var body: Node3D = node.get_child(0)
+	var walking: bool = h.down <= 0.0 and (not h.heard or (h.wait <= 0.0 and absf(h.aside - h.d) > 0.05))
+	if walking: h.phase = float(h.get("phase", 0.0)) + dt * 7.0
+	var swing: float = sin(float(h.get("phase", 0.0))) * 0.45 if walking else 0.0
+	body.get_node("LegL").rotation.x = swing
+	body.get_node("LegR").rotation.x = -swing
+	body.position.y = absf(sin(float(h.get("phase", 0.0)))) * 0.04 if walking else 0.0
+	# Flat on their back after a hit.
+	body.rotation.x = lerpf(body.rotation.x, -1.45 if h.down > 0.0 else 0.0, minf(1.0, dt * 9.0))
+
+func _hiker_mesh() -> Node3D:
+	var shirts := [Color("d9534f"), Color("3f7fd9"), Color("e7c14b"), Color("4f9a6a"), Color("9b59b6"), Color("e67e22")]
+	var shirt: Color = shirts[_rng.randi() % shirts.size()]
+	var skin: Color = [Color("f1c7a1"), Color("c8946b"), Color("8d5a3b")][_rng.randi() % 3]
+	var trousers := Color("39424e") if _rng.randf() < 0.5 else Color("7a6a4f")
+	var root := Node3D.new()
+	root.name = "Hiker"
+	# Drawn at the riders' scale, so they read from the camera.
+	root.scale = Vector3.ONE * RiderView.SCALE * 0.9
+	var body := Node3D.new()
+	root.add_child(body)
+	var lp := LowPoly.new()
+	lp.box(Vector3(0, 1.17, 0), Vector3(0.42, 0.56, 0.26), shirt)
+	lp.box(Vector3(0, 1.2, 0.2), Vector3(0.34, 0.44, 0.18), Color("5b4636"))  # Backpack.
+	lp.blob(Vector3(0, 1.6, 0), Vector3(0.13, 0.15, 0.13), skin, _rng, 3, 6, 0.02)
+	lp.cone(Vector3(0, 1.7, 0), 0.2, 0.1, 0.12, 8, shirt.darkened(0.35))  # Sun hat.
+	for x in [-0.27, 0.27]:
+		lp.beam(Vector3(x, 1.4, 0), Vector3(x * 1.1, 0.95, -0.05), 0.09, shirt)
+	var torso := MeshInstance3D.new()
+	torso.mesh = lp.commit()
+	body.add_child(torso)
+	for side in [["LegL", -0.11], ["LegR", 0.11]]:
+		var leg := Node3D.new()
+		leg.name = side[0]
+		leg.position = Vector3(side[1], 0.9, 0)
+		var lpl := LowPoly.new()
+		lpl.beam(Vector3.ZERO, Vector3(0, -0.82, 0), 0.13, trousers)
+		lpl.box(Vector3(0, -0.86, -0.05), Vector3(0.14, 0.09, 0.24), Color("2b2622"))
+		var mi := MeshInstance3D.new()
+		mi.mesh = lpl.commit()
+		leg.add_child(mi)
+		body.add_child(leg)
+	# A walking pole.
+	var pole := LowPoly.new()
+	pole.beam(Vector3(0.32, 1.0, -0.1), Vector3(0.36, 0.0, -0.3), 0.03, Color("b9b9b9"))
+	var pm := MeshInstance3D.new()
+	pm.mesh = pole.commit()
+	body.add_child(pm)
+	return root

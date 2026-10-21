@@ -70,5 +70,25 @@ func _init() -> void:
 	print("deer hit at 12 m/s: crashed=%s reason=%s" % [rb.crashed, rb.crash_reason])
 	if not rb.crashed or rb.crash_reason != "animal": ok = false
 
+	# A hiker hears a rider coming and steps off the trail...
+	var h: Dictionary = traffic.hikers[0]
+	var w := Bike.new()
+	w.place(c, h.s - 10.5, h.d, 0.0)
+	h.react = 0.2
+	t = 0.0
+	while t < 2.0:
+		traffic.step([w], dt)
+		t += dt
+	var off: bool = absf(h.d - c.trail_d(h.s)) > c.trail_half(h.s)
+	print("hiker steps off the trail: %s" % off)
+	if not off: ok = false
+	# ...but ride straight into one and you both go down.
+	var h2: Dictionary = traffic.hikers[1]
+	var fast := Bike.new()
+	fast.place(c, h2.s - 0.6, h2.d, 10.0)
+	traffic.step([fast], dt)
+	print("hiker hit at 10 m/s: crashed=%s reason=%s, hiker down=%s" % [fast.crashed, fast.crash_reason, h2.down > 0.0])
+	if not fast.crashed or fast.crash_reason != "hiker" or h2.down <= 0.0: ok = false
+
 	print("traffic OK" if ok else "traffic FAILED")
 	quit(0 if ok else 1)
