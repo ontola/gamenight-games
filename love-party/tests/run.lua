@@ -190,6 +190,31 @@ function tests.participation_lifecycle()
 	lifecycle:activity("ordinal:1")
 	equal(#messages, 3)
 end
+function tests.players_updated_keeps_the_match()
+	local renamed, disposed = nil, 0
+	local lifecycle = require("shared.lifecycle").new({ send = function() end }, {
+		hide = function() end, show = function() end, prepare = function() end,
+		dispose = function() disposed = disposed + 1 end,
+		players = function(players) renamed = players end,
+	}, "arena")
+	lifecycle:receive({ type = "prepare", game = "arena", session = "one" })
+	lifecycle:step()
+	lifecycle:receive({ type = "start", session = "one" })
+	disposed = 0
+	lifecycle:receive({ type = "players_updated", session = "stale", players = {} })
+	equal(renamed, nil)
+	lifecycle:receive({ type = "players_updated", session = "one", players = { { id = "a", name = "Joep" } } })
+	equal(renamed[1].name, "Joep")
+	equal(lifecycle.phase, "running")
+	equal(disposed, 0)
+	local roster = { { id = "a", slot = 1, name = "Rocket", color = "#ff0000", score = 4 } }
+	local state = { players = { { id = "a", slot = 1, name = "Rocket", score = 4 } }, roster = roster }
+	require("shared.participation").details(state, roster, { { id = "a", name = "Joep", color = "#00ff00", avatar = "face" } })
+	equal(state.players[1].name, "Joep")
+	equal(state.players[1].avatar, "face")
+	equal(state.players[1].score, 4)
+	equal(roster[1].color, "#00ff00")
+end
 function tests.phone_screens()
 	local sent, seen = {}, {}
 	local l = require("shared.lifecycle").new({ send = function(_, m) sent[#sent + 1] = m end }, {

@@ -52,6 +52,9 @@ function Lifecycle:receive(m)
 	elseif self.session and m.session == self.session then
 		if m.type == "party_updated" and self.hooks.party then
 			self.hooks.party(m.seats or {}, m.players or {}, m.presence or {})
+		elseif m.type == "players_updated" and self.hooks.players then
+			-- New name, colour or face for the same people: never a restart.
+			self.hooks.players(m.players or {})
 		elseif m.type == "start" and self.phase == "ready" then
 			self.phase = "running"
 			self.hooks.show()

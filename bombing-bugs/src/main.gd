@@ -92,6 +92,8 @@ func _ready() -> void:
 	GameNight.disposed.connect(func(_id: String): _trace("dispose"); active = false; session = ""; menu_open = false; overlay.hide())
 	GameNight.setting_changed.connect(_setting)
 	GameNight.roster_changed.connect(_roster_changed)
+	# A profile picked up in the lobby: new name and face, same round.
+	GameNight.players_updated.connect(func(players: Array) -> void: _roster_changed(host_seats, players, []))
 	GameNight.declare_settings(SETTINGS)
 	garden = Garden.new(); add_child(garden); garden.build()
 	camera = Camera3D.new(); add_child(camera)

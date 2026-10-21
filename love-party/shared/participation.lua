@@ -35,4 +35,26 @@ function M.apply(mode, state, seats, identities, presence)
 	state.players = nextPlayers
 	return roster
 end
+--- Give the same people their new name, colour and face (someone picked up a
+--- profile in the lobby), keeping scores and the match as they are.
+function M.details(state, roster, identities)
+	local byId = {}
+	for _, identity in ipairs(identities) do
+		if identity.id then byId[identity.id] = identity end
+	end
+	local function update(list)
+		for _, player in ipairs(list or {}) do
+			local identity = player.id and byId[player.id]
+			if identity then
+				player.name, player.color = identity.name or player.name, identity.color or player.color
+				player.avatar, player.skin_color = identity.avatar, identity.skin_color
+			end
+		end
+	end
+	update(roster)
+	if state then
+		update(state.players)
+		update(state.roster)
+	end
+end
 return M

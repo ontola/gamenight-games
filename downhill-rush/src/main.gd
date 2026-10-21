@@ -86,6 +86,8 @@ func _ready() -> void:
 	GameNight.resumed.connect(func(_s: String) -> void: _set_paused(false))
 	GameNight.disposed.connect(_on_disposed)
 	GameNight.roster_changed.connect(_on_roster)
+	# A profile picked up in the lobby: new name, same race.
+	GameNight.players_updated.connect(func(party_players: Array) -> void: _on_roster([], party_players, []))
 	GameNight.setting_changed.connect(_on_setting)
 	GameNight.declare_settings(SETTINGS)
 	process_mode = Node.PROCESS_MODE_PAUSABLE

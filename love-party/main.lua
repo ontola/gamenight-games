@@ -143,6 +143,9 @@ function love.load(args)
 						Input.bind(roster, pads())
 					end
 				end,
+				players = function(identities)
+					require("shared.participation").details(state, roundRoster, identities)
+				end,
 				dispose = function()
                     if state and mode.dispose then mode.dispose(state) end
 					state = nil
