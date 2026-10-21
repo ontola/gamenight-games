@@ -17,12 +17,12 @@ local function skin(value)
 end
 function Face.drawFace(player,x,y,radius,options)
   options=options or {}; radius=radius or 12
-  local g=love.graphics
+  local g=love.graphics; local a=options.alpha or 1
   g.push("all"); g.translate(x,y); g.rotate(options.rotation or 0)
   if options.outline then
-    g.setColor(skin(options.outline)); g.circle("fill",0,0,radius+3)
+    local r,gg,b=skin(options.outline); g.setColor(r,gg,b,a); g.circle("fill",0,0,radius+3)
   end
-  g.setColor(skin(player.skin_color)); g.circle("fill",0,0,radius)
+  local sr,sg,sb=skin(player.skin_color); g.setColor(sr,sg,sb,a); g.circle("fill",0,0,radius)
   local entry=cache[player]
   if not entry or entry.payload~=player.avatar then
     entry={payload=player.avatar,image=Avatar.image(player.avatar)};cache[player]=entry
@@ -30,10 +30,10 @@ function Face.drawFace(player,x,y,radius,options)
   if entry.image then
     local w,h=entry.image:getDimensions()
     local dx,dy,sx,sy,ox,oy=Face.placement(w,h,0,0,radius,options.facing)
-    g.setColor(1,1,1,1);g.draw(entry.image,dx,dy,0,sx,sy,ox,oy)
+    g.setColor(1,1,1,a);g.draw(entry.image,dx,dy,0,sx,sy,ox,oy)
   else
     g.scale(radius/12,radius/12);g.scale(options.facing==-1 and -1 or 1,1)
-    g.setColor(.08,.09,.12,1)
+    g.setColor(.08,.09,.12,a)
     g.circle("fill",0,-2,1.2);g.circle("fill",6,-2,1.2)
     g.setLineWidth(1);g.line(2,5,6,5)
   end

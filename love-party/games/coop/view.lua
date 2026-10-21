@@ -1,6 +1,5 @@
 local Face=require("shared.face")
 local T=require("games.coop.stack")
-local B=require("games.coop.bubbles")
 local V={}
 local C={bg={.045,.065,.12},panel={.085,.115,.18},ink={.92,.94,.88},dim={.48,.56,.66},mint={.36,.9,.73},orange={1,.58,.36},gold={1,.81,.4}}
 local blocks={{.34,.79,.91},{1,.81,.4},{.72,.50,.91},{.37,.86,.66},{.97,.44,.49},{.40,.56,.96},{1,.62,.33}}
@@ -24,14 +23,8 @@ local function header(app)
   text(app.module==T and "TWO MINDS. ONE STACK." or "SMALL BUBBLES. BIG PROBLEMS.",48,104,12,C.dim)
   box(C.panel,875,29,357,83,16)
   local g=app.game
-  if app.module==T then
-    text("SHARED ROWS",897,43,11,C.mint); text(g.rows.." / "..g.target,896,61,29,C.ink)
-    text("CLEAR THE WHOLE WIDTH",1051,70,10,C.dim,157,"right")
-  else
-    text("WAVE "..g.wave.." / 5",895,44,12,C.mint)
-    text(math.ceil(g.clock).."s",1110,52,31,C.ink,100,"right")
-    for i=1,6 do circle(i<=g.hearts and C.orange or C.dim,903+(i-1)*24,83,7,i<=g.hearts and 1 or .25) end
-  end
+  text("SHARED ROWS",897,43,11,C.mint); text(g.rows.." / "..g.target,896,61,29,C.ink)
+  text("CLEAR THE WHOLE WIDTH",1051,70,10,C.dim,157,"right")
 end
 local function cell(kind,x,y,a)
   local c=blocks[kind]
@@ -71,48 +64,10 @@ function V.stack(app)
   for i,p in ipairs(g.players) do text(legends[p.slot],48,734+(i-1)*24,12,C.dim) end
   text("PAD  D-PAD / A ROTATE / B DROP",850,734,12,C.ink,382,"right")
 end
-function V.bubbles(app)
-  local g=app.game
-  box(C.panel,48,162,1184,515,20)
-  for i=1,12 do
-    local x=80+(i*197)%1110; local y=206+(i*113)%380
-    circle(C.mint,x,y,3,.1)
-  end
-  for _,r in ipairs(B.obstacles(g)) do box(C.gold,r.x,r.y,r.w,r.h,5) end
-  box(C.mint,64,B.floor,1152,4,2)
-  for _,r in ipairs(g.ropes) do
-    box(C.gold,r.x-2,r.y,4,B.floor-r.y,2)
-    color(C.gold); love.graphics.polygon("fill",r.x,r.y-9,r.x-8,r.y+4,r.x+8,r.y+4)
-  end
-  for _,b in ipairs(g.bubbles) do
-    local c=blocks[b.size==3 and 3 or b.size==2 and 1 or 4]
-    circle(c,b.x,b.y,b.r,.17)
-    color(c); love.graphics.setLineWidth(3); love.graphics.circle("line",b.x,b.y,b.r)
-    circle(C.ink,b.x-b.r*.3,b.y-b.r*.35,b.r*.14,.65)
-    text(tostring(b.size),b.x-20,b.y-10,16,c,40,"center")
-  end
-  for _,p in ipairs(g.players) do
-    if p.out>0 then
-      text("BACK IN "..string.format("%.1f",p.out),p.x-65,590,10,C.dim,130,"center")
-    elseif p.invuln<=0 or math.floor(g.time*10)%2==0 then
-      portrait(p,p.x-23,B.floor-49,46)
-      text(p.name or "CPU",p.x-70,B.floor-75,11,C.ink,140,"center")
-    end
-  end
-  if g.phase=="ready" or g.phase=="clear" then
-    box(C.bg,400,306,480,108,18,.95)
-    text(g.phase=="clear" and "CLEAN SWEEP!" or ("WAVE "..g.wave),400,326,32,C.mint,480,"center")
-    text(g.phase=="clear" and "+1 TEAM HEART NEXT WAVE" or "STAY TOGETHER. SHOOT UP.",400,379,11,C.dim,480,"center")
-  end
-  if g.flash>0 then box(C.orange,48,162,1184,515,20,g.flash*.5) end
-  text("BIG BUBBLES SPLIT. SMALL BUBBLES POP. YOUR HEARTS ARE SHARED.",48,697,13,C.mint)
-  text("P1 A D + SPACE    P2 ARROWS + ENTER    P3 J L + I    P4 NUMPAD 4 6 + 8",48,741,12,C.dim)
-  text("PAD  STICK + A TO FIRE",918,741,12,C.ink,314,"right")
-end
 function V.draw(app)
   box(C.bg,0,0,1280,800)
   header(app)
-  if app.module==T then V.stack(app) else V.bubbles(app) end
+  V.stack(app)
   text(app.managed and "BACK  PARTY" or "ESC / START  PAUSE     F11 FULLSCREEN     M SOUND",600,772,10,C.dim,630,"right")
   if app.screen=="menu" then
     box(C.bg,0,0,1280,800)

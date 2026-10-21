@@ -46,6 +46,24 @@ wave restores one heart. Hits briefly knock a player out, then return them
 with temporary invulnerability. Later waves add elevated and moving bounce
 ledges. Harpoons pass through ledges. There is no friendly fire.
 
+The arena fills the whole screen at any aspect ratio and shows no text: hearts
+(top left), wave dots (top right) and a time bar along the top edge carry the
+state. Popped bubbles sometimes drop a power-up, drawn as an icon in a bubble:
+
+| Power | Effect |
+| --- | --- |
+| Triple rope | Fire three parallel ropes at once (10 s) |
+| Ghost rope | Ropes linger for three seconds and keep popping (8 s) |
+| Rapid fire | Several ropes in the air at once, shorter cooldown (10 s) |
+| Speed | Move 60% faster (8 s) |
+| Shield | Absorbs the next hit |
+| Freeze | All bubbles stop for 3.5 s |
+| Dynamite | Every bubble splits down to the smallest size |
+| Heart | One extra team heart |
+
+Timed powers float above the player with a shrinking bar. Getting hit drops
+them. The `powerups` setting turns drops off.
+
 | Input | Move | Fire (hold for repeated shots) |
 | --- | --- | --- |
 | P1 keyboard | A/D | Space |

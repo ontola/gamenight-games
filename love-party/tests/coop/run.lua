@@ -59,6 +59,33 @@ return function()
     local g=B.new(seats); g.phase="play"; g.clock=.001; B.step(g,{},1/120); assert(g.phase=="lost")
     g=B.new(seats); g.phase="clear"; g.wave=5; g.timer=.001; B.step(g,{},1/120); assert(g.phase=="won")
   end)
+  check("multi rope power fires three parallel ropes",function()
+    local g=B.new(seats); g.phase="play"; g.bubbles={{size=1,x=40,y=100,r=20,vx=0,vy=0}}
+    local p=g.players[1]; p.power.multi=5
+    B.step(g,{[1]={fire=true}},1/120); assert(#g.ropes==3)
+    B.step(g,{[1]={fire=true}},.3); assert(#g.ropes==3)
+  end)
+  check("ghost rope lingers and pops more than one bubble",function()
+    local g=B.new(seats); g.phase="play"
+    g.bubbles={{size=1,x=600,y=300,r=20,vx=0,vy=0},{size=1,x=600,y=500,r=20,vx=0,vy=0},{size=1,x=40,y=60,r=20,vx=0,vy=0}}
+    g.ropes={{slot=1,x=600,y=200,life=3,ghost=true}}
+    B.step(g,{},1/120); assert(g.popped==2 and #g.ropes==1)
+    for _=1,120 do B.step(g,{},1/120) end; assert(#g.ropes==1)
+  end)
+  check("shield absorbs a hit and dynamite splits every bubble",function()
+    local g=B.new(seats); g.phase="play"; local p=g.players[1]; p.invuln=0; p.shield=true
+    g.bubbles={{size=1,x=p.x,y=B.floor-25,r=20,vx=0,vy=0}}
+    B.step(g,{},1/120); assert(g.hearts==6 and not p.shield and p.out==0)
+    g=B.new(seats); g.phase="play"; g.settings.powerups=false
+    g.bubbles={{size=3,x=300,y=200,r=54,vx=0,vy=0}}
+    g.pickups={{kind="dynamite",x=g.players[1].x,y=B.floor-18,vy=0,life=5}}
+    B.step(g,{},1/120); assert(#g.bubbles==4)
+    for _,b in ipairs(g.bubbles) do assert(b.size==1) end
+  end)
+  check("the arena follows the screen aspect",function()
+    local g=B.new(seats); local x=g.players[2].x
+    B.resize(g,1920,1080); assert(math.abs(g.width-800*16/9)<.01 and math.abs(g.players[2].x-x*g.width/1280)<.01)
+  end)
   check("CPU crews can clear rows and pop bubbles",function()
     local bots={{slot=1,bot=true},{slot=2,bot=true}}
     local rows,pops=0,0

@@ -11,7 +11,7 @@ Requires LÖVE 11.5; GameNight downloads this shared runtime separately.
 | Blast Party | Destroy crates, collect powers and be the last alive | Move, A to place a bomb, B to detonate remote bombs |
 | Volley Trouble | Win volleyball rounds across four courts, with rotating rules | Move, A/LB jump, X/RB/RT smash, right stick aim |
 | Stack Together | Build a tower together | Move, A rotate, B drop |
-| Bubble Buddies | Clear bubbles cooperatively | Move, A fire |
+| Bubble Buddies | Clear bubbles cooperatively and grab power-ups | Move, A fire |
 | Neon Siege | Survive together; shared score and combo, no friendly fire | Move, right stick to aim, A to dash, B for pulse |
 
 Games own their round rules and score screens. Rounds repeat automatically after
