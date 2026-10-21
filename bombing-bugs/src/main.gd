@@ -383,6 +383,18 @@ func _build_ui() -> void:
 	title_card.visible = false
 	sound = AudioStreamPlayer.new(); sound.volume_db = -16; add_child(sound)
 
+## A player's GameNight face, drawn with the SDK helper inside a ring of their colour.
+class FaceIcon extends Control:
+	static var faces := preload("res://addons/gamenight/face.gd").new()
+	var profile: Dictionary
+	var ring: Color
+	func _ready() -> void: mouse_filter = Control.MOUSE_FILTER_IGNORE
+	func _draw() -> void:
+		var r := minf(size.x,size.y)*.5
+		draw_circle(size*.5,r,Color("2f2a1c"))
+		draw_circle(size*.5,r-1.5,ring)
+		faces.draw_face(self,profile,size*.5,r-3.5)
+
 const FLAGS := ["kick","ghost","remote","pierce","square","line"]
 const TIPS := {"capacity":"Bombs at once","range":"Blast range in tiles","speed":"Extra speed","kick":"Kicks bombs","ghost":"Walks through sand and bombs",
 	"remote":"Remote bombs: B sets them off","pierce":"Blasts bore through sand","square":"Blasts fill the 3x3 around the bomb","line":"Plant again on your bomb to lay a row","skull":"Cursed"}
@@ -397,7 +409,12 @@ func _update_badges(upgraded: int = -1) -> void:
 		var box := VBoxContainer.new(); box.size_flags_horizontal = Control.SIZE_EXPAND_FILL; box.add_theme_constant_override("separation",0); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; badges.add_child(box)
 		var text: String = p.name
 		if sim.settings.teams == "Teams": text += " · T%d"%(p.team+1)
-		var label := _label(text,20,p.color.lightened(.25)); label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; box.add_child(label)
+		# The player's GameNight face sits in front of their name (seated players only).
+		var head := HBoxContainer.new(); head.add_theme_constant_override("separation",6); head.mouse_filter = Control.MOUSE_FILTER_IGNORE; box.add_child(head)
+		var profile: Dictionary = p.get("profile",{})
+		if not profile.is_empty():
+			var face := FaceIcon.new(); face.profile = profile; face.ring = p.color; face.custom_minimum_size = Vector2(34,34); face.size_flags_vertical = Control.SIZE_SHRINK_CENTER; head.add_child(face)
+		var label := _label(text,20,p.color.lightened(.25)); label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; label.size_flags_horizontal = Control.SIZE_EXPAND_FILL; head.add_child(label)
 		label.add_theme_color_override("font_outline_color",Color("2f2a1c")); label.add_theme_constant_override("outline_size",7)
 		# Wraps onto a second row once a bug has collected a whole garden of power-ups.
 		var stats := HFlowContainer.new(); stats.add_theme_constant_override("h_separation",5); stats.add_theme_constant_override("v_separation",2); box.add_child(stats)

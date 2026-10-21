@@ -13,7 +13,12 @@ func run() -> void:
 		var p = game.sim.bugs[i]
 		p.name = ["Ladybug", "Nibbles", "Buzz", "Bean"][i]
 		p.capacity = i+1; p.range = i+2
+		# Seated players carry their GameNight profile; the first two have one.
+		p.profile = {"id":"p%d"%i,"name":p.name,"skin_color":"#d9a066","avatar":""} if i < 2 else {}
 	game._update_badges()
+	for i in game.sim.bugs.size():
+		var head = game.badges.get_child(i).get_child(0)
+		assert(head.get_child_count() == (2 if i < 2 else 1))
 	for i in game.sim.bugs.size():
 		var stats = game.badges.get_child(i).get_child(1)
 		assert(stats.get_child(1).text == str(i+1))
