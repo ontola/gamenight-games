@@ -25,6 +25,11 @@ local duration = tonumber(os.getenv("GNLOVE_MATCH_SECONDS"))
 if duration then
 	duration = U.clamp(duration, 1, 600)
 end
+-- GNLOVE_MATCH_SECONDS caps every round, untimed games included, so the
+-- host contract can watch several rounds finish in one session.
+local function roundLength()
+	return duration or (mode.untimed and math.huge) or mode.duration or 60
+end
 local function pads()
 	return Probe.devices or (managed and Input.hostPads) or (love.joystick and love.joystick.getJoysticks() or {})
 end
@@ -36,7 +41,7 @@ local function prepare(seats, players)
 	resultsTime = 0
 	if state and mode.dispose then mode.dispose(state) end
 	state = mode.new(roster, U.rng(tonumber(os.getenv("GNLOVE_SEED")) or os.time()))
-	remaining, finished, accumulator = mode.untimed and math.huge or duration or mode.duration or 60, false, 0
+	remaining, finished, accumulator = roundLength(), false, 0
 	menu = false
 	if managed and love.graphics then
 		-- Exercise lazy font/texture uploads before reporting Ready. Keep the
@@ -196,7 +201,7 @@ function love.update(dt)
     end) then
         if state.restarted then
             state.restarted = nil
-            remaining, finished, accumulator, resultsTime = mode.untimed and math.huge or duration or mode.duration or 60, false, 0, 0
+            remaining, finished, accumulator, resultsTime = roundLength(), false, 0, 0
         end
         return
     end
@@ -205,7 +210,7 @@ function love.update(dt)
         if resultsTime >= 3 then
             if mode.dispose then mode.dispose(state) end
             state = mode.new(roundRoster, U.rng(os.time()))
-            remaining, finished, accumulator, resultsTime = mode.untimed and math.huge or duration or mode.duration or 60, false, 0, 0
+            remaining, finished, accumulator, resultsTime = roundLength(), false, 0, 0
         end
         return
     end
