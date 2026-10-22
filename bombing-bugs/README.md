@@ -53,7 +53,9 @@ blades flicker as pixel blobs); each clump instead lays one still, soft shadow
 on the soil, stretched away from the sun. The camera looks straight on, tilted
 down well short of top-down (`Garden.CAM_PITCH`/`CAM_YAW`); grass,
 flowers and mushrooms between the camera and the pit are only as tall as they
-can be without hiding the sand. There are no control hints during play.
+can be without hiding the sand. There are no control hints during play. Once a round has a winner, the camera
+hard-cuts to a close-up of the winning bug, which turns to the camera with
+bulging, rolling eyes and its tongue out.
 
 Explosions use Growing Guns' layered blast: lumpy fire clouds along every
 burning cell, flame tongues, embers, dusty smoke, a flash and a fireball light,

@@ -28,6 +28,10 @@ var hex: Node3D
 var lay_time := -1.0
 var eyes: Array[Node3D] = []
 const LAY_TIME := .42
+## The round's winner in the close-up: bulging, rolling eyes, tongue out, cackling.
+var gloating := false
+var gloat_time := 0.0
+var tongue: MeshInstance3D
 
 func build(index: int, player_color: Color) -> void:
 	kind = index % 4
@@ -91,6 +95,27 @@ func animate(dt: float, moving: bool, heading: float, alive: bool) -> void:
 	for i in legs.size(): legs[i].rotation.y = sin(phase+(i%2)*PI)*(.5 if moving else .04)
 	for i in wings.size(): wings[i].rotation.z = (1 if i == 0 else -1)*(.15+sin(phase*2)*.12)
 	_lay(dt)
+	if gloating: _gloat(dt)
+
+func _gloat(dt: float) -> void:
+	gloat_time += dt
+	var g := gloat_time
+	if tongue == null:
+		tongue = Clay.ball(body,Vector3(.04,.29,.52),Vector3(.12,.04,.2),Color("e8697a")); tongue.rotation.x = .7
+	# Mismatched eyes bulge and roll on their own, a little cross-eyed.
+	for i in eyes.size():
+		var e := eyes[i]
+		e.scale = Vector3.ONE*(1.45 if i == 0 else 1.95)*(1.0+.07*sin(g*9.0+i*2.0))
+		var roll := Vector3((.022 if i == 0 else -.018)+sin(g*(5.0+i*3.1))*.025,cos(g*(4.0+i*2.3))*.03,0)
+		(e.get_child(1) as Node3D).position = Vector3(0,.005,.023)+roll
+		(e.get_child(2) as Node3D).position = Vector3(-.013,.035,.043)+roll
+	tongue.scale = Vector3(.12,.04,.2+.07*absf(sin(g*6.0)))
+	# A wheezing cackle: bounce, sway and squash.
+	var squash := sin(g*14.0)*.05
+	body.position.y = absf(sin(g*7.0))*.06
+	body.rotation.z = sin(g*3.5)*.12
+	body.scale = Vector3(1.0+squash,1.0-squash,1.0+squash)
+	for i in legs.size(): legs[i].rotation.y = sin(g*11.0+i)*.35
 
 func lay() -> void:
 	if dead_time < 0: lay_time = 0.0

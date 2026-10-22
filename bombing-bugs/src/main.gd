@@ -38,6 +38,8 @@ var menu_open := false
 var initial_menu := true
 var countdown := 0.0
 var result_time := 0.0
+## Index of the winning bug once the camera has cut to its face; -1 otherwise.
+var closeup := -1
 var round_index := 0
 var held := {}
 var menu_index := 0
@@ -175,6 +177,7 @@ func _frame_camera(cols: int, rows: int) -> void:
 	var back := Vector3(sin(yaw)*cos(pitch),sin(pitch),cos(yaw)*cos(pitch))
 	# Nudge the aim down a little so the player badges along the top have room.
 	var target := Vector3(0,0,-.35)
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL; camera.near = .05; closeup = -1
 	camera.position = target+back*30.0; camera.look_at(target)
 	var right := camera.global_basis.x; var up := camera.global_basis.y
 	var w := 0.0; var h := 0.0
@@ -316,6 +319,16 @@ func _physics_process(dt: float) -> void:
 		if managed: GameNight.notify_finished(session)
 	else: banner.text = ""
 
+## Once a winner is known, a hard cut to a tight shot of its gloating face.
+func _cut_to_winner() -> void:
+	for i in mini(views.size(),sim.bugs.size()):
+		if sim.bugs[i].alive and sim.bugs[i].team == sim.winner: closeup = i; break
+	if closeup < 0: return
+	views[closeup].gloating = true
+	camera.projection = Camera3D.PROJECTION_PERSPECTIVE; camera.fov = 31
+	# Everything nearer than the bug's own cell is clipped, so grass never blocks the shot.
+	camera.near = 2.2
+
 func _winner_name() -> String:
 	if sim.settings.teams == "Teams": return "Team %d" % (sim.winner+1)
 	for p in sim.bugs:
@@ -338,7 +351,12 @@ func _process(dt: float) -> void:
 		var pos: Vector3 = garden.world(p.pos)
 		views[i].position.x = pos.x; views[i].position.z = pos.z
 		views[i].cursed = p.curse != ""
-		views[i].animate(dt,p.moving and not menu_open,p.heading,p.alive)
+		# The winner turns to the camera for its close-up.
+		views[i].animate(dt,p.moving and not menu_open and i != closeup,0.0 if i == closeup else p.heading,p.alive)
+	if sim.ended and sim.winner >= 0 and result_time > .8 and closeup < 0: _cut_to_winner()
+	if closeup >= 0 and closeup < views.size():
+		var head: Vector3 = views[closeup].position+Vector3(0,.5,.3)
+		camera.position = head+Vector3(0,1.25,2.9); camera.look_at(head+Vector3(0,.05,0))
 	# Blasts jolt the camera, harder for bigger ones; clock-driven so takes stay reproducible.
 	garden.shake = maxf(garden.shake-dt*1.4,0.0)
 	var jolt: float = garden.shake*garden.shake*camera.size*.04
