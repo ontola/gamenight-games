@@ -59,7 +59,7 @@ state. Popped bubbles sometimes drop a power-up, drawn as an icon in a bubble:
 | --- | --- |
 | Triple rope | Fire three parallel ropes at once (10 s) |
 | Ghost rope | Ropes linger for three seconds and keep popping (8 s) |
-| Rapid fire | Several ropes in the air at once, shorter cooldown (10 s) |
+| Rapid fire | Up to three volleys in the air at once, shorter cooldown (10 s) |
 | Speed | Move 60% faster (8 s) |
 | Shield | Absorbs the next hit |
 | Freeze | All bubbles stop for 3.5 s |
@@ -67,7 +67,10 @@ state. Popped bubbles sometimes drop a power-up, drawn as an icon in a bubble:
 | Heart | One extra team heart |
 
 Timed powers float above the player with a shrinking bar. Getting hit drops
-them. The `powerups` setting turns drops off.
+them. No power ever makes the next shot wait longer: a triple volley counts as
+one rope, and a ghost rope stops blocking once it reaches the top. Each
+player's harpoon has their colour; spent ropes thin out and fade, and a
+popped bubble's rim breaks into a ring of droplets. The `powerups` setting turns drops off.
 
 | Input | Move | Fire (hold for repeated shots) |
 | --- | --- | --- |

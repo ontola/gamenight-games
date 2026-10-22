@@ -65,6 +65,17 @@ return function()
     B.step(g,{[1]={fire=true}},1/120); assert(#g.ropes==3)
     B.step(g,{[1]={fire=true}},.3); assert(#g.ropes==3)
   end)
+  check("no power makes the next shot wait longer than a plain rope",function()
+    local function wait(power)
+      local g=B.new(seats); g.phase="play"; g.bubbles={{size=1,x=40,y=100,r=20,vx=0,vy=0}}
+      local p=g.players[1]; if power then p.power[power]=30 end
+      B.step(g,{[1]={fire=true}},1/120); local first=#g.ropes
+      for i=1,600 do B.step(g,{[1]={fire=true}},1/120); if #g.ropes>first then return i end end
+      return math.huge
+    end
+    local plain=wait()
+    for _,power in ipairs({"multi","ghost","rapid","speed"}) do assert(wait(power)<=plain,power) end
+  end)
   check("ghost rope lingers and pops more than one bubble",function()
     local g=B.new(seats); g.phase="play"
     g.bubbles={{size=1,x=600,y=300,r=20,vx=0,vy=0},{size=1,x=600,y=500,r=20,vx=0,vy=0},{size=1,x=40,y=60,r=20,vx=0,vy=0}}

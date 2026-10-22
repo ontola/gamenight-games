@@ -84,12 +84,15 @@ local function bubble(b,frozen)
   color(C.ink,.7); G.circle("fill",b.x-b.r*.32,b.y-b.r*.36,b.r*.16)
   color(C.ink,.35); G.circle("fill",b.x-b.r*.08,b.y-b.r*.52,b.r*.07)
 end
-local function rope(g,r)
-  local c=r.ghost and C.ice or C.gold
-  local a=r.ghost and (.75+.25*math.sin(g.time*14+r.x)) * math.min(1,r.life*2) or 1
-  if r.ghost then color(c,a*.18); G.rectangle("fill",r.x-12,r.y,24,g.floor-r.y,10); color(c,a*.3); G.rectangle("fill",r.x-6,r.y,12,g.floor-r.y,6) end
-  color(c,a); G.rectangle("fill",r.x-2,r.y,4,g.floor-r.y,2)
-  G.polygon("fill",r.x,r.y-10,r.x-9,r.y+5,r.x+9,r.y+5)
+-- Each player's harpoon is drawn in their own colour; a ghost rope glows.
+-- `thin` runs from 1 to 0 while a spent rope shrinks to a thread and fades.
+local function rope(g,r,c,thin)
+  thin=thin or 1
+  local a=(r.ghost and (.75+.25*math.sin(g.time*14+r.x)) * math.min(1,r.life*2) or 1)*thin
+  if r.ghost then color(c,a*.18); G.rectangle("fill",r.x-12*thin,r.y,24*thin,g.floor-r.y,10*thin); color(c,a*.3); G.rectangle("fill",r.x-6*thin,r.y,12*thin,g.floor-r.y,6*thin) end
+  local half=.5+1.5*thin
+  color(c,a); G.rectangle("fill",r.x-half,r.y,half*2,g.floor-r.y,half)
+  G.polygon("fill",r.x,r.y-10*thin,r.x-9*thin,r.y+5,r.x+9*thin,r.y+5)
 end
 local function player(g,p)
   local x,y=p.x,g.floor-27; local c=hex(p)
@@ -103,7 +106,7 @@ local function player(g,p)
   color(C.ground,.6); G.ellipse("fill",x,g.floor+3,26,6)
   if p.shield then color(icon.shield,.25+.1*math.sin(g.time*6)); G.circle("fill",x,y,40); G.setLineWidth(2); color(icon.shield,.8); G.circle("line",x,y,40) end
   if (p.power.speed or 0)>0 then for i=1,3 do color(C.mint,.25/i); G.circle("fill",x-p.facing*i*12,y,26) end end
-  Face.drawFace(p,x,y,27,{outline=p.color or string.format("#%02x%02x%02x",c[1]*255,c[2]*255,c[3]*255),facing=p.facing,alpha=blink and .35 or 1})
+  Face.drawFace(p,x,y,27,{facing=p.facing,alpha=blink and .35 or 1})
   -- Active timed powers float above the head with a shrinking bar.
   local list={}; for _,k in ipairs(B.kinds) do if p.power[k] then list[#list+1]=k end end
   for i,k in ipairs(list) do
@@ -124,14 +127,28 @@ function V.draw(g)
   end
   color(C.ground); G.rectangle("fill",0,g.floor,w,800-g.floor)
   color(C.mint,.85); G.rectangle("fill",0,g.floor,w,4)
-  for _,r in ipairs(g.ropes) do rope(g,r) end
+  local colors={}; for _,p in ipairs(g.players) do colors[p.slot]=hex(p) end
+  for _,r in ipairs(g.ropes) do rope(g,r,colors[r.slot] or C.gold) end
+  for _,r in ipairs(g.spent or {}) do rope(g,r,colors[r.slot] or C.gold,1-r.t/B.SPENT) end
   for _,f in ipairs(g.bursts) do
     local t=f.t/.6
     if f.kind then color(icon[f.kind],1-t); G.setLineWidth(3); G.circle("line",f.x,f.y,f.r*(1+t*1.5))
     else
-      local c=sizes[f.size]
-      for i=0,7 do local ang=i*math.pi/4+f.size; local d=f.r*(.6+t*1.4); color(c,1-t); G.circle("fill",f.x+math.cos(ang)*d,f.y+math.sin(ang)*d,4*(1-t)+1) end
-      G.setLineWidth(2); color(c,(1-t)*.6); G.circle("line",f.x,f.y,f.r*(1+t*.6))
+      -- A real bubble's skin tears into a ring of droplets: the rim breaks
+      -- into dashes that drift outward, shrink to dots and fall away.
+      local c=sizes[f.size]; local n=math.floor(f.r*.55)+6
+      local radius=f.r*(1+t*.45); local dash=(1-t)^1.5*math.pi/n*1.3
+      G.setLineWidth(3*(1-t)+1)
+      for i=0,n-1 do
+        local ang=i*2*math.pi/n+f.size*.7
+        local fall=t*t*60
+        color(c,(1-t)*.95)
+        if dash>.02 then
+          G.arc("line","open",f.x,f.y+fall,radius,ang-dash/2,ang+dash/2,4)
+        else
+          G.circle("fill",f.x+math.cos(ang)*radius,f.y+fall+math.sin(ang)*radius,1.5)
+        end
+      end
     end
   end
   for _,b in ipairs(g.bubbles) do bubble(b,frozen) end

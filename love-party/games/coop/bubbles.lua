@@ -8,6 +8,7 @@ B.settings={
  {key="powerups",label="Power-ups",kind="toggle",default=true}}
 local radii={20,34,54}; local bounce={-500,-660,-810}; local speed={230,180,135}
 local GRAVITY=780
+B.SPENT=.3 -- seconds a removed rope takes to fade out on screen
 -- Pickups: timed powers last this long; the rest act once.
 B.kinds={"multi","ghost","rapid","speed","shield","freeze","dynamite","heart"}
 B.duration={multi=10,ghost=8,rapid=10,speed=8}
@@ -15,8 +16,13 @@ local weights={multi=3,ghost=3,rapid=2,speed=2,shield=2,freeze=1.5,dynamite=1,he
 local clamp=U.clamp
 local function bubble(size,x,y,dir) return {size=size,x=x,y=y,r=radii[size],vx=dir*speed[size],vy=bounce[size]} end
 local function event(g,name) g.events[#g.events+1]=name end
+local function retire(g,j)
+  local r=table.remove(g.ropes,j)
+  g.spent[#g.spent+1]={x=r.x,y=r.y,slot=r.slot,ghost=r.ghost,life=math.max(0,r.life),t=0}
+end
 function B.wave(g,n)
-  g.wave=n; g.bubbles={}; g.ropes={}; g.pickups={}; g.freeze=0
+  g.wave=n; g.bubbles={}; g.pickups={}; g.freeze=0
+  g.spent=g.spent or {}; for j=#(g.ropes or {}),1,-1 do retire(g,j) end; g.ropes={}
   g.clock=g.settings.wave_seconds; g.phase="ready"; g.timer=1.5
   local count=math.min(4,n+1)
   for i=1,count do
@@ -28,7 +34,7 @@ function B.new(seats,rng,settings)
   settings=settings or {hearts=6,waves=5,wave_seconds=80,powerups=true}
   if type(rng)~="function" then rng=U.rng(tonumber(rng) or 1) end
   local g={players={},settings=settings,hearts=settings.hearts,phase="play",events={},time=0,popped=0,flash=0,
-    width=B.width,floor=B.floor,ceiling=B.ceiling,rng=rng,bursts={}}
+    width=B.width,floor=B.floor,ceiling=B.ceiling,rng=rng,bursts={},spent={}}
   for _,s in ipairs(seats) do
     g.players[#g.players+1]={slot=s.slot,name=s.name,avatar=s.avatar,bot=s.bot,power={},facing=1}
   end
@@ -39,7 +45,7 @@ function B.resize(g,w,h)
   local width=800*w/math.max(1,h)
   if math.abs(width-g.width)<.01 then return end
   local ratio=width/g.width
-  for _,list in ipairs({g.players,g.bubbles,g.ropes,g.pickups,g.bursts}) do
+  for _,list in ipairs({g.players,g.bubbles,g.ropes,g.pickups,g.bursts,g.spent}) do
     for _,v in ipairs(list) do v.x=v.x*ratio end
   end
   g.width=width
@@ -83,14 +89,22 @@ function B.bot(g,p)
   end
   return {move=best,fire=true}
 end
+-- Powers may only ever make shooting faster. A volley (one, or three with
+-- the triple rope) blocks the next shot while it rises and hangs; a ghost
+-- rope stops blocking once it reaches the top and lingers on its own.
 local function fire(g,p)
-  local active=0; for _,r in ipairs(g.ropes) do if r.slot==p.slot then active=active+1 end end
   local rapid=(p.power.rapid or 0)>0
-  local lanes=(p.power.multi or 0)>0 and {-34,0,34} or {0}
-  if active+#lanes>(rapid and 9 or #lanes) then return end
+  local volleys={}
+  for _,r in ipairs(g.ropes) do
+    if r.slot==p.slot and (not r.ghost or r.y>g.ceiling) then volleys[r.volley or r]=true end
+  end
+  local active=0; for _ in pairs(volleys) do active=active+1 end
+  if active>=(rapid and 3 or 1) then return end
   local ghost=(p.power.ghost or 0)>0
+  local lanes=(p.power.multi or 0)>0 and {-34,0,34} or {0}
+  g.volleys=(g.volleys or 0)+1
   for _,dx in ipairs(lanes) do
-    g.ropes[#g.ropes+1]={x=clamp(p.x+dx,4,g.width-4),y=g.floor-44,life=ghost and 3.2 or 1,slot=p.slot,ghost=ghost}
+    g.ropes[#g.ropes+1]={x=clamp(p.x+dx,4,g.width-4),y=g.floor-44,life=ghost and 3.2 or 1,slot=p.slot,ghost=ghost,volley=g.volleys}
   end
   p.cooldown=rapid and .16 or .28; event(g,"fire")
 end
@@ -128,6 +142,7 @@ function B.step(g,inputs,dt)
   if g.phase=="won" or g.phase=="lost" then return end
   g.time=g.time+dt; g.flash=math.max(0,g.flash-dt)
   for i=#g.bursts,1,-1 do local f=g.bursts[i]; f.t=f.t+dt; if f.t>.6 then table.remove(g.bursts,i) end end
+  for i=#g.spent,1,-1 do local r=g.spent[i]; r.t=r.t+dt; if r.t>=B.SPENT then table.remove(g.spent,i) end end
   if g.phase=="ready" or g.phase=="clear" then
     g.timer=g.timer-dt
     if g.timer<=0 then
@@ -152,7 +167,7 @@ function B.step(g,inputs,dt)
   end
   for i=#g.ropes,1,-1 do
     local r=g.ropes[i]; r.y=math.max(g.ceiling,r.y-1100*dt); r.life=r.life-dt
-    if r.life<=0 then table.remove(g.ropes,i) end
+    if r.life<=0 then retire(g,i) end
   end
   for i=#g.pickups,1,-1 do
     local k=g.pickups[i]
@@ -185,7 +200,7 @@ function B.step(g,inputs,dt)
       local r=g.ropes[j]
       if not b.immune and math.abs(b.x-r.x)<b.r+4 and b.y+b.r>=r.y then
         -- A ghost rope stays up and keeps popping until it fades.
-        if not r.ghost then table.remove(g.ropes,j) end
+        if not r.ghost then retire(g,j) end
         pop(g,b,i); popped=true; break
       end
     end
