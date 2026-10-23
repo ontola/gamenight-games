@@ -74,6 +74,9 @@ function M.background(s, G)
 	local stage, fade = M.stage(s)
 	if fade < 1 and stage > 1 then M.landmark(stage - 1, G, w, h, t, 1 - fade) end
 	M.landmark(stage, G, w, h, t, fade)
+	-- Keep the sky well behind the action: dim and wash out everything above.
+	G.setColor(0.012, 0.016, 0.04, 0.55)
+	G.rectangle("fill", -10, -10, w + 20, h + 20)
 end
 -- Stage 1..6 follows the boss every fourth wave; a new stage fades in.
 function M.stage(s)

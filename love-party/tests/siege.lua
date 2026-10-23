@@ -107,6 +107,15 @@ function tests.fodder_dies_after_landing_a_hit()
 	M.update(s,1/120,{{x=0,y=0}})
 	assert(p.hp==2 and shard.dead)
 end
+function tests.shards_die_on_contact_even_during_invulnerability()
+	local s=fresh(1);s.waveRest=1000
+	local p=s.players[1];p.invul=0
+	local shards={}
+	for i=1,3 do shards[i]=M.spawn(s,"shard",p.x+i,p.y,0) end
+	for _=1,10 do M.update(s,1/120,{{x=0,y=0}}) end
+	assert(p.hp==2,"three shards cost one life")
+	for _,e in ipairs(shards) do assert(e.dead) end
+end
 function tests.hive_hatches_and_dasher_telegraphs()
 	local s=fresh(1);s.waveRest=100
 	local p=s.players[1];p.invul=100

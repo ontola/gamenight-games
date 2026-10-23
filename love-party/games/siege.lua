@@ -577,8 +577,11 @@ local function enemiesStep(s, dt)
 				e.x, e.y = e.x + dx * speed * dt, e.y + dy * speed * dt
 				for _, pilot in ipairs(s.players) do
 					if not e.dead and alive(pilot) and (pilot.x - e.x) ^ 2 + (pilot.y - e.y) ^ 2 < (e.r + 11) ^ 2 then
-						-- Fodder that lands a hit is spent, so it never hides under a pilot.
-						if (M.hurt(s, pilot) or pilot.dash > 0) and not M.tough(e) then
+						-- Fodder that touches a pilot is spent, even while the pilot is
+						-- still blinking from the last hit, so a pack of shards can never
+						-- sit underneath and eat one life after another.
+						M.hurt(s, pilot)
+						if not M.tough(e) then
 							M.kill(s, e)
 						end
 					end
