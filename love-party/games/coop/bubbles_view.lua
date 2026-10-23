@@ -5,7 +5,7 @@ local B=require("games.coop.bubbles")
 local V={}
 local C={sky1={.05,.08,.16},sky2={.10,.07,.20},ink={.95,.96,.9},dim={.48,.56,.66},mint={.36,.9,.73},
   orange={1,.58,.36},gold={1,.81,.4},coral={.97,.44,.49},ice={.6,.88,1},violet={.72,.5,.91},ground={.07,.10,.17}}
-local sizes={{.37,.86,.66},{.34,.79,.91},{.72,.50,.91}}
+local sizes={{.37,.86,.66},{.34,.79,.91},{.72,.50,.91},{1,.62,.33}}
 local slots={{1,.58,.36},{.36,.9,.73},{1,.81,.4},{.61,.53,1}}
 local icon={multi=C.gold,ghost=C.ice,rapid=C.orange,speed=C.mint,shield={.45,.7,1},freeze=C.ice,dynamite=C.coral,heart=C.coral}
 local G
@@ -16,10 +16,16 @@ local function hex(p)
   end
   return slots[(p.slot-1)%4+1]
 end
+local heartShape={}
+for i=0,39 do
+  local t=i/40*math.pi*2
+  heartShape[#heartShape+1]=16*math.sin(t)^3/16
+  heartShape[#heartShape+1]=-(13*math.cos(t)-5*math.cos(2*t)-2*math.cos(3*t)-math.cos(4*t))/16
+end
 local function heart(x,y,s,c,a)
-  color(c,a)
-  G.circle("fill",x-s*.5,y-s*.2,s*.55); G.circle("fill",x+s*.5,y-s*.2,s*.55)
-  G.polygon("fill",x-s*1.04,y,x+s*1.04,y,x,y+s*1.15)
+  G.push(); G.translate(x,y); G.scale(s*1.05)
+  color(c,a); G.polygon("fill",heartShape)
+  G.pop()
 end
 local function star(x,y,r,c,a)
   local pts={}
@@ -66,14 +72,27 @@ local function background(g,w)
 end
 local function hud(g,w)
   -- Time bar along the very top edge.
-  local t=math.max(0,g.clock/g.settings.wave_seconds)
+  local t=math.max(0,g.clock/B.seconds(g))
   color(C.ink,.08); G.rectangle("fill",0,0,w,6)
   color(t<.2 and C.coral or C.mint,.85); G.rectangle("fill",0,0,w*t,6)
-  for i=1,g.settings.hearts do heart(34+(i-1)*34,38,11,i<=g.hearts and C.coral or C.ink,i<=g.hearts and .95 or .14) end
+  local healed=g.healed and g.time-g.healed.at<.9 and g.healed
+  for i=1,g.settings.hearts do
+    local hx,full=34+(i-1)*34,i<=g.hearts
+    if healed and healed.slot==i then
+      -- A restored heart swells once and sends out a soft ring.
+      local t=(g.time-healed.at)/.9
+      G.setLineWidth(2); color(C.coral,(1-t)*.6); G.circle("line",hx,36,12+t*22)
+      heart(hx,38,11*(1+.45*math.sin(math.min(1,t*1.6)*math.pi)),C.coral,.95)
+    else
+      heart(hx,38,11,full and C.coral or C.ink,full and .95 or .14)
+    end
+  end
+  local gap=math.min(24,(w*.4)/math.max(1,g.settings.waves))
+  local dot=math.min(7,gap*.32)
   for i=1,g.settings.waves do
-    local x=w-30-(g.settings.waves-i)*24
-    color(C.gold,i<g.wave and .95 or i==g.wave and .95 or .16)
-    if i==g.wave then G.setLineWidth(3); G.circle("line",x,36,8) else G.circle("fill",x,36,7) end
+    local x=w-30-(g.settings.waves-i)*gap
+    color(C.gold,i<=g.wave and .95 or .16)
+    if i==g.wave then G.setLineWidth(math.max(2,dot*.4)); G.circle("line",x,36,dot+1) else G.circle("fill",x,36,dot) end
   end
 end
 local function bubble(b,frozen)
@@ -102,16 +121,22 @@ local function player(g,p)
     G.setLineWidth(4); color(c,.9); G.arc("line","open",x,y,33,-math.pi/2,-math.pi/2+math.pi*2*(1-p.out/1.2))
     return
   end
-  local blink=p.invuln>0 and math.floor(g.time*10)%2==1
   color(C.ground,.6); G.ellipse("fill",x,g.floor+3,26,6)
   if p.shield then color(icon.shield,.25+.1*math.sin(g.time*6)); G.circle("fill",x,y,40); G.setLineWidth(2); color(icon.shield,.8); G.circle("line",x,y,40) end
   if (p.power.speed or 0)>0 then for i=1,3 do color(C.mint,.25/i); G.circle("fill",x-p.facing*i*12,y,26) end end
-  Face.drawFace(p,x,y,27,{facing=p.facing,alpha=blink and .35 or 1})
+  Face.drawFace(p,x,y,27,{facing=p.facing})
+  if p.invuln>0 and not p.shield then
+    -- Just back in: a soft protective bubble that thins out as it wears off.
+    local a=math.min(1,p.invuln)
+    color(C.ink,.08*a); G.circle("fill",x,y,37)
+    G.setLineWidth(2); color(C.ink,.45*a); G.circle("line",x,y,37)
+    color(C.ink,.6*a); G.circle("fill",x-14,y-20,3)
+  end
   -- Active timed powers float above the head with a shrinking bar.
   local list={}; for _,k in ipairs(B.kinds) do if p.power[k] then list[#list+1]=k end end
   for i,k in ipairs(list) do
     local ix=x+(i-(#list+1)/2)*30; local left=p.power[k]/B.duration[k]
-    local a=left<.25 and (math.floor(g.time*8)%2==0 and .4 or 1) or 1
+    local a=left<.25 and .35+2.6*left or 1
     V.glyph(k,ix,y-56,11,a)
     color(icon[k],.85); G.rectangle("fill",ix-11,y-40,22*left,3)
   end
@@ -154,11 +179,12 @@ function V.draw(g)
   for _,b in ipairs(g.bubbles) do bubble(b,frozen) end
   if frozen then color(C.ice,.06+.04*math.sin(g.time*5)); G.rectangle("fill",0,0,w,g.floor) end
   for _,k in ipairs(g.pickups) do
-    if k.life>1.5 or math.floor(g.time*10)%2==0 then
+    do
       local bob=math.sin(g.time*5+k.x)*3
-      color(icon[k.kind],.18); G.circle("fill",k.x,k.y+bob,18)
-      G.setLineWidth(2); color(icon[k.kind],.9); G.circle("line",k.x,k.y+bob,18)
-      V.glyph(k.kind,k.x,k.y+bob,12,1)
+      local a=math.min(1,k.life/1.5); local r=18*(.6+.4*a)
+      color(icon[k.kind],.18*a); G.circle("fill",k.x,k.y+bob,r)
+      G.setLineWidth(2); color(icon[k.kind],.9*a); G.circle("line",k.x,k.y+bob,r)
+      V.glyph(k.kind,k.x,k.y+bob,12*(.6+.4*a),a)
     end
   end
   for _,p in ipairs(g.players) do player(g,p) end
@@ -167,9 +193,6 @@ function V.draw(g)
     -- Wave intro: the wave dot pulses in the middle of the screen.
     local t=1-g.timer/1.5
     for i=1,g.wave do color(C.gold,math.sin(t*math.pi)*.9); G.circle("fill",w/2+(i-(g.wave+1)/2)*40,330,12) end
-  elseif g.phase=="clear" then
-    local t=1-g.timer/1.5
-    heart(w/2,330-t*40,26+t*12,C.coral,math.sin(t*math.pi))
   elseif g.phase=="won" then
     color(C.sky1,.55); G.rectangle("fill",0,0,w,800)
     for i=1,60 do
@@ -178,9 +201,7 @@ function V.draw(g)
     end
     star(w/2,370,90,C.gold,.95)
   elseif g.phase=="lost" then
-    color({.2,.02,.05},.55); G.rectangle("fill",0,0,w,800)
-    heart(w/2,360,70,C.coral,.35); G.setLineWidth(8); color(C.sky1,.9)
-    G.line(w/2-10,300,w/2+14,340,w/2-12,375,w/2+8,420)
+    color({.2,.02,.05},.5); G.rectangle("fill",0,0,w,800)
   end
   if g.flash>0 then color(C.coral,g.flash*.45); G.rectangle("fill",0,0,w,800) end
 end

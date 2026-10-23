@@ -3,10 +3,10 @@ local U=require("shared.util")
 local B={id="bubble-buddies",title="BUBBLE BUDDIES",floor=748,ceiling=0,width=1280}
 B.settings={
  {key="hearts",label="Team hearts (next round)",kind="number",default=6,min=2,max=12},
- {key="waves",label="Waves to clear (next round)",kind="number",default=5,min=1,max=10},
+ {key="waves",label="Waves to clear (next round)",kind="number",default=20,min=1,max=40},
  {key="wave_seconds",label="Seconds per wave (next round)",kind="number",default=80,min=30,max=150},
  {key="powerups",label="Power-ups",kind="toggle",default=true}}
-local radii={20,34,54}; local bounce={-500,-660,-810}; local speed={230,180,135}
+local radii={20,34,54,78}; local bounce={-500,-660,-810,-900}; local speed={230,180,135,110}
 local GRAVITY=780
 B.SPENT=.3 -- seconds a removed rope takes to fade out on screen
 -- Pickups: timed powers last this long; the rest act once.
@@ -14,24 +14,39 @@ B.kinds={"multi","ghost","rapid","speed","shield","freeze","dynamite","heart"}
 B.duration={multi=10,ghost=8,rapid=10,speed=8}
 local weights={multi=3,ghost=3,rapid=2,speed=2,shield=2,freeze=1.5,dynamite=1,heart=1}
 local clamp=U.clamp
-local function bubble(size,x,y,dir) return {size=size,x=x,y=y,r=radii[size],vx=dir*speed[size],vy=bounce[size]} end
+local function bubble(size,x,y,dir,pace) return {size=size,x=x,y=y,r=radii[size],vx=dir*speed[size]*(pace or 1),vy=bounce[size],pace=pace} end
 local function event(g,name) g.events[#g.events+1]=name end
 local function retire(g,j)
   local r=table.remove(g.ropes,j)
   g.spent[#g.spent+1]={x=r.x,y=r.y,slot=r.slot,ghost=r.ghost,life=math.max(0,r.life),t=0}
 end
+-- Waves grow steadily: more bubbles, bigger ones (giants from wave 8),
+-- faster sideways drift and busier ledges. Each size costs 2^(size-1).
+function B.layout(n)
+  local top=n<3 and 2 or n<8 and 3 or 4
+  local budget=math.floor(3+n*1.6)
+  local sizes={}
+  while budget>0 and #sizes<7 do
+    local size=top
+    while size>1 and 2^(size-1)>budget do size=size-1 end
+    sizes[#sizes+1]=size; budget=budget-2^(size-1)
+  end
+  return sizes,1+math.min(.6,(n-1)*.03)
+end
 function B.wave(g,n)
   g.wave=n; g.bubbles={}; g.pickups={}; g.freeze=0
   g.spent=g.spent or {}; for j=#(g.ropes or {}),1,-1 do retire(g,j) end; g.ropes={}
-  g.clock=g.settings.wave_seconds; g.phase="ready"; g.timer=1.5
-  local count=math.min(4,n+1)
-  for i=1,count do
-    g.bubbles[i]=bubble(n<3 and 2 or 3,g.width*i/(count+1),170+(i%2)*70,i%2==0 and 1 or -1)
+  g.clock=B.seconds(g); g.phase="ready"; g.timer=1.5
+  local sizes,pace=B.layout(n)
+  for i,size in ipairs(sizes) do
+    g.bubbles[i]=bubble(size,g.width*i/(#sizes+1),150+(i%2)*80,i%2==0 and 1 or -1,pace)
   end
   for i,p in ipairs(g.players) do p.x=g.width*i/(#g.players+1); p.out=0; p.invuln=2; p.cooldown=0 end
 end
+-- Bigger waves get a little more time.
+function B.seconds(g) return g.settings.wave_seconds*(1+(g.wave-1)*.03) end
 function B.new(seats,rng,settings)
-  settings=settings or {hearts=6,waves=5,wave_seconds=80,powerups=true}
+  settings=settings or {hearts=6,waves=20,wave_seconds=80,powerups=true}
   if type(rng)~="function" then rng=U.rng(tonumber(rng) or 1) end
   local g={players={},settings=settings,hearts=settings.hearts,phase="play",events={},time=0,popped=0,flash=0,
     width=B.width,floor=B.floor,ceiling=B.ceiling,rng=rng,bursts={},spent={}}
@@ -51,13 +66,17 @@ function B.resize(g,w,h)
   g.width=width
 end
 function B.obstacles(g)
-  local c=g.width/2
-  if g.wave==2 or g.wave==4 then return {{x=c-130,y=g.floor-300,w=260,h=18}} end
-  if g.wave>=3 then
-    local s=math.sin(g.time*.5)*95
-    return {{x=c-380+s,y=g.floor-266,w=180,h=18},{x=c+195-s,y=g.floor-316,w=180,h=18}}
+  local c,n=g.width/2,g.wave
+  if n<=2 then return {} end
+  if n<=4 then return {{x=c-130,y=g.floor-300,w=260,h=18}} end
+  local s=math.sin(g.time*.5)*95
+  local list={{x=c-380+s,y=g.floor-266,w=180,h=18},{x=c+195-s,y=g.floor-316,w=180,h=18}}
+  if n>=10 then
+    -- A third ledge sweeps across the middle, faster as the waves climb.
+    local q=math.sin(g.time*(.6+math.min(.6,(n-10)*.04)))*(g.width*.32)
+    list[3]={x=c-90+q,y=g.floor-430,w=180,h=18}
   end
-  return {}
+  return list
 end
 function B.roll(g)
   local total=0
@@ -112,12 +131,12 @@ local function pop(g,b,i)
   table.remove(g.bubbles,i)
   if b.size>1 then
     for _,dir in ipairs({-1,1}) do
-      local c=bubble(b.size-1,b.x+dir*5,b.y,dir); c.immune=.35; g.bubbles[#g.bubbles+1]=c
+      local c=bubble(b.size-1,b.x+dir*5,b.y,dir,b.pace); c.immune=.35; g.bubbles[#g.bubbles+1]=c
     end
   end
   g.bursts[#g.bursts+1]={x=b.x,y=b.y,r=b.r,size=b.size,t=0}
   g.popped=g.popped+1; event(g,"pop")
-  if g.settings.powerups~=false and g.rng()<.17 then
+  if g.settings.powerups~=false and g.rng()<.09 then
     g.pickups[#g.pickups+1]={kind=B.roll(g),x=b.x,y=b.y,vy=-180,life=8}
   end
 end
@@ -125,7 +144,7 @@ local function collect(g,p,k)
   if B.duration[k.kind] then p.power[k.kind]=B.duration[k.kind]
   elseif k.kind=="shield" then p.shield=true
   elseif k.kind=="freeze" then g.freeze=3.5
-  elseif k.kind=="heart" then g.hearts=math.min(g.settings.hearts,g.hearts+1)
+  elseif k.kind=="heart" then g.hearts=math.min(g.settings.hearts,g.hearts+1); g.healed={slot=g.hearts,at=g.time}
   elseif k.kind=="dynamite" then
     -- Split every bubble down to the smallest size, Pang style.
     local done=false
@@ -147,7 +166,7 @@ function B.step(g,inputs,dt)
     g.timer=g.timer-dt
     if g.timer<=0 then
       if g.phase=="clear" then
-        if g.wave>=g.settings.waves then g.phase="won" else g.hearts=math.min(g.settings.hearts,g.hearts+1); B.wave(g,g.wave+1) end
+        if g.wave>=g.settings.waves then g.phase="won" else B.wave(g,g.wave+1) end
       else g.phase="play" end
     end
     return
@@ -215,7 +234,10 @@ function B.step(g,inputs,dt)
       end
     end end
   end
-  if #g.bubbles==0 then g.phase="clear"; g.timer=1.5; g.pickups={}; event(g,"clear") end
+  if #g.bubbles==0 then
+    g.phase="clear"; g.timer=1.5; g.pickups={}; event(g,"clear")
+    if g.wave<g.settings.waves and g.hearts<g.settings.hearts then g.hearts=g.hearts+1; g.healed={slot=g.hearts,at=g.time} end
+  end
 end
 function B.render(g,overlay) require("games.coop.bubbles_view").render(g,overlay) end
 return B

@@ -46,8 +46,9 @@ are J/L, I rotate, K soft drop, U hard drop; and Numpad 4/6, 8 rotate,
 ### Bubble Buddies
 
 Fire vertical harpoons. Large bubbles split in two; the smallest disappear.
-Survive five waves with six shared hearts and 80 seconds per wave. Clearing a
-wave restores one heart. Hits briefly knock a player out, then return them
+Survive twenty waves (up to 40 in settings) with six shared hearts. Each wave
+brings more and bigger bubbles (giants from wave 8), faster drift, more
+ledges and a little more time. Clearing a wave restores one heart. Hits briefly knock a player out, then return them
 with temporary invulnerability. Later waves add elevated and moving bounce
 ledges. Harpoons pass through ledges. There is no friendly fire.
 

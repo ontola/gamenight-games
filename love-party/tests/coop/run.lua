@@ -57,7 +57,7 @@ return function()
   end)
   check("timer and fifth wave produce terminal results",function()
     local g=B.new(seats); g.phase="play"; g.clock=.001; B.step(g,{},1/120); assert(g.phase=="lost")
-    g=B.new(seats); g.phase="clear"; g.wave=5; g.timer=.001; B.step(g,{},1/120); assert(g.phase=="won")
+    g=B.new(seats); g.phase="clear"; g.wave=g.settings.waves; g.timer=.001; B.step(g,{},1/120); assert(g.phase=="won")
   end)
   check("multi rope power fires three parallel ropes",function()
     local g=B.new(seats); g.phase="play"; g.bubbles={{size=1,x=40,y=100,r=20,vx=0,vy=0}}
@@ -108,6 +108,15 @@ return function()
     s.rows=3; assert(M.setting("target",20)); M.restart(s)
     assert(s.rows==0 and s.target==20 and s.restarted and s.players[2].id=="b")
     M.setting("target",12)
+  end)
+  check("bubble waves keep getting harder",function()
+    local last=0
+    for n=1,40 do
+      local sizes,pace=B.layout(n); local cost=0
+      for _,size in ipairs(sizes) do cost=cost+2^(size-1) end
+      assert(cost>=last and pace>=1 and #sizes<=7); last=cost
+    end
+    local big=B.layout(8); assert(big[1]==4)
   end)
   check("CPU crews can clear rows and pop bubbles",function()
     local bots={{slot=1,bot=true},{slot=2,bot=true}}
