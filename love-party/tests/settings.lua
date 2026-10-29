@@ -2,7 +2,7 @@
 local U=require('shared.util')
 local Lifecycle=require('shared.lifecycle')
 local coop=require('games.coop')
-local games={require('games.trails'),require('games.blast'),require('games.siege'),require('games.ricochet'),require('games.volley'),coop(require('games.coop.stack')),coop(require('games.coop.bubbles'))}
+local games={require('games.trails'),require('games.blast'),require('games.siege'),require('games.volley'),coop(require('games.coop.stack')),coop(require('games.coop.bubbles'))}
 local function roster() return {{slot=1,name='A',score=0},{slot=2,name='B',score=0}} end
 local idle={{x=0,y=0},{x=0,y=0}}
 local function defaults(game) for _,spec in ipairs(game.settings) do assert(game.setting(spec.key,spec.default)) end end
@@ -66,21 +66,15 @@ assert(#gravity.fields(space)==0,'running round must retain its settings')
 space=siege.new(roster(),U.rng(1));space.wave=7;space.time=10
 assert(#gravity.fields(space)==1)
 assert(#waves.plan(2,2,1280,720,'intense')>#waves.plan(2,2,1280,720,'relaxed'));defaults(siege)
-local tanks=games[4];tanks.setting('cover',false);tanks.setting('bounces',0);tanks.setting('shot_speed',150)
-local arena=tanks.new(roster(),U.rng(1));assert(#arena.cover==0)
-local p=arena.players[1]
-arena.shots={{x=1200,y=400,vx=430,vy=0,owner=p,ttl=2,bounces=0}}
-tanks.update(arena,.02,idle);assert(#arena.shots==0,'zero ricochets removes a wall hit')
-defaults(tanks)
-local volley=games[5];volley.setting('target',3);volley.setting('arena','lava')
+local volley=games[4];volley.setting('target',3);volley.setting('arena','lava')
 local court=volley.new(roster());assert(court.target==3 and court.arena=='lava');defaults(volley)
-local stack=games[6];stack.setting('target',4)
+local stack=games[5];stack.setting('target',4)
 assert(stack.new(roster()).target==4);defaults(stack)
-local bubbles=games[7];bubbles.setting('hearts',2);bubbles.setting('wave_seconds',30);bubbles.setting('waves',1)
+local bubbles=games[6];bubbles.setting('hearts',2);bubbles.setting('wave_seconds',30);bubbles.setting('waves',1)
 local bubble=bubbles.new(roster());assert(bubble.hearts==2 and bubble.clock==30)
 bubble.phase='clear';bubble.timer=0;require('games.coop.bubbles').step(bubble,{},.01)
 assert(bubble.phase=='won');defaults(bubbles)
-print('PASS settings affect gameplay and respect round boundaries for all seven shared games')
+print('PASS settings affect gameplay and respect round boundaries for all six shared games')
 
 
 

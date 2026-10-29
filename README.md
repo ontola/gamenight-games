@@ -2,7 +2,7 @@
 
 The shared LÖVE games live here. Their Git history was extracted from [GameNight](https://github.com/ontola/gamenight).
 
-- `love-party/`: Blast Party, Neon Trails, Neon Siege, Ricochet Club, Volley Trouble, Stack Together and Bubble Buddies, plus their shared runner.
+- `love-party/`: Blast Party, Neon Trails, Neon Siege, Volley Trouble, Stack Together and Bubble Buddies, plus their shared runner.
 - `downhill-rush/`: Downhill Rush, a standalone Godot 4 mountain-bike party game.
 - `bombing-bugs/`: Bombing Bugs, a Godot 4 clay-style insect bomb arena with smooth movement, AI and teams. A separate successor experiment to Blast Party; it does not replace the published LÖVE build.
 - Hexstead moved to its own repository, [joepio/hexstead](https://github.com/joepio/hexstead), as a Godot 3D game. The earlier LÖVE prototype is in this repository's history.

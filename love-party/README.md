@@ -6,7 +6,6 @@ Requires LÖVE 11.5; GameNight downloads this shared runtime separately.
 
 | Game | Goal | Controls |
 | --- | --- | --- |
-| Ricochet Club | Tank combat with bouncing shots and destructible cover | Move, right stick aim, RB/RT fire, B shield |
 | Neon Trails | Survive the trails; last rider earns +3, then everyone respawns | Turn; no reversing |
 | Blast Party | Destroy crates, collect powers and be the last alive | Move, A to place a bomb, B to detonate remote bombs |
 | Volley Trouble | Win volleyball rounds across four courts, with rotating rules | Move, A/LB jump, X/RB/RT smash, right stick aim |
@@ -189,21 +188,7 @@ coordinates or stretching their shapes. Neon Siege uses the full display as its
 arena, with no border or letterboxing, and adapts its world width to the display. Neon Siege keeps a small shared combo
 score below the arena and health indicators beside players.
 
-## More games
-
-- **Ricochet Club** (`ricochet-club`): move tanks, aim with the right stick (or
-  movement direction), hold RB or RT to fire without taking your thumb off aim. Shots bounce up to four times. Twelve crates block movement and absorb shots;
-  three hits destroy a crate, opening new routes. Cover resets each round. A hit earns
-  +3 and costs the target 1; your own bounced shots cost you 1. B shields for
-  0.6 seconds with a three-second cooldown. Hits grant brief invulnerability.
-  A paints a diamond-shaped burst every four seconds. Your score is the number
-  of tiles currently owned. Simultaneous claims leave a tile unchanged.
-Both support 2–4 local players, shared keyboards, controllers and bots.
-Secondary keyboard keys are Left Shift, Right Shift, O and Y. Tests exercise
-collisions, shield timing, paint ownership, core damage and 95-second simulations
-at each supported player count. They remain prototypes pending human playtesting.
-
-Bumper Royale, Anticonception and Meteor Dash have been retired after playtesting. Their source remains in version control for reference, but they are excluded from the playable collection and release packages.
+Bumper Royale has been retired after playtesting. Its source remains in version control for reference, but it is excluded from the playable collection and release packages. Ricochet Club, Paint Rush, Meteor Dash and Anticonception were removed entirely.
 
 ## Executable integration observations
 

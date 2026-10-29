@@ -353,21 +353,8 @@ function tests.bumper_knockout()
 	equal(b.score, 3)
 	assert(a.x < 900)
 end
-function tests.meteor_shield()
-	local m = require("games.meteor")
-	local s = m.new(roster(2), U.rng(1))
-	local a = s.players[1]
-	s.objects = { { x = a.x, y = a.y, r = 15, speed = 0 } }
-	m.update(s, 0.01, { { x = 0, y = 0, action = true }, { x = 0, y = 0 } })
-	assert(a.score >= 0)
-	equal(#s.objects, 1)
-	a.shield = 0
-	m.update(s, 0.01, { { x = 0, y = 0 }, { x = 0, y = 0 } })
-	assert(a.score < 0)
-	equal(#s.objects, 0)
-end
 function tests.bot_soak_all_player_counts()
-	for _, name in ipairs({ "bumper", "trails", "meteor", "blast" }) do
+	for _, name in ipairs({ "bumper", "trails", "blast" }) do
 		local m = require("games." .. name)
 		for n = 2, 4 do
 			local s = m.new(roster(n), U.rng(123))
@@ -386,7 +373,6 @@ function tests.bot_soak_all_player_counts()
 end
 require("tests.blast")
 require("tests.siege")
-require("tests.collection")
 local n = 0
 for name, test in pairs(tests) do
 	test()

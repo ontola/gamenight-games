@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ontola/gamenight
-          ref: b46414a5a513942edb16dd434b78779b68e142b0
+          ref: cc3ad5523acf87647057833ef467a701012d0618
           path: host
       - uses: actions/setup-python@v5
         with:
@@ -70,7 +70,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        game: [blast-party, neon-trails, neon-siege, ricochet-club, volley-trouble, stack-together, bubble-buddies]
+        game: [blast-party, neon-trails, neon-siege, volley-trouble, stack-together, bubble-buddies]
         platform: [windows, mac]
     steps:
       - uses: actions/download-artifact@v4
