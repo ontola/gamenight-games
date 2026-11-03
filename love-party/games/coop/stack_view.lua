@@ -1,5 +1,5 @@
--- Full-screen Stack Together renderer. No words: faces, next-piece previews
--- and a row meter on both sides of the well carry everything.
+-- Full-screen Stack Together renderer. No words: faces, next-piece previews,
+-- the kept (Y) piece and a row meter on both sides of the well carry everything.
 local Face=require("shared.face")
 local T=require("games.coop.stack")
 local V={}
@@ -22,6 +22,11 @@ local function cell(kind,x,y,a,size)
     color(C.ink,.28*a); G.rectangle("fill",x+size*.14,y+size*.12,size*.72,size*.14,size*.07)
     G.setColor(0,0,0,.18*a); G.rectangle("fill",x+size*.1,y+size*.76,size*.8,size*.12,size*.06)
   end
+end
+local function preview(kind,cx,cy,size,a)
+  local cells=T.cells(kind,0); local mw,mh=0,0
+  for _,v in ipairs(cells) do mw=math.max(mw,v[1]+1); mh=math.max(mh,v[2]+1) end
+  for _,v in ipairs(cells) do cell(kind,cx-mw*size/2+v[1]*size,cy-mh*size/2+v[2]*size,a,size) end
 end
 local function star(x,y,r,c,a)
   local pts={}
@@ -80,10 +85,13 @@ function V.draw(g)
     local c=hex(p)
     color(c,.14); G.circle("fill",cx,250,92)
     Face.drawFace(p,cx,250,64,{outline=p.color or string.format("#%02x%02x%02x",c[1]*255,c[2]*255,c[3]*255),facing=-side})
-    color(c,.1); G.rectangle("fill",cx-90,420,180,150,18)
-    local cells=T.cells(p.next,0); local mw,mh=0,0
-    for _,v in ipairs(cells) do mw=math.max(mw,v[1]+1); mh=math.max(mh,v[2]+1) end
-    for _,v in ipairs(cells) do cell(p.next,cx-mw*17+v[1]*34,495-mh*17+v[2]*34,1,34) end
+    color(c,.1); G.rectangle("fill",cx-90,400,180,150,18)
+    preview(p.next,cx,475,34,1)
+    -- Kept piece: a gold-rimmed slot below the next piece. Dimmed once this
+    -- piece has already been swapped, since Y only works again after it lands.
+    color(C.gold,.08); G.rectangle("fill",cx-75,590,150,130,18)
+    G.setLineWidth(3); color(C.gold,p.held and .2 or .55); G.rectangle("line",cx-75,590,150,130,18)
+    if p.hold then preview(p.hold,cx,655,30,p.held and .35 or 1) end
   end
   if g.phase=="won" then
     color(C.sky1,.55); G.rectangle("fill",0,0,w,800)

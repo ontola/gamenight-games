@@ -24,13 +24,13 @@ return function(module)
  end
  function M.input(slot)
   local v=Input.sample(slot)
-  return {move=v.x<-.35 and -1 or v.x>.35 and 1 or 0,rotate=v.action or v.y<-.35,down=v.y>.35,drop=v.secondary,fire=v.action}
+  return {move=v.x<-.35 and -1 or v.x>.35 and 1 or 0,rotate=v.action,hold=v.tertiary,down=v.y>.35,drop=v.secondary,fire=v.action}
  end
  function M.bot(s,p) return module.bot(s,p) end
  function M.update(s,dt,inputs)
   local bySlot={};for i,p in ipairs(s.players) do bySlot[p.slot]=inputs[i] end
   module.step(s,bySlot,dt)
-  for _,event in ipairs(s.events) do Audio.play(event=="pop" and "hit" or event=="clear" and "point" or event) end
+  for _,event in ipairs(s.events) do Audio.play(event=="pop" and "hit" or event=="clear" and "point" or event=="hold" and "pickup" or event) end
   s.events={};s.over=s.phase=="won" or s.phase=="lost"
  end
  function M.finish(s) if not s.over then s.phase="won" end end

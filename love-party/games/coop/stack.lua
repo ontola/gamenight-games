@@ -32,11 +32,25 @@ local function nextPiece(g,p)
   end
   return table.remove(p.bag)
 end
-function T.spawn(g,p)
-  p.kind=p.next or nextPiece(g,p); p.next=nextPiece(g,p)
+local function enter(g,p)
   p.x,p.y,p.rot,p.fall,p.repeatTime=p.lane+1,1,0,0,0
   p.ai=nil; p.age=0
   if not T.fits(g,p,p.x,p.y,0) then g.phase="lost"; g.reason="THE STACK REACHED THE TOP" end
+end
+function T.spawn(g,p)
+  p.kind=p.next or nextPiece(g,p); p.next=nextPiece(g,p)
+  p.held=false
+  enter(g,p)
+end
+-- Y swaps the falling piece with the one kept aside (or the next one when the
+-- slot is empty). Once per piece, so holding can't stall the round.
+function T.hold(g,p)
+  if p.held then return false end
+  if p.hold then p.kind,p.hold=p.hold,p.kind
+  else p.hold=p.kind; p.kind=p.next; p.next=nextPiece(g,p) end
+  enter(g,p); p.held=true
+  g.events[#g.events+1]="hold"
+  return true
 end
 function T.new(seats,seed,settings)
   settings=settings or {target=12,speed=100}
@@ -141,6 +155,8 @@ function T.step(g,inputs,dt)
         p.repeatTime=move~=p.previous.move and .19 or .075
       end
     else p.repeatTime=0 end
+    if a.hold and not p.previous.hold then T.hold(g,p) end
+    if g.phase~="play" then break end
     if a.rotate and not p.previous.rotate then
       local r=(p.rot+1)%4
       for _,kick in ipairs({0,-1,1,-2,2}) do
@@ -156,7 +172,7 @@ function T.step(g,inputs,dt)
         if T.fits(g,p,p.x,p.y+1,p.rot) then p.y=p.y+1 else lock(g,p) end
       end
     end
-    p.previous={move=move,rotate=a.rotate,drop=a.drop}
+    p.previous={move=move,rotate=a.rotate,drop=a.drop,hold=a.hold}
     if g.phase~="play" then break end
   end
 end

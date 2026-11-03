@@ -25,6 +25,28 @@ return function()
     local count=0; for _,r in ipairs(g.board) do for _ in pairs(r) do count=count+1 end end
     assert(count==4 and g.players[1].y==1)
   end)
+  check("Y keeps the falling piece aside and swaps it back once per piece",function()
+    local g=T.new(seats); local p=g.players[1]
+    local first,second,third=p.kind,p.next,nil
+    T.step(g,{[1]={hold=true}},1/120)
+    assert(p.hold==first and p.kind==second and p.held); third=p.next
+    -- Holding the button, or pressing again before landing, does nothing.
+    T.step(g,{[1]={}},1/120); T.step(g,{[1]={hold=true}},1/120)
+    assert(p.hold==first and p.kind==second)
+    T.step(g,{[1]={drop=true}},1/120)
+    assert(p.kind==third and not p.held)
+    T.step(g,{[1]={hold=true}},1/120)
+    assert(p.kind==first and p.hold==third and p.y==1 and p.rot==0)
+  end)
+  check("up on the stick no longer rotates; A does",function()
+    local M=require("games.coop")(T); local Input=require("shared.input")
+    local sample=Input.sample
+    Input.sample=function() return {x=0,y=-1,action=false,secondary=false,tertiary=false} end
+    assert(not M.input(1).rotate)
+    Input.sample=function() return {x=0,y=0,action=true,secondary=false,tertiary=true} end
+    local a=M.input(1); assert(a.rotate and a.hold)
+    Input.sample=sample
+  end)
   check("shared target wins and terminal state freezes",function()
     local g=T.new(seats); g.rows=11
     for x=1,12 do g.board[18][x]=2 end

@@ -3,10 +3,10 @@ local M = {
 	active = {},
 	keyboardOnly = {},
 	keys = {
-		{ "a", "d", "w", "s", "space", "lshift" },
-		{ "left", "right", "up", "down", "rctrl", "rshift" },
-		{ "j", "l", "i", "k", "u", "o" },
-		{ "f", "h", "t", "g", "r", "y" },
+		{ "a", "d", "w", "s", "space", "lshift", "e" },
+		{ "left", "right", "up", "down", "rctrl", "rshift", "/" },
+		{ "j", "l", "i", "k", "u", "o", "p" },
+		{ "f", "h", "t", "g", "r", "y", "v" },
 	},
 }
 
@@ -97,7 +97,7 @@ function M.detach(pad)
 	end
 end
 function M.sample(slot, fireWithShoulder)
-	local x, y, action, secondary = 0, 0, false, false
+	local x, y, action, secondary, tertiary = 0, 0, false, false, false
 	local aimX, aimY = 0, 0
 	local pad = M.pads[slot]
 	if pad and pad:isConnected() and pad:isGamepad() then
@@ -131,6 +131,7 @@ function M.sample(slot, fireWithShoulder)
 			action = pad:isGamepadDown("a")
 		end
 		secondary = pad:isGamepadDown("b")
+		tertiary = pad:isGamepadDown("y")
 	end
 	if love.keyboard and M.active[slot] then
 		local k = M.keys[slot]
@@ -146,6 +147,7 @@ function M.sample(slot, fireWithShoulder)
 		end
 		action = action or love.keyboard.isDown(k[5])
 		secondary = secondary or love.keyboard.isDown(k[6])
+		tertiary = tertiary or love.keyboard.isDown(k[7])
 	end
 	local n = math.sqrt(x * x + y * y)
 	if n > 1 then
@@ -156,6 +158,7 @@ function M.sample(slot, fireWithShoulder)
 		y = y,
 		action = action,
 		secondary = secondary,
+		tertiary = tertiary,
 		aimX = aimX,
 		aimY = aimY,
 		autoAim = M.keyboardOnly[slot] == true,
