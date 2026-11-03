@@ -124,7 +124,7 @@ local function player(g,p)
   color(C.ground,.6); G.ellipse("fill",x,g.floor+3,26,6)
   if p.shield then color(icon.shield,.25+.1*math.sin(g.time*6)); G.circle("fill",x,y,40); G.setLineWidth(2); color(icon.shield,.8); G.circle("line",x,y,40) end
   if (p.power.speed or 0)>0 then for i=1,3 do color(C.mint,.25/i); G.circle("fill",x-p.facing*i*12,y,26) end end
-  Face.drawFace(p,x,y,27,{facing=p.facing})
+  Face.drawFace(p,x,y,27,{outline=p.color or string.format("#%02x%02x%02x",c[1]*255,c[2]*255,c[3]*255),facing=p.facing})
   if p.invuln>0 and not p.shield then
     -- Just back in: a soft protective bubble that thins out as it wears off.
     local a=math.min(1,p.invuln)
