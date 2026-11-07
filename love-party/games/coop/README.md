@@ -1,4 +1,4 @@
-# GameNight Co-op Arcade
+# Gamepad Party Co-op Arcade
 
 Two original LÖVE 11.5 games inspired by shared falling-block puzzles and
 Bubble Trouble/Pang. Procedural graphics and synthesized audio; no downloads
@@ -15,11 +15,11 @@ love games/coop-arcade --game=bubble-buddies
 
 Up/Down chooses a game; Left/Right chooses CPU practice or human players;
 Enter/A starts. Stack Together has two players. Bubble Buddies has two or four
-players in standalone mode and supports two to four occupied GameNight seats.
+players in standalone mode and supports two to four occupied Gamepad Party seats.
 Start/Escape pauses; Q/B from pause returns to the menu. F11 toggles fullscreen,
 M toggles sound. Choose **two human players** to use a second gamepad instead
 of the CPU. The menu reports detected controllers. A disconnected pad pauses
-play (or requests the GameNight party); remaining controller slots stay stable.
+play (or requests the Gamepad Party party); remaining controller slots stay stable.
 
 ### Stack Together
 
@@ -39,7 +39,7 @@ exists in Bubble Buddies.
 | P2 keyboard | Left/Right | Up | Down | Enter |
 | Controller | D-pad or stick | A | D-pad Down | B |
 
-If GameNight seats the two players in slots 3/4, their keyboard equivalents
+If Gamepad Party seats the two players in slots 3/4, their keyboard equivalents
 are J/L, I rotate, K soft drop, U hard drop; and Numpad 4/6, 8 rotate,
 5 soft drop, 0 hard drop. The game displays the occupied slots' controls.
 
@@ -81,7 +81,7 @@ popped bubble's rim breaks into a ring of droplets. The `powerups` setting turns
 | P4 keyboard | Numpad 4/6 | Numpad 8 |
 | Controller | Stick or D-pad | A |
 
-## GameNight
+## Gamepad Party
 
 Both games have local catalog entries and entries in `examples/party-shelf.json`.
 For a focused source shelf, run the daemon from the repository root with
@@ -90,7 +90,7 @@ For a focused source shelf, run the daemon from the repository root with
 The shared TCP adapter supports authenticated hello, prepare/ready, start,
 pause/resume, dispose/reprepare, finished, Back to the party, and daemon
 disconnect. Prewarm/pause hide the window; Start/Resume shows fullscreen.
-GameNight supplies occupied seats and drawn profile faces. Both current studio
+Gamepad Party supplies occupied seats and drawn profile faces. Both current studio
 and legacy avatar formats render with nearest-neighbor sampling. Standalone
 play uses default faces. AI seats use CPU teammates; empty seats stay empty.
 Profile changes appear on the next prepared match.

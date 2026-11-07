@@ -29,7 +29,7 @@ function Lifecycle:receive(m)
 	if m.type == "controller_frame" and self.hooks.input then
         self.hooks.input(m.controllers)
     elseif m.type == "welcome" then
-		assert(m.protocol_version == 1, "Unsupported GameNight protocol")
+		assert(m.protocol_version == 1, "Unsupported Gamepad Party protocol")
         if self.hooks.settings then self.transport:send({type="declare_settings", settings=self.hooks.settings}) end
         if self.hooks.companion then
             local screen = self.hooks.companion()

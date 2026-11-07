@@ -32,10 +32,10 @@ function Phone.folder(source, target)
 		local encoded = math.ceil(#data / 3) * 4
 		total = total + encoded
 		if encoded > 512 * 1024 then
-			print(("GameNight: phone file %s is %d KiB in a hosted room; the limit is 512 KiB"):format(path, math.floor(encoded / 1024)))
+			print(("Gamepad Party: phone file %s is %d KiB in a hosted room; the limit is 512 KiB"):format(path, math.floor(encoded / 1024)))
 		end
 		if not TYPES[(path:match("%.([^./]+)$") or ""):lower()] then
-			print(("GameNight: hosted rooms do not serve phone file %s"):format(path))
+			print(("Gamepad Party: hosted rooms do not serve phone file %s"):format(path))
 		end
 		local dir = path:match("^(.*)/[^/]+$")
 		if dir then love.filesystem.createDirectory(target .. "/" .. dir) end
@@ -43,7 +43,7 @@ function Phone.folder(source, target)
 		assert(love.filesystem.write(target .. "/" .. path, data))
 	end
 	if #list > 128 or total > 2 * 1024 * 1024 then
-		print(("GameNight: the phone screen is %d files, %d KiB in a hosted room; the limit is 128 files, 2048 KiB"):format(#list, math.floor(total / 1024)))
+		print(("Gamepad Party: the phone screen is %d files, %d KiB in a hosted room; the limit is 128 files, 2048 KiB"):format(#list, math.floor(total / 1024)))
 	end
 	return love.filesystem.getSaveDirectory() .. "/" .. target
 end

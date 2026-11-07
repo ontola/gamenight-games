@@ -10,7 +10,7 @@ function love.conf(t)
   end
 	t.identity = "gamenight-love-party"
 	t.version = "11.5"
-	t.window.title = "GameNight | Party Pack"
+	t.window.title = "Gamepad Party | Party Pack"
 	t.window.width, t.window.height = 1280, 800
 	t.window.resizable, t.window.vsync = true, 1
     t.window.highdpi = true

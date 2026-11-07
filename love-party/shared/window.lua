@@ -94,7 +94,7 @@ function M.show(drawFrame)
     if not ok then M.hide();error(err) end
     native_window()
     if sdl then sdl.SDL_RaiseWindow(window) end;mark("raised")
-    print(string.format("GameNight window presented in %.3fs",love.timer.getTime()-started))
+    print(string.format("Gamepad Party window presented in %.3fs",love.timer.getTime()-started))
 end
 
 return M

@@ -1,4 +1,4 @@
-# GameNight store clip and stills
+# Gamepad Party store clip and stills
 
 `assets/gamenight/` holds the store media: `preview.mp4` (5 s, 150 frames,
 960×540, 30 FPS, silent H.264) with its poster `preview.jpg`, plus

@@ -5,7 +5,7 @@ Bombs, crates and blast paths remain on tiles. A planted bomb lets overlapping
 players leave once, but blocks re-entry. Kick preserves its owner and fuse.
 
 Start / Enter opens the pause menu. Stick or D-pad navigates; left/right changes
-values, A selects, B or Start resumes. Back still returns to GameNight.
+values, A selects, B or Start resumes. Back still returns to Gamepad Party.
 
 The menu and companion app share the declared settings: AI opponents (0–3,
 limited by the four total places), Free-for-all / Teams, arena, team damage,

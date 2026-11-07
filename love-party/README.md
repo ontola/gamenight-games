@@ -1,8 +1,8 @@
-# GameNight LÖVE Party Pack
+# Gamepad Party LÖVE Party Pack
 
-Seven local multiplayer games sharing one GameNight integration. MIT licensed.
+Seven local multiplayer games sharing one Gamepad Party integration. MIT licensed.
 No assets or accounts to download, no internet connection during play.
-Requires LÖVE 11.5; GameNight downloads this shared runtime separately.
+Requires LÖVE 11.5; Gamepad Party downloads this shared runtime separately.
 
 | Game | Goal | Controls |
 | --- | --- | --- |
@@ -57,9 +57,9 @@ M.phone = {
 
 The runner declares the page (`shared/phone.lua` copies it out of the
 `.love` file and warns when it would not fit a hosted room) and routes
-messages. See the GameNight docs page "Phone screens".
+messages. See the Gamepad Party docs page "Phone screens".
 
-## GameNight
+## Gamepad Party
 
 `GAMENIGHT=1` enables the shared adapter. It reads `GAMENIGHT_ADDR`,
 `GAMENIGHT_GAME_ID` and `GAMENIGHT_TOKEN`; authenticates; prepares hidden;
@@ -71,7 +71,7 @@ Use each game's ID in the table's source module or generated shelf.
 
 ## Build
 
-Run packaging and integration commands below from the sibling GameNight host checkout, with `GAMENIGHT_GAMES_DIR` pointing to this game repository. The scripts live in the host repository.
+Run packaging and integration commands below from the sibling Gamepad Party host checkout, with `GAMENIGHT_GAMES_DIR` pointing to this game repository. The scripts live in the host repository.
 
 ```sh
 python scripts/package-love-party.py --output dist/party --love /path/to/love
@@ -90,7 +90,7 @@ runtime is reused, not included seven times.
 ## Develop and test
 
 Pure simulation lives in `games/`; `shared/` owns rendering, devices and the
-GameNight lifecycle. Copy a game module to add another game, then register it
+Gamepad Party lifecycle. Copy a game module to add another game, then register it
 in `main.lua` and the packaging script. Keep simulation free of LÖVE APIs.
 
 ```sh
@@ -99,13 +99,13 @@ GNLOVE_DEMO=1 GNLOVE_GAME=neon-trails love love-party
 ```
 
 `GNLOVE_MATCH_SECONDS` and `GNLOVE_SEED` support reproducible tests. Native
-Windows CI runs simulation tests and GameNight certification for every archive.
+Windows CI runs simulation tests and Gamepad Party certification for every archive.
 Physical controller/focus testing is still needed before calling these stable.
 
 Transport/window helpers derive from Polle Pas's MIT-licensed Pinpals
-GameNight integration. Its license is retained in `vendor/PINPALS-LICENSE`.
+Gamepad Party integration. Its license is retained in `vendor/PINPALS-LICENSE`.
 `vendor/json.lua` is rxi's MIT JSON library and retains its license header.
-All other game code and geometric artwork are original GameNight contributions.
+All other game code and geometric artwork are original Gamepad Party contributions.
 
 ## Blast Party
 

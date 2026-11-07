@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   gamenight-sdk:
-    uses: ontola/gamenight/.github/workflows/godot-sdk-check.yml@main
+    uses: ontola/gamepad-party/.github/workflows/godot-sdk-check.yml@main
     with:
       path: downhill-rush
   downhill-physics:
@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned Godot and the Windows export templates
-        uses: ontola/gamenight/.github/actions/setup-godot@main
+        uses: ontola/gamepad-party/.github/actions/setup-godot@main
         with:
           version: 4.6.2
           export-templates: windows_release_x86_64.exe windows_release_x86_64_console.exe
@@ -42,7 +42,7 @@ jobs:
           path: game-source
       - uses: actions/checkout@v4
         with:
-          repository: ontola/gamenight
+          repository: ontola/gamepad-party
           ref: cc3ad5523acf87647057833ef467a701012d0618
           path: host
       - uses: actions/setup-python@v5
@@ -77,7 +77,7 @@ jobs:
         with:
           name: gamenight-party-candidate
           path: package
-      - uses: ontola/gamenight@488258365a7fe55df3fd7677ca85b513980db492
+      - uses: ontola/gamepad-party@488258365a7fe55df3fd7677ca85b513980db492
         with:
           token: ${{ secrets.GAMENIGHT_API_TOKEN }}
           game: ${{ matrix.game }}
@@ -96,7 +96,7 @@ jobs:
         with:
           name: downhill-rush-windows
           path: package
-      - uses: ontola/gamenight@488258365a7fe55df3fd7677ca85b513980db492
+      - uses: ontola/gamepad-party@488258365a7fe55df3fd7677ca85b513980db492
         with:
           token: ${{ secrets.GAMENIGHT_API_TOKEN }}
           game: downhill-rush

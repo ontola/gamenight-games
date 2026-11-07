@@ -5,7 +5,7 @@ Lua packages, or physics engine. All graphics and sound are generated locally.
 
 Volley Trouble is a mode in the shared `love-party` runner. Launch the
 packaged `volley-trouble.love`, or set `GNLOVE_GAME=volley-trouble` and run
-`love love-party`. GameNight supplies seats and controller IDs; the shared
+`love love-party`. Gamepad Party supplies seats and controller IDs; the shared
 input mapper preserves ownership even when seats are sparse. Teams alternate
 between occupied seats. Court, bomb, target score and rotating rules are exposed
 as game settings and apply to the next round. Rounds repeat automatically.
@@ -44,7 +44,7 @@ gamepads are recommended for four players.
 
 Movement reaches 650 units/second with snappier acceleration and braking.
 Each lava patch is 100 units wide, leaving most of each court safe to stand on.
-**Round Rules → Party Mix** is enabled by default in standalone and GameNight
+**Round Rules → Party Mix** is enabled by default in standalone and Gamepad Party
 matches. Each new rally cycles through these rules, with a two-second serve
 announcement. Choose **Classic Only** to keep the original rules.
 
@@ -73,7 +73,7 @@ Rising hits get extra power; a forward contact above the net can spike downward.
 - Hot Potato modifier: a 6.5-second fuse, faster hits, and a visible knockback
   blast. The ball reforms overhead after 0.8 seconds. Explosions do not score.
 
-## GameNight
+## Gamepad Party
 
 ```sh
 GAMENIGHT_LIBRARY=examples/volley-shelf.json cargo run -p gamenight-daemon
@@ -85,7 +85,7 @@ The game supports prepare/ready/start, pause/resume, dispose/reprepare,
 finished, and Back/Select to request the party. It hides during prewarm and
 pause and exits if the daemon disconnects. Occupied party seats retain their
 input slots and names, alternate between teams, and AI occupants use bots.
-Empty seats do not receive players. No second joining flow runs under GameNight.
+Empty seats do not receive players. No second joining flow runs under Gamepad Party.
 Court, exploding ball, rotating round rules, and winning score settings apply
 to the next prepared match.
 

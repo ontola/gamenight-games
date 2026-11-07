@@ -1,6 +1,6 @@
 # Downhill Rush
 
-A top-down BMX downhill survival race for GameNight: everyone rides the same
+A top-down BMX downhill survival race for Gamepad Party: everyone rides the same
 procedurally generated mountain on one shared screen, seen from above. The
 mountain's main direction runs to the bottom right, but the valley swings hard
 to the side now and then before the camera follows it round. The camera looks ahead of the
@@ -50,7 +50,7 @@ the stick can only nudge it a little. Brake in the air to lift the nose. Keyboar
 with WASD + Space or the arrow keys + Enter.
 
 The scoreboard lists riders in race order, with riders who are out struck
-through at the bottom. Under GameNight the names and colours come from the
+through at the bottom. Under Gamepad Party the names and colours come from the
 party.
 
 There is no title screen: the game opens on the mountain. Press A on any pad
@@ -190,11 +190,11 @@ Bots (`src/bot.gd`) read the slope ahead: they score a fan of lines for
 ledges, trees and boulders, head for a chute when a big cliff comes up, and
 brake for whatever their line throws at them.
 
-## GameNight
+## Gamepad Party
 
-The [GameNight Godot addon](https://github.com/ontola/gamenight/tree/main/sdk/godot)
+The [Gamepad Party Godot addon](https://github.com/ontola/gamepad-party/tree/main/sdk/godot)
 is vendored in `addons/gamenight` and kept identical to gamenight `main`; CI fails
-when it falls behind (update with gamenight's `sdk/godot/sync.py`). Under a GameNight
+when it falls behind (update with gamenight's `sdk/godot/sync.py`). Under a Gamepad Party
 host the game:
 
 - reads each seat's input with `GameNight.frame_for_seat` and plays `ai` seats
@@ -242,6 +242,6 @@ tuned against bots and simulations, not real controllers.
 
 ## License
 
-See the repository license. The GameNight addon keeps its own license. The
+See the repository license. The Gamepad Party addon keeps its own license. The
 fonts in `assets/fonts` (Bungee, Bungee Shade and Lilita One) are under the SIL
 Open Font License; their license texts sit next to them.

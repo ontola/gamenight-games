@@ -4,7 +4,7 @@ power-ups (extra bombs, range, speed, kick, ghost, mega, remote, pierce, square 
 
 - Windows build: unzip `BombingBugs-windows.zip` and run `BombingBugs.exe`.
   `release-sha256.txt` holds its checksum.
-- Speaks the GameNight protocol: the GameNight host launches it, assigns
+- Speaks the Gamepad Party protocol: the Gamepad Party host launches it, assigns
   controllers per seat and can change its settings between rounds.
 - `preview.mp4`, `preview.jpg`, `cover.png`, `icon.png` and `gameplay.png` are
   the store media, captured from the real game (see `docs/gamenight-preview.md`).

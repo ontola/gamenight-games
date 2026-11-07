@@ -26,7 +26,7 @@ godot --path bombing-bugs
 - A: plant a bomb. You can walk off a newly planted bomb but cannot re-enter it.
 - B: set off your remote bombs (with the Remote power-up).
 - Start: pause and change options. B: close the options.
-- Back/Select: GameNight lobby when managed by the host.
+- Back/Select: Gamepad Party lobby when managed by the host.
 - Keyboard fallback: WASD or arrows, Space/Enter to plant, Esc/P to pause.
 
 Standalone play uses up to four connected controllers, or one keyboard player
@@ -84,13 +84,13 @@ Power-ups drop from sand:
 | Skull | A curse for ten seconds (slow, reversed controls or leaky bombs) that passes on by touch |
 
 Every pickup has its own little jingle. The game's name shows big over the
-garden during the first countdown, also when GameNight starts the game without
+garden during the first countdown, also when Gamepad Party starts the game without
 the menu.
 
 Teams pair seats 1+3 against 2+4. Friendly fire is optional; your own bombs
 always hurt. Eliminated bugs remain as little toppled bodies until next round.
 
-## GameNight and assistant integration
+## Gamepad Party and assistant integration
 
 The vendored public Godot SDK handles hidden preload, fullscreen activation,
 pause/resume, stale controller input, performance reports and host-loss exit.
