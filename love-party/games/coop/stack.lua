@@ -42,12 +42,14 @@ function T.spawn(g,p)
   p.held=false
   enter(g,p)
 end
--- Y swaps the falling piece with the one kept aside (or the next one when the
--- slot is empty). Once per piece, so holding can't stall the round.
+-- Y swaps the falling piece with the one slot both players share (or takes
+-- the next piece when it is empty), so a piece can be passed to the teammate.
+-- Once per piece, so swapping back and forth can't stall the round.
 function T.hold(g,p)
   if p.held then return false end
-  if p.hold then p.kind,p.hold=p.hold,p.kind
-  else p.hold=p.kind; p.kind=p.next; p.next=nextPiece(g,p) end
+  if g.hold then p.kind,g.hold=g.hold,p.kind
+  else g.hold=p.kind; p.kind=p.next; p.next=nextPiece(g,p) end
+  g.holdBy=p.slot
   enter(g,p); p.held=true
   g.events[#g.events+1]="hold"
   return true

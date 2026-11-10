@@ -25,18 +25,22 @@ return function()
     local count=0; for _,r in ipairs(g.board) do for _ in pairs(r) do count=count+1 end end
     assert(count==4 and g.players[1].y==1)
   end)
-  check("Y keeps the falling piece aside and swaps it back once per piece",function()
-    local g=T.new(seats); local p=g.players[1]
+  check("Y swaps with one slot both players share, once per piece",function()
+    local g=T.new(seats); local p,q=g.players[1],g.players[2]
     local first,second,third=p.kind,p.next,nil
     T.step(g,{[1]={hold=true}},1/120)
-    assert(p.hold==first and p.kind==second and p.held); third=p.next
+    assert(g.hold==first and g.holdBy==1 and p.kind==second and p.held); third=p.next
     -- Holding the button, or pressing again before landing, does nothing.
     T.step(g,{[1]={}},1/120); T.step(g,{[1]={hold=true}},1/120)
-    assert(p.hold==first and p.kind==second)
+    assert(g.hold==first and p.kind==second)
+    -- The teammate takes the passed piece into their own half.
+    local theirs=q.kind
+    T.step(g,{[2]={hold=true}},1/120)
+    assert(q.kind==first and g.hold==theirs and g.holdBy==2 and q.x==q.lane+1)
     T.step(g,{[1]={drop=true}},1/120)
     assert(p.kind==third and not p.held)
     T.step(g,{[1]={hold=true}},1/120)
-    assert(p.kind==first and p.hold==third and p.y==1 and p.rot==0)
+    assert(p.kind==theirs and g.hold==third and p.y==1 and p.rot==0)
   end)
   check("up on the stick no longer rotates; A does",function()
     local M=require("games.coop")(T); local Input=require("shared.input")
