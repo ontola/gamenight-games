@@ -1,4 +1,4 @@
-"""Minimal stdlib-only WebSocket peer for an isolated Gamepad Party host."""
+"""Minimal stdlib-only WebSocket peer for an isolated Splitscreen Club host."""
 import base64
 import hashlib
 import json

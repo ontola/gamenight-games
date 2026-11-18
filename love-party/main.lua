@@ -156,7 +156,7 @@ function love.load(args)
 					Input.bind({}, {})
 				end,
 				quit = function(err)
-					print("Gamepad Party disconnected: " .. tostring(err))
+					print("Splitscreen Club disconnected: " .. tostring(err))
 					love.event.quit()
 				end,
 			},
