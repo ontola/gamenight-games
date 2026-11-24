@@ -16,6 +16,8 @@ blast range. Matching icons and current totals appear on each player name card.
 
 ## Play
 
+[Play Bombing Bugs in a browser](https://splitscreen.club/play/godot/bombing-bugs/). The same Godot export runs standalone or from a Splitscreen Club lobby.
+
 Open `project.godot` in Godot 4.6.2, or run:
 
 ```sh
@@ -157,3 +159,14 @@ runtime asset-generation service is required. License: repository MIT license.
 UI lettering uses DynaPuff by Toshi Omagari and Jennifer Daniel, bundled under
 the SIL Open Font License in `assets/fonts/DynaPuff-OFL.txt`. The title has a
 subtle wave and win messages gently wobble; names and counters remain still.
+
+## Browser build
+
+Install Godot 4.6.2 and its single-threaded Web release template, then run this from the repository root:
+
+```sh
+python3 bombing-bugs/tools/export_web.py --godot /path/to/godot
+python3 -m http.server 8000 --directory bombing-bugs/dist/web
+```
+
+Open the local HTTP server in a browser. The export contains its SDK bridge and the game's, font's and engine's license notices in `licenses/`.
