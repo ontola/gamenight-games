@@ -52,6 +52,7 @@ var overlay: PanelContainer
 var menu_title: Label
 var banner: Label
 var hint: Label
+var badge_margin: MarginContainer
 var badges: GridContainer
 var title: TextureRect
 ## The big name over the garden while the first round counts down (the only
@@ -201,8 +202,21 @@ func _layout_hud() -> void:
 	var width := get_viewport().get_visible_rect().size.x
 	var columns := 2 if width < 1000 else 4
 	badges.columns = clampi(badges.get_child_count(),1,columns)
+	if managed and OS.has_feature("web"):
+		_fit_room_button(JavaScriptBridge.get_interface("window").innerWidth)
 	var half_title := minf(350.0,width*.5-20.0)
 	title_card.offset_left = -half_title; title_card.offset_right = half_title
+
+## The club places its room button in the upper right, in CSS pixels.
+## In portrait keep both player columns full width by moving them below it.
+func _fit_room_button(css_width: float) -> void:
+	var view := get_viewport().get_visible_rect().size
+	var scale := view.x / maxf(css_width,1.0)
+	var hud := badge_margin.get_parent_control()
+	var right := 0 if view.x < view.y else maxi(0,ceili(120.0 * scale + hud.offset_right))
+	var top := maxi(0,ceili(48.0 * scale - hud.offset_top)) if view.x < view.y else 0
+	badge_margin.add_theme_constant_override("margin_right",right)
+	badge_margin.add_theme_constant_override("margin_top",top)
 
 func _prepared(id: String, seats: Array, players: Array) -> void:
 	session = id; host_seats = seats; host_players = players; active = false; host_paused = false
@@ -413,12 +427,15 @@ func _build_ui() -> void:
 	top.offset_left = 40; top.offset_right = -40; top.offset_top = 18
 	top.add_theme_constant_override("separation",22)
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge_margin = MarginContainer.new()
+	badge_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(badge_margin)
 	badges = GridContainer.new()
 	badges.custom_minimum_size.y = 72
 	badges.add_theme_constant_override("h_separation",24)
 	badges.add_theme_constant_override("v_separation",8)
 	badges.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	top.add_child(badges)
+	badge_margin.add_child(badges)
 	banner = _label("",44)
 	top.add_child(banner)
 	banner.custom_minimum_size.y = 70

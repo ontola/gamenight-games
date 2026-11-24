@@ -59,5 +59,32 @@ func run() -> void:
 	root.size = Vector2i(390,844)
 	for frame in 4: await process_frame
 	check(is_equal_approx(game.camera.fov,normal_fov),"Portrait close-up keeps the winner's horizontal framing")
+	await check_club_badges(game)
 	if failures==0: print("PASS responsive menu, camera, four player cards and winner framing")
 	quit(1 if failures else 0)
+
+func check_club_badges(game: Node) -> void:
+	var names := ["Alexandra Nightshade","Christopher Mulberry","Beatrice Bumblebee","Wilhelmina Woodlouse"]
+	for i in names.size():
+		var bug: Dictionary = game.sim.bugs[i]
+		bug.name = names[i]
+		bug.profile = {"name":names[i],"id":"test-%d"%i}
+		bug.capacity = i+1
+		bug.range = i+2
+		bug.speed = i
+		for j in game.FLAGS.size(): bug[game.FLAGS[j]] = j<=i or i==3
+		if i==3: bug.curse = "reverse"
+	game._update_badges()
+	for size_css: Vector2i in [Vector2i(420,800),Vector2i(800,600),Vector2i(896,384),Vector2i(960,540)]:
+		root.size = size_css
+		for frame in 3: await process_frame
+		game._fit_room_button(size_css.x)
+		for frame in 3: await process_frame
+		var scale := Vector2(size_css)/root.get_visible_rect().size
+		var button := Rect2(size_css.x-109,8,101,29)
+		for badge: Control in game.badges.get_children():
+			for item: Control in badge.find_children("*","Control",true,false):
+				if item.get_child_count()>0: continue
+				var item_css := Rect2(item.global_position*scale,item.size*scale)
+				check(not item_css.intersects(button),"Club button covers a name or power-up at %s" % size_css)
+				check(Rect2(Vector2.ZERO,Vector2(size_css)).encloses(item_css),"Club badge clipped at %s" % size_css)
