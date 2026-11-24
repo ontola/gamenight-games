@@ -212,7 +212,7 @@ func _process(dt: float) -> void:
 # a continuous eroded bank rises outside the playable cells, rather than a rock fence.
 func build_terrain() -> void:
 	var rings: Array[PackedVector3Array] = []
-	var profiles := [Vector3(hx+.03,-.04,hz+.03),Vector3(hx+.22,.18,hz+.22),Vector3(hx+.68,.53,hz+.68),Vector3(hx+1.15,.49,hz+1.15),Vector3(hx+16,.43,hz+14)]
+	var profiles := [Vector3(hx+.03,-.04,hz+.03),Vector3(hx+.22,.18,hz+.22),Vector3(hx+.68,.53,hz+.68),Vector3(hx+1.15,.49,hz+1.15),Vector3(hx+16,.43,hz+14),Vector3(hx+64,.43,hz+64)]
 	var count := 192
 	for r in profiles.size():
 		var ring := PackedVector3Array(); var profile: Vector3 = profiles[r]

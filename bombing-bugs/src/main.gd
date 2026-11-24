@@ -52,7 +52,8 @@ var overlay: PanelContainer
 var menu_title: Label
 var banner: Label
 var hint: Label
-var badges: HBoxContainer
+var badge_margin: MarginContainer
+var badges: GridContainer
 var title: TextureRect
 ## The big name over the garden while the first round counts down (the only
 ## start screen a GameNight launch has, since the host skips the menu).
@@ -102,6 +103,8 @@ func _ready() -> void:
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL; camera.keep_aspect = Camera3D.KEEP_WIDTH; camera.size = 18.0
 	camera.current = true; _frame_camera(13,11)
 	_build_ui(); _build_audio()
+	get_viewport().size_changed.connect(_on_viewport_resized)
+	_layout_hud()
 	_warm_up_shaders()
 	if managed:
 		banner.text = "Getting the garden ready…"
@@ -186,6 +189,34 @@ func _frame_camera(cols: int, rows: int) -> void:
 	var view := get_viewport().get_visible_rect().size
 	var aspect := view.x/maxf(view.y,1.0)
 	camera.size = maxf(w*2.0,h*2.0*aspect)*1.12
+
+func _on_viewport_resized() -> void:
+	if closeup < 0:
+		_frame_camera(sim.w,sim.h)
+	else:
+		_fit_winner()
+	_layout_hud()
+	if menu_open: _refresh_menu()
+
+func _layout_hud() -> void:
+	var width := get_viewport().get_visible_rect().size.x
+	var columns := 2 if width < 1000 else 4
+	badges.columns = clampi(badges.get_child_count(),1,columns)
+	if managed and OS.has_feature("web"):
+		_fit_room_button(JavaScriptBridge.get_interface("window").innerWidth)
+	var half_title := minf(350.0,width*.5-20.0)
+	title_card.offset_left = -half_title; title_card.offset_right = half_title
+
+## The club places its room button in the upper right, in CSS pixels.
+## In portrait keep both player columns full width by moving them below it.
+func _fit_room_button(css_width: float) -> void:
+	var view := get_viewport().get_visible_rect().size
+	var scale := view.x / maxf(css_width,1.0)
+	var hud := badge_margin.get_parent_control()
+	var right := 0 if view.x < view.y else maxi(0,ceili(120.0 * scale + hud.offset_right))
+	var top := maxi(0,ceili(48.0 * scale - hud.offset_top)) if view.x < view.y else 0
+	badge_margin.add_theme_constant_override("margin_right",right)
+	badge_margin.add_theme_constant_override("margin_top",top)
 
 func _prepared(id: String, seats: Array, players: Array) -> void:
 	session = id; host_seats = seats; host_players = players; active = false; host_paused = false
@@ -325,9 +356,17 @@ func _cut_to_winner() -> void:
 		if sim.bugs[i].alive and sim.bugs[i].team == sim.winner: closeup = i; break
 	if closeup < 0: return
 	views[closeup].gloating = true
-	camera.projection = Camera3D.PROJECTION_PERSPECTIVE; camera.fov = 31
+	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+	_fit_winner()
 	# Everything nearer than the bug's own cell is clipped, so grass never blocks the shot.
 	camera.near = 2.2
+
+## Preserve the original horizontal close-up on narrow windows and its vertical
+## field of view on ultrawide windows so the winner stays in shot at either edge.
+func _fit_winner() -> void:
+	var view := get_viewport().get_visible_rect().size
+	var relative_width := maxf(1.0,(view.x/maxf(view.y,1.0))/(16.0/9.0))
+	camera.fov = rad_to_deg(2.0*atan(tan(deg_to_rad(31.0)*.5)*relative_width))
 
 func _winner_name() -> String:
 	if sim.settings.teams == "Teams": return "Team %d" % (sim.winner+1)
@@ -382,8 +421,27 @@ func _label(text: String, size: int, color: Color = Color("493b2b")) -> Label:
 func _build_ui() -> void:
 	var layer := CanvasLayer.new(); add_child(layer)
 	var root := Control.new(); root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); root.mouse_filter = Control.MOUSE_FILTER_IGNORE; layer.add_child(root)
-	badges = HBoxContainer.new(); root.add_child(badges); badges.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE); badges.offset_left = 40; badges.offset_right = -40; badges.offset_top = 18; badges.offset_bottom = 90; badges.add_theme_constant_override("separation",24); badges.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	banner = _label("",44); root.add_child(banner); banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP); banner.position = Vector2(300,112); banner.size = Vector2(1000,70); banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; banner.add_theme_color_override("font_color",Color("fff0bb")); banner.add_theme_color_override("font_outline_color",Color("4b4328")); banner.add_theme_constant_override("outline_size",8)
+	var top := VBoxContainer.new()
+	root.add_child(top)
+	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	top.offset_left = 40; top.offset_right = -40; top.offset_top = 18
+	top.add_theme_constant_override("separation",22)
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge_margin = MarginContainer.new()
+	badge_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(badge_margin)
+	badges = GridContainer.new()
+	badges.custom_minimum_size.y = 72
+	badges.add_theme_constant_override("h_separation",24)
+	badges.add_theme_constant_override("v_separation",8)
+	badges.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge_margin.add_child(badges)
+	banner = _label("",44)
+	top.add_child(banner)
+	banner.custom_minimum_size.y = 70
+	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	banner.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	banner.add_theme_color_override("font_color",Color("fff0bb")); banner.add_theme_color_override("font_outline_color",Color("4b4328")); banner.add_theme_constant_override("outline_size",8)
 	hint = _label("",18); root.add_child(hint); hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE); hint.offset_top = -45; hint.offset_bottom = -12; hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; hint.add_theme_color_override("font_color",Color("fff3ce")); hint.add_theme_color_override("font_outline_color",Color("3d3928")); hint.add_theme_constant_override("outline_size",5)
 	hint.text = ""
 	var center := CenterContainer.new(); root.add_child(center); center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); center.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -397,7 +455,8 @@ func _build_ui() -> void:
 	menu_help = _label("",15); menu_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; menu_help.add_theme_color_override("font_color",Color("8a7558")); box.add_child(menu_help)
 	overlay.hide()
 	title_card = _game_logo(); root.add_child(title_card)
-	title_card.position = Vector2(450, 190); title_card.size = Vector2(700, 345)
+	title_card.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	title_card.offset_top = -260; title_card.offset_bottom = 85
 	title_card.visible = false
 	sound = AudioStreamPlayer.new(); sound.volume_db = -16; add_child(sound)
 
@@ -453,6 +512,8 @@ func _update_badges(upgraded: int = -1) -> void:
 			box.modulate = Color(1.6,1.6,1.3)
 			create_tween().tween_property(box,"modulate",Color.WHITE,.35)
 
+	_layout_hud()
+
 func _open_menu(first: bool) -> void:
 	initial_menu = first; menu_open = true; overlay.show(); banner.text = ""
 	_show_page("main")
@@ -478,14 +539,14 @@ func _show_page(page: String) -> void:
 	for n in menu_list.get_children(): menu_list.remove_child(n); n.queue_free()
 	menu_rows.clear()
 	for i in menu_items.size():
-		var b := Button.new(); menu_list.add_child(b); b.custom_minimum_size = Vector2(500,52 if menu_items[i].get("action") == "play" else 44); b.focus_mode = Control.FOCUS_NONE
+		var b := Button.new(); menu_list.add_child(b); b.custom_minimum_size.x = 500; b.focus_mode = Control.FOCUS_NONE
 		for state in ["normal","hover","pressed"]: b.add_theme_stylebox_override(state,StyleBoxEmpty.new())
 		var row := HBoxContainer.new(); b.add_child(row); row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); row.offset_left = 18; row.offset_right = -18; row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var caption := _label("",22 if menu_items[i].get("action") == "play" else 19); caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL; caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER; row.add_child(caption)
 		var value := _label("",19,Color("6b5636")); value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER; row.add_child(value)
 		if menu_items[i].has("action"): caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		b.mouse_entered.connect(func(): menu_index = i; _refresh_menu())
-		b.pressed.connect(func(): _menu_action(i,-1 if b.get_local_mouse_position().x < b.size.x*.5 and menu_items[i].has("key") else 1))
+		b.pressed.connect(func(): _menu_action.call_deferred(i,-1 if b.get_local_mouse_position().x < b.size.x*.5 and menu_items[i].has("key") else 1))
 		menu_rows.append(b)
 	_refresh_menu()
 
@@ -505,6 +566,7 @@ func _refresh_menu() -> void:
 	title.visible = menu_page == "main"
 	# Controls speak for themselves: no button hints in the menu.
 	menu_help.visible = false
+	var narrow := get_viewport().get_visible_rect().size.x < 1000
 	for i in menu_items.size():
 		var item: Dictionary = menu_items[i]
 		var row := menu_rows[i].get_child(0)
@@ -520,6 +582,9 @@ func _refresh_menu() -> void:
 			caption.text = {"play":"Play" if initial_menu else "Resume","more":"More options  ›","back":"‹  Back","restart":"New round · apply options"}[item.action]
 			value.text = ""
 		var primary: bool = item.get("action") == "play"
+		menu_rows[i].custom_minimum_size.y = 72 if narrow else (52 if primary else 44)
+		caption.add_theme_font_size_override("font_size",26 if narrow else (22 if primary else 19))
+		value.add_theme_font_size_override("font_size",24 if narrow else 19)
 		var fill := Color("cee79a") if selected else (Color("f6dc8f") if primary else Color("00000000"))
 		var line := Color("6b8745") if selected else (Color("c99d45") if primary else Color("00000000"))
 		var style := _panel(fill,line); style.set_content_margin_all(0)

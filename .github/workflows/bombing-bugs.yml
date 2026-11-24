@@ -14,7 +14,7 @@ permissions:
   contents: read
 jobs:
   gamenight-sdk:
-    uses: ontola/gamepad-party/.github/workflows/godot-sdk-check.yml@main
+    uses: ontola/splitscreen-club/.github/workflows/godot-sdk-check.yml@main
     with:
       path: bombing-bugs
   build:
@@ -22,17 +22,25 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Install Godot 4.6.2 and the Windows export templates
-        uses: ontola/gamepad-party/.github/actions/setup-godot@main
+      - name: Install Godot 4.6.2 and the export templates
+        uses: ontola/splitscreen-club/.github/actions/setup-godot@main
         with:
           version: 4.6.2
-          export-templates: windows_release_x86_64.exe windows_release_x86_64_console.exe
+          export-templates: windows_release_x86_64.exe windows_release_x86_64_console.exe web_nothreads_release.zip
       - name: Import, simulate and check host lifecycle
         run: |
           "$GODOT" --headless --path bombing-bugs --editor --import --quit
           "$GODOT" --headless --path bombing-bugs --script tests/simulation.gd
           "$GODOT" --headless --path bombing-bugs --script tests/results-ui.gd
+          "$GODOT" --headless --path bombing-bugs --script tests/aspect-layout.gd
           python3 bombing-bugs/tests/lifecycle.py "$GODOT"
+      - name: Export browser build
+        run: python3 bombing-bugs/tools/export_web.py --godot "$GODOT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bombing-bugs-web
+          path: bombing-bugs/dist/web/
+          if-no-files-found: error
       - name: Export Windows build
         run: |
           mkdir -p dist
