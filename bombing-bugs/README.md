@@ -28,6 +28,11 @@ godot --path bombing-bugs
 - Start: pause and change options. B: close the options.
 - Back/Select: Splitscreen Club lobby when managed by the host.
 - Keyboard fallback: WASD or arrows, Space/Enter to plant, Esc/P to pause.
+- In a Splitscreen Club room the host turns keys into a controller: WASD or
+  arrows move, Space plants, Backspace sets off remote bombs, Enter pauses,
+  Tab is Back. Two players can share one keyboard (G): left half WASD, Space,
+  left Shift; right half arrows, right Shift, `/`. Declared in `gamenight.json`
+  (`players.keyboard`, `shared_keyboard: 2`).
 
 Standalone play uses up to four connected controllers, or one keyboard player
 if no pads are connected. Controllers are assigned at round start. AI fills the

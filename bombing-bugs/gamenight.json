@@ -7,7 +7,9 @@
   "players": {
     "min": 1,
     "max": 4,
-    "best": 4
+    "best": 4,
+    "keyboard": true,
+    "shared_keyboard": 2
   },
   "match_minutes": 3,
   "price": "free",
